@@ -3,6 +3,10 @@ import type { Chapter, Lesson, Question } from "../types";
 const QUESTION_TYPES = new Set(["choice", "letters", "tiles"]);
 const LESSON_KINDS = new Set(["lesson", "challenge"]);
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 /**
  * 校验一章题库,返回错误列表(空数组 = 合法)。
  * 每条错误以「位置: 原因」描述,便于定位到具体 lesson/question。
@@ -26,8 +30,8 @@ export function validateChapter(ch: Chapter): string[] {
   if (!ch || typeof ch !== "object") return ["章节数据不是对象"];
   if (!ch.id) errs.push("章节缺 id");
   else mark(ch.id);
-  if (!ch.title) errs.push(`${ch.id}: 章节 title 为空`);
-  if (!ch.titleFr) errs.push(`${ch.id}: 章节 titleFr 为空`);
+  if (!isNonEmptyString(ch.title)) errs.push(`${ch.id}: 章节 title 必须是非空字符串`);
+  if (!isNonEmptyString(ch.titleFr)) errs.push(`${ch.id}: 章节 titleFr 必须是非空字符串`);
   if (!Array.isArray(ch.cards)) errs.push(`${ch.id}: cards 不是数组`);
   if (!Array.isArray(ch.lessons)) errs.push(`${ch.id}: lessons 不是数组`);
   if (!Array.isArray(ch.challenges)) errs.push(`${ch.id}: challenges 不是数组`);
@@ -39,8 +43,8 @@ export function validateChapter(ch: Chapter): string[] {
       return;
     }
     if (!mark(l.id)) return;
-    if (!l.title) errs.push(`${l.id}: title 为空`);
-    if (!l.source) errs.push(`${l.id}: source 为空(需注明来源)`);
+    if (!isNonEmptyString(l.title)) errs.push(`${l.id}: title 必须是非空字符串`);
+    if (!isNonEmptyString(l.source)) errs.push(`${l.id}: source 必须是非空字符串(需注明来源)`);
     if (!LESSON_KINDS.has(l.kind)) errs.push(`${l.id}: kind 非法(${String(l.kind)}),只能 lesson/challenge`);
     if (!Array.isArray(l.questions) || l.questions.length === 0) {
       errs.push(`${l.id}: questions 为空`);
@@ -55,12 +59,12 @@ export function validateChapter(ch: Chapter): string[] {
       return;
     }
     if (!mark(q.id)) return;
-    if (!q.prompt) errs.push(`${q.id}: prompt 为空`);
+    if (!isNonEmptyString(q.prompt)) errs.push(`${q.id}: prompt 必须是非空字符串`);
     if (typeof q.explain !== "string") errs.push(`${q.id}: explain 缺失(需字符串)`);
-    if (q.translation !== undefined && (!q.translation || !q.translation.trim()))
-      errs.push(`${q.id}: translation 为空`);
-    if (q.example !== undefined && (!q.example || !q.example.trim()))
-      errs.push(`${q.id}: example 为空`);
+    if (q.translation !== undefined && !isNonEmptyString(q.translation))
+      errs.push(`${q.id}: translation 必须是非空字符串`);
+    if (q.example !== undefined && !isNonEmptyString(q.example))
+      errs.push(`${q.id}: example 必须是非空字符串`);
     if (!QUESTION_TYPES.has(q.type)) {
       errs.push(`${q.id}: type 非法(${String(q.type)})`);
       return;
@@ -148,8 +152,8 @@ export function validateChapter(ch: Chapter): string[] {
       continue;
     }
     if (!mark(c.id)) continue;
-    if (!c.title || !c.title.trim()) errs.push(`${c.id}: card title 为空`);
-    if (!c.body || !c.body.trim()) errs.push(`${c.id}: card body 为空`);
+    if (!isNonEmptyString(c.title)) errs.push(`${c.id}: card title 必须是非空字符串`);
+    if (!isNonEmptyString(c.body)) errs.push(`${c.id}: card body 必须是非空字符串`);
   }
   return errs;
 }

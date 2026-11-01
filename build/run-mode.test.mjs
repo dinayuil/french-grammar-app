@@ -92,6 +92,51 @@ describe("mode command plan", () => {
     }
   });
 
+  it("fails unfiltered test when scripts directory is missing instead of omitting the Node suite", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "fge-run-mode-missing-"));
+    try {
+      expect(() => discoverNodeTests(root)).toThrow(/scripts|ENOENT|no such|不存在|读取/i);
+      expect(() =>
+        createPlan("test", [], "public", { appRoot: root, env: {} })
+      ).toThrow(/scripts|ENOENT|no such|不存在|读取/i);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails unfiltered test when the scripts directory contains zero Node test files", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "fge-run-mode-empty-"));
+    const scripts = path.join(root, "scripts");
+    mkdirSync(scripts);
+    writeFileSync(path.join(scripts, "helper.mjs"), "");
+    writeFileSync(path.join(scripts, "run-mode.spec.mjs"), "");
+    try {
+      expect(discoverNodeTests(root)).toEqual([]);
+      expect(() =>
+        createPlan("test", [], "public", { appRoot: root, env: {} })
+      ).toThrow(/未发现|Node|test\.mjs/i);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("focused test bypasses discovery when scripts directory is missing", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "fge-run-mode-focused-"));
+    try {
+      const focused = createPlan("test", ["build/content.test.ts"], "public", {
+        appRoot: root,
+        env: {},
+      });
+      expect(focused.steps).toHaveLength(1);
+      expect(focused.steps[0].args.slice(0, 2)).toEqual([
+        expect.stringMatching(/node_modules[\\/]vitest[\\/]vitest\.mjs$/),
+        "run",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("runs app tsc, then tools tsc, before vite build and forwards build arguments", () => {
     const plan = createPlan("build", ["--mode", "production"], "internal");
     expect(plan.edition).toBe("internal");

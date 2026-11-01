@@ -80,6 +80,10 @@ function writeJson(file: string, value: unknown): string {
   return writeRaw(file, JSON.stringify(value, null, 2));
 }
 
+function setRaw(target: unknown, field: string, value: unknown): void {
+  (target as Record<string, unknown>)[field] = value;
+}
+
 function choiceQuestion(id: string): Question {
   return {
     id,
@@ -332,6 +336,83 @@ describe("loadBank: missing and malformed input", () => {
     writeRaw(fileIn(root, "chapters/ch1.json"), '{ "id": ');
     expectLoadFailure(root, "public", /chapters[\\/]ch1\.json.*JSON|JSON.*chapters[\\/]ch1\.json/i);
   });
+
+  it("rejects malformed required text values with chapter location and field", () => {
+    const cases: Array<{
+      label: string;
+      field: string;
+      mutate: (chapter: Chapter) => void;
+    }> = [
+      {
+        label: "chapter.title object",
+        field: "title",
+        mutate: (chapter) => setRaw(chapter, "title", { synthetic: "not a string" }),
+      },
+      {
+        label: "chapter.titleFr blank",
+        field: "titleFr",
+        mutate: (chapter) => setRaw(chapter, "titleFr", "   "),
+      },
+      {
+        label: "lesson.title array",
+        field: "title",
+        mutate: (chapter) => setRaw(chapter.lessons[0], "title", ["not", "a", "string"]),
+      },
+      {
+        label: "lesson.source number",
+        field: "source",
+        mutate: (chapter) => setRaw(chapter.lessons[0], "source", 42),
+      },
+      {
+        label: "question.prompt object",
+        field: "prompt",
+        mutate: (chapter) =>
+          setRaw(chapter.lessons[0].questions[0], "prompt", { synthetic: "not a string" }),
+      },
+      {
+        label: "card.title array",
+        field: "title",
+        mutate: (chapter) => setRaw(chapter.cards[0], "title", ["not", "a", "string"]),
+      },
+      {
+        label: "card.body number",
+        field: "body",
+        mutate: (chapter) => setRaw(chapter.cards[0], "body", 42),
+      },
+      {
+        label: "translation object",
+        field: "translation",
+        mutate: (chapter) =>
+          setRaw(chapter.lessons[0].questions[0], "translation", { synthetic: "not a string" }),
+      },
+      {
+        label: "example array",
+        field: "example",
+        mutate: (chapter) =>
+          setRaw(chapter.lessons[0].questions[0], "example", ["not", "a", "string"]),
+      },
+    ];
+
+    for (const { label, field, mutate } of cases) {
+      const root = makeRoot(`bad-text-${fixtureCounter++}`);
+      const chapter = makeChapter("ch-bad-text");
+      chapter.cards = [{ id: "ch-bad-card", title: "SYNTHETIC CARD", body: "SYNTHETIC BODY" }];
+      mutate(chapter);
+      writeBank(root, [chapter]);
+
+      let message = "";
+      try {
+        loadBank(root, "public");
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+
+      expect(message, label).not.toBe("");
+      expect(message, label).toMatch(/chapters[\\/]ch1\.json/i);
+      expect(message.toLowerCase(), label).toContain(field.toLowerCase());
+      expect(message, label).not.toMatch(/TypeError|is not a function|Cannot read properties/i);
+    }
+  });
 });
 
 describe("loadBank: manifest contract", () => {
@@ -496,6 +577,19 @@ describe("contentPlugin", () => {
       .replace(/^export const CHAPTERS = /, "")
       .replace(/;\s*$/, "");
     expect(JSON.parse(payload)).toEqual([chapter]);
+  });
+
+  it("rejects malformed required text before emitting the virtual module", () => {
+    const root = makeRoot("plugin-bad-text");
+    const chapter = makeChapter("ch-plugin-bad-text");
+    setRaw(chapter, "title", { synthetic: "not a string" });
+    writeBank(root, [chapter]);
+    const plugin = contentPlugin({ edition: "public", root });
+    const load = plugin.load as (this: unknown, id: string) => unknown;
+
+    expect(() =>
+      load.call({ addWatchFile: () => {} }, "\0virtual:fge-content")
+    ).toThrow(/chapters[\\/]ch1\.json[\s\S]*title|title[\s\S]*chapters[\\/]ch1\.json/i);
   });
 
   it("records watched content separately from the actual Rollup module graph", () => {

@@ -4,6 +4,17 @@ import type { Chapter } from "../types";
 
 const clone = (): Chapter => JSON.parse(JSON.stringify(syntheticChapter)) as Chapter;
 
+const MALFORMED_TEXTS: Array<[string, unknown]> = [
+  ["object", { synthetic: "not a string" }],
+  ["number", 42],
+  ["array", ["not", "a", "string"]],
+  ["blank", "   "],
+];
+
+function setField(target: unknown, field: string, value: unknown): void {
+  (target as Record<string, unknown>)[field] = value;
+}
+
 describe("validateChapter", () => {
   test("合法合成章节 → 空错误列表", () => {
     expect(validateChapter(syntheticChapter)).toEqual([]);
@@ -159,5 +170,76 @@ describe("validateChapter", () => {
     (bad.lessons[0].questions[2] as unknown as Record<string, unknown>).alternatives = ["mot"];
     expect(() => validateChapter(bad)).not.toThrow();
     expect(validateChapter(bad).some((e) => e.includes("alternatives"))).toBe(true);
+  });
+
+  test("章节 title/titleFr 的 object/number/array/blank 均报错", () => {
+    for (const field of ["title", "titleFr"]) {
+      for (const [label, value] of MALFORMED_TEXTS) {
+        const bad = clone();
+        setField(bad, field, value);
+        expect(() => validateChapter(bad), `${field} ${label}`).not.toThrow();
+        expect(
+          validateChapter(bad).some((e) => e.includes(field)),
+          `${field} ${label}`
+        ).toBe(true);
+      }
+    }
+  });
+
+  test("lesson title/source 的 object/number/array/blank 均报错", () => {
+    for (const field of ["title", "source"]) {
+      for (const [label, value] of MALFORMED_TEXTS) {
+        const bad = clone();
+        setField(bad.lessons[0], field, value);
+        expect(() => validateChapter(bad), `${field} ${label}`).not.toThrow();
+        expect(
+          validateChapter(bad).some((e) => e.includes(field)),
+          `${field} ${label}`
+        ).toBe(true);
+      }
+    }
+  });
+
+  test("question prompt 的 object/number/array/blank 均报错", () => {
+    for (const [label, value] of MALFORMED_TEXTS) {
+      const bad = clone();
+      setField(bad.lessons[0].questions[0], "prompt", value);
+      expect(() => validateChapter(bad), label).not.toThrow();
+      expect(validateChapter(bad).some((e) => e.includes("prompt")), label).toBe(true);
+    }
+  });
+
+  test("card title/body 的 object/number/array/blank 均报错", () => {
+    for (const field of ["title", "body"]) {
+      for (const [label, value] of MALFORMED_TEXTS) {
+        const bad = clone();
+        setField(bad.cards[0], field, value);
+        expect(() => validateChapter(bad), `${field} ${label}`).not.toThrow();
+        expect(
+          validateChapter(bad).some((e) => e.includes(field)),
+          `${field} ${label}`
+        ).toBe(true);
+      }
+    }
+  });
+
+  test("可选 translation/example 的 object/number/array/blank 均报错", () => {
+    for (const field of ["translation", "example"]) {
+      for (const [label, value] of MALFORMED_TEXTS) {
+        const bad = clone();
+        setField(bad.lessons[0].questions[0], field, value);
+        expect(() => validateChapter(bad), `${field} ${label}`).not.toThrow();
+        expect(
+          validateChapter(bad).some((e) => e.includes(field)),
+          `${field} ${label}`
+        ).toBe(true);
+      }
+    }
+  });
+
+  test("explain 仍允许空字符串", () => {
+    const bad = clone();
+    bad.lessons[0].questions[0].explain = "";
+    expect(validateChapter(bad)).toEqual([]);
   });
 });

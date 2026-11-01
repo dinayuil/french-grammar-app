@@ -19,14 +19,10 @@ function toolPath(appRoot, ...segments) {
  */
 export function discoverNodeTests(appRoot = APP_ROOT) {
   const scriptsDir = path.join(appRoot, "scripts");
-  try {
-    return readdirSync(scriptsDir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".test.mjs"))
-      .map((entry) => path.join(scriptsDir, entry.name))
-      .sort();
-  } catch {
-    return [];
-  }
+  return readdirSync(scriptsDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".test.mjs"))
+    .map((entry) => path.join(scriptsDir, entry.name))
+    .sort();
 }
 
 /**
@@ -79,12 +75,15 @@ export function createPlan(command, extraArgs = [], rawEdition, options = {}) {
     // arguments must not trigger the slower script/guard Node suites.
     if (extraArgs.length === 0) {
       const nodeTests = discoverNodeTests(appRoot);
-      if (nodeTests.length > 0) {
-        steps.push({
-          bin: nodePath,
-          args: ["--test", ...nodeTests],
-        });
+      if (nodeTests.length === 0) {
+        throw new Error(
+          `未发现 Node 测试文件 (*.test.mjs) 于 ${path.join(appRoot, "scripts")}`
+        );
       }
+      steps.push({
+        bin: nodePath,
+        args: ["--test", ...nodeTests],
+      });
     }
     steps.push({
       bin: nodePath,
