@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">法语语法练习·公开版</string>
+    <string name="title_activity_main">法语语法练习·公开版</string>
+    <string name="package_name">com.fge.open</string>
+    <string name="custom_url_scheme">com.fge.open</string>
+</resources>

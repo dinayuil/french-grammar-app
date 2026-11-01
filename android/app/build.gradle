@@ -1,0 +1,109 @@
+import groovy.json.JsonSlurper
+
+apply plugin: 'com.android.application'
+
+def editionIdentities = [
+    public  : [appId: 'com.fge.open', webDir: 'dist/public'],
+    internal: [appId: 'com.fge.app', webDir: 'dist/internal']
+]
+
+def verifySynchronizedEdition = { String edition ->
+    def identity = editionIdentities[edition]
+    def assetsDir = file('src/main/assets')
+    def markerFile = new File(assetsDir, 'public/fge-edition.json')
+    def configFile = new File(assetsDir, 'capacitor.config.json')
+
+    if (!markerFile.isFile()) {
+        throw new GradleException("Missing synchronized web marker ${markerFile}. Use the packaging wrapper (npm run apk or npm run apk:internal); bare assemble is not supported.")
+    }
+
+    def marker = new JsonSlurper().parse(markerFile)
+    if (marker.edition != edition || marker.appId != identity.appId || marker.webDir != identity.webDir) {
+        throw new GradleException("Synchronized web assets are for edition '${marker.edition}', not '${edition}'. Run the matching packaging wrapper before assembling.")
+    }
+
+    if (!configFile.isFile()) {
+        throw new GradleException("Missing synchronized Capacitor config ${configFile}. Run the packaging wrapper before assembling.")
+    }
+
+    def capConfig = new JsonSlurper().parse(configFile)
+    if (capConfig.appId != identity.appId || capConfig.webDir != identity.webDir) {
+        throw new GradleException("Synchronized Capacitor config (appId=${capConfig.appId}, webDir=${capConfig.webDir}) does not match the '${edition}' flavor.")
+    }
+
+    if (capConfig.server != null) {
+        throw new GradleException("Synchronized Capacitor config contains server overrides; WebView loading behavior must stay unchanged.")
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name == 'prePublicDebugBuild' || task.name == 'prePublicReleaseBuild') {
+        task.doFirst { verifySynchronizedEdition('public') }
+    }
+    if (task.name == 'preInternalDebugBuild' || task.name == 'preInternalReleaseBuild') {
+        task.doFirst { verifySynchronizedEdition('internal') }
+    }
+}
+
+android {
+    namespace = "com.fge.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    flavorDimensions "edition"
+    productFlavors {
+        create("public") {
+            dimension "edition"
+            applicationId "com.fge.open"
+        }
+        create("internal") {
+            dimension "edition"
+            applicationId "com.fge.app"
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

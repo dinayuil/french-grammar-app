@@ -1,0 +1,38 @@
+{
+  "name": "french-grammar-exercise",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/run-mode.mjs dev public",
+    "dev:internal": "node scripts/run-mode.mjs dev internal",
+    "build": "node scripts/run-mode.mjs build public",
+    "build:internal": "node scripts/run-mode.mjs build internal",
+    "preview": "node scripts/run-mode.mjs preview public",
+    "preview:internal": "node scripts/run-mode.mjs preview internal",
+    "test": "node scripts/run-mode.mjs test public",
+    "test:internal": "node scripts/run-mode.mjs test internal",
+    "check:public": "node scripts/check-public.mjs",
+    "apk": "node scripts/build-apk.mjs public",
+    "apk:internal": "node scripts/build-apk.mjs internal"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^25.0.1",
+    "typescript": "~5.6.3",
+    "vite": "^6.0.3",
+    "vitest": "^3.0.0"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
+  }
+}
