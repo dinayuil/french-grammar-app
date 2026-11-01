@@ -375,7 +375,7 @@ test("plain files at generated paths and directories at generated files are reje
   const result = await checkPublic({ appRoot, publicRoot });
   assertFails(
     result,
-    /generated (?:directory|file) skip expects a regular (?:directory|file)|not a regular directory/i,
+    /generated (?:directory|file) skip expects a regular (?:directory|file)|not a regular directory|invalid submodule gitfile|submodule gitfile is too large/i,
     "generated path type"
   );
   const text = errorsOf(result);
@@ -383,6 +383,112 @@ test("plain files at generated paths and directories at generated files are reje
   assert.match(text, /app: \.git:/);
   assert.match(text, /public: \.git:/);
   assert.match(text, /capacitor\.plugins\.json/);
+});
+
+const GITFILE_CASES = [
+  ["arbitrary text", "not a git pointer\n"],
+  ["empty file", ""],
+  ["multiline LF", "gitdir: ../.git/modules/app\nextra line\n"],
+  ["multiline CRLF", "gitdir: ../.git/modules/app\r\nextra line\r\n"],
+  ["extra blank line", "gitdir: ../.git/modules/app\n\n"],
+  ["absolute POSIX path", "gitdir: /tmp/.git/modules/app\n"],
+  ["absolute Windows path", "gitdir: C:/tmp/.git/modules/app\n"],
+  ["worktree pointer", "gitdir: ../.git/worktrees/app\n"],
+  ["traversal name", "gitdir: ../.git/modules/../app\n"],
+  ["current-directory name", "gitdir: ../.git/modules/.\n"],
+  ["parent-directory name", "gitdir: ../.git/modules/..\n"],
+  ["extra path segments", "gitdir: ../.git/modules/group/app\n"],
+  ["backslash segments", "gitdir: ..\\.git\\modules\\app\n"],
+  ["unsafe space in name", "gitdir: ../.git/modules/app name\n"],
+  ["trailing dot in name", "gitdir: ../.git/modules/app.\n"],
+  ["leading dot in name", "gitdir: ../.git/modules/.hidden\n"],
+  ["trailing text after path", "gitdir: ../.git/modules/app extra\n"],
+  ["over 1024 bytes", `gitdir: ../.git/modules/app${" ".repeat(1024)}\n`],
+];
+
+test("top-level submodule gitfiles pass in both scan roots for LF and CRLF", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+
+  for (const [label, newline] of [
+    ["LF", "\n"],
+    ["CRLF", "\r\n"],
+  ]) {
+    await writeAt(appRoot, ".git", `gitdir: ../.git/modules/app${newline}`);
+    await writeAt(publicRoot, ".git", `gitdir: ../.git/modules/content-public${newline}`);
+
+    const result = await checkPublic({ appRoot, publicRoot });
+
+    assert.equal(result.ok, true, `${label}: ${errorsOf(result)}`);
+    assert.ok(!result.inventory.app.includes(".git"), `${label}: app .git entered inventory`);
+    assert.ok(!result.inventory.public.includes(".git"), `${label}: public .git entered inventory`);
+    assert.ok(result.stats.skippedGenerated >= 2, `${label}: gitfiles were not reported as skipped`);
+  }
+});
+
+test("unsafe or malformed top-level gitfiles fail in both scan roots", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+
+  for (const [caseName, content] of GITFILE_CASES) {
+    await writeAt(publicRoot, ".git", "gitdir: ../.git/modules/content-public\n");
+    await writeAt(appRoot, ".git", content);
+    const appResult = await checkPublic({ appRoot, publicRoot });
+    assertFails(
+      appResult,
+      /\.git:.*(?:gitfile|gitdir pointer|too large)|gitfile|gitdir pointer/i,
+      `app: ${caseName}`
+    );
+    assert.match(errorsOf(appResult), /app: \.git:/, `app: ${caseName}`);
+
+    await writeAt(appRoot, ".git", "gitdir: ../.git/modules/app\n");
+    await writeAt(publicRoot, ".git", content);
+    const publicResult = await checkPublic({ appRoot, publicRoot });
+    assertFails(
+      publicResult,
+      /\.git:.*(?:gitfile|gitdir pointer|too large)|gitfile|gitdir pointer/i,
+      `public: ${caseName}`
+    );
+    assert.match(errorsOf(publicResult), /public: \.git:/, `public: ${caseName}`);
+  }
+});
+
+test("oversized gitfiles fail on the explicit size limit", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  const oversized = `gitdir: ../.git/modules/app${" ".repeat(1024)}\n`;
+  assert.ok(Buffer.byteLength(oversized) > 1024);
+  await writeAt(appRoot, ".git", oversized);
+
+  const result = await checkPublic({ appRoot, publicRoot });
+
+  assertFails(result, /too large.*1024|1024.*too large/i, "oversized gitfile");
+});
+
+test("real .git directories stay skipped while nested .git entries are not exempt", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot, { chapters: { "chapters/01.json": chapter() } });
+  await writeAt(appRoot, ".git/config", "[core]\n");
+  await writeAt(publicRoot, ".git/config", "[core]\n");
+
+  const directoryResult = await checkPublic({ appRoot, publicRoot });
+  assert.equal(directoryResult.ok, true, errorsOf(directoryResult));
+  assert.ok(!directoryResult.inventory.app.includes(".git"));
+  assert.ok(!directoryResult.inventory.public.includes(".git"));
+
+  await writeAt(appRoot, "src/.git", "gitdir: ../.git/modules/nested\n");
+  await writeAt(publicRoot, "chapters/.git", "gitdir: ../.git/modules/nested\n");
+  const nestedFiles = await checkPublic({ appRoot, publicRoot });
+  assertFails(nestedFiles, /non-allowlisted app file|non-allowlisted public file/i, "nested gitfiles");
+  assert.match(errorsOf(nestedFiles), /app: src\/\.git:/);
+  assert.match(errorsOf(nestedFiles), /public: chapters\/\.git:/);
+
+  await rm(path.join(appRoot, "src/.git"), { force: true });
+  await rm(path.join(publicRoot, "chapters/.git"), { force: true });
+  await writeAt(appRoot, "src/nested/.git/config", "[core]\n");
+  const nestedDirectory = await checkPublic({ appRoot, publicRoot });
+  assertFails(nestedDirectory, /unexpected directory|non-allowlisted/i, "nested .git directory");
+  assert.match(errorsOf(nestedDirectory), /app: src\/nested\/\.git\/config: non-allowlisted/i);
 });
 
 test("book-page provenance markers in a declared public chapter fail", async (t) => {
