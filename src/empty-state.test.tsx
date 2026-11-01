@@ -3,6 +3,7 @@ import { act } from "react";
 import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
 import App from "./App";
 import { HomeView } from "./views/HomeView";
+import { CHAPTERS } from "./content";
 import { DEFAULT_PROGRESS } from "./storage";
 import { STORAGE_KEY } from "./config";
 import type { Chapter, Progress } from "./types";
@@ -85,7 +86,19 @@ const syntheticChapter: Chapter = {
   challenges: [],
 };
 
-describe("HomeView 空 chapters(与 edition 无关)", () => {
+const staleProgress: Progress = {
+  ...DEFAULT_PROGRESS,
+  mistakes: {
+    "stale-unknown-qid": { lastWrong: "2026-01-01", count: 3 },
+  },
+};
+
+function firstPublicQuestionId(): string | undefined {
+  return CHAPTERS.flatMap((ch) => [...ch.lessons, ...ch.challenges])
+    .flatMap((lesson) => lesson.questions)[0]?.id;
+}
+
+describe("HomeView 空 chapters(显式空 fixture,与 edition 无关)", () => {
   test("空 chapters:固定文案、无章节卡、复习禁用且不触发回调", () => {
     const onOpenReview = vi.fn();
     renderHomeView({ chapters: [], progress: DEFAULT_PROGRESS, onOpenReview });
@@ -97,41 +110,22 @@ describe("HomeView 空 chapters(与 edition 无关)", () => {
     click(reviewBtn);
     expect(onOpenReview).not.toHaveBeenCalled();
   });
-});
 
-describe.skipIf(__FGE_EDITION__ !== "public")("空题库公开首页", () => {
-  test("公开零章节可启动并显示固定文案", () => {
-    renderApp();
+  test("空 chapters 且仅有未知旧错题:复习禁用、无计数、不触发回调", () => {
+    const onOpenReview = vi.fn();
+    renderHomeView({ chapters: [], progress: staleProgress, onOpenReview });
     expect(container.textContent).toContain("原创题库正在准备中");
     expect($$(".chapter-card").length).toBe(0);
-  });
-
-  test("没有可启动练习时复习按钮禁用", () => {
-    renderApp();
-    const reviewBtn = $(".btn-review") as HTMLButtonElement | null;
-    expect(reviewBtn).not.toBeNull();
-    expect(reviewBtn!.disabled).toBe(true);
-  });
-
-  test("存在未知旧错题时复习按钮仍禁用且不进入空练习", () => {
-    const stale: Progress = {
-      ...DEFAULT_PROGRESS,
-      mistakes: {
-        "stale-unknown-qid": { lastWrong: "2026-01-01", count: 3 },
-      },
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stale));
-    renderApp();
     const reviewBtn = $(".btn-review") as HTMLButtonElement | null;
     expect(reviewBtn).not.toBeNull();
     expect(reviewBtn!.disabled).toBe(true);
     expect($$(".review-count").length).toBe(0);
     click(reviewBtn);
-    // 仍在首页空状态,没有进入复习或关卡页
-    expect(container.textContent).toContain("原创题库正在准备中");
-    expect($$(".lesson").length).toBe(0);
+    expect(onOpenReview).not.toHaveBeenCalled();
   });
+});
 
+describe("App 导航与设置(不依赖题库是否为空)", () => {
   test("统计和设置切换正常,设置保存后回主页不崩溃", () => {
     renderApp();
     const statsNav = [...$$(".nav-item")].find((el) => el.textContent?.includes("统计"));
@@ -140,7 +134,7 @@ describe.skipIf(__FGE_EDITION__ !== "public")("空题库公开首页", () => {
 
     const homeNav = [...$$(".nav-item")].find((el) => el.textContent?.includes("练习"));
     click(homeNav ?? null);
-    expect(container.textContent).toContain("原创题库正在准备中");
+    expect($$(".home").length).toBe(1);
 
     const settingsNav = [...$$(".nav-item")].find((el) => el.textContent?.includes("设置"));
     click(settingsNav ?? null);
@@ -152,8 +146,52 @@ describe.skipIf(__FGE_EDITION__ !== "public")("空题库公开首页", () => {
     expect(saved.dailyGoal).toBe(120);
 
     click(homeNav ?? null);
-    expect(container.textContent).toContain("原创题库正在准备中");
-    expect($$(".chapter-card").length).toBe(0);
+    expect($$(".home").length).toBe(1);
+  });
+});
+
+describe.skipIf(__FGE_EDITION__ !== "public")("真实公开 App:非空题库", () => {
+  test("真实章节进入第一关练习", () => {
+    renderApp();
+    expect(container.querySelector(".empty-state")).toBeNull();
+    const chapterCards = $$(".chapter-card");
+    expect(chapterCards.length).toBeGreaterThan(0);
+
+    const firstChapter = chapterCards[0];
+    expect(firstChapter.querySelector(".chapter-title")?.textContent?.trim()).toBeTruthy();
+    click(firstChapter.querySelector(".chapter-toggle"));
+
+    const lessonItems = $$(".lesson-item");
+    expect(lessonItems.length).toBeGreaterThan(0);
+    const firstLesson = lessonItems[0];
+    expect(firstLesson.textContent?.trim()).toBeTruthy();
+    click(firstLesson);
+
+    expect($$(".lesson").length).toBe(1);
+    expect($(".quiz-prompt")?.textContent?.trim()).toBeTruthy();
+    expect($(".lesson-counter")?.textContent).toMatch(/^1\/\d+$/);
+  });
+
+  test("真实公开错题可进入复习", () => {
+    const questionId = firstPublicQuestionId();
+    expect(questionId).toBeTruthy();
+    const progress: Progress = {
+      ...DEFAULT_PROGRESS,
+      mistakes: {
+        [questionId!]: { lastWrong: "2026-01-01", count: 1 },
+      },
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+
+    renderApp();
+    const reviewBtn = $(".btn-review") as HTMLButtonElement | null;
+    expect(reviewBtn).not.toBeNull();
+    expect(reviewBtn!.disabled).toBe(false);
+    expect($$(".review-count").length).toBe(1);
+    click(reviewBtn);
+
+    expect($$(".lesson").length).toBe(1);
+    expect($(".quiz-prompt")?.textContent?.trim()).toBeTruthy();
   });
 });
 

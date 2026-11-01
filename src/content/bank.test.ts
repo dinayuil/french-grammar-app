@@ -5,7 +5,13 @@ import process from "node:process";
 import { CHAPTERS } from "../content";
 import { completedQuestion } from "../answerFill";
 import { validateChapter } from "./validate";
-import type { Chapter, Question } from "../types";
+import type {
+  Chapter,
+  ChoiceQuestion,
+  LettersQuestion,
+  Question,
+  TilesQuestion,
+} from "../types";
 
 const EDITION = __FGE_EDITION__;
 
@@ -14,6 +20,13 @@ function privateRoot(): string {
   return configured
     ? resolve(process.cwd(), configured)
     : resolve(process.cwd(), "..", "content-private");
+}
+
+function publicRoot(): string {
+  const configured = process.env.FGE_PUBLIC_CONTENT_DIR;
+  return configured
+    ? resolve(process.cwd(), configured)
+    : resolve(process.cwd(), "..", "content-public");
 }
 
 interface Manifest {
@@ -43,8 +56,72 @@ function readJson<T>(relativePath: string): T {
   return JSON.parse(readFileSync(resolve(privateRoot(), relativePath), "utf8")) as T;
 }
 
+function readPublicJson<T>(relativePath: string): T {
+  return JSON.parse(readFileSync(resolve(publicRoot(), relativePath), "utf8")) as T;
+}
+
 function questionsOf(chapters: Chapter[]): Question[] {
   return chapters.flatMap((ch) => [...ch.lessons, ...ch.challenges]).flatMap((l) => l.questions);
+}
+
+function multiset(words: readonly string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const word of words) counts.set(word, (counts.get(word) ?? 0) + 1);
+  return counts;
+}
+
+const ACCENTED_LETTER = /[À-ÖØ-öø-ÿ]/;
+
+/**
+ * 模拟当前字母题的输入能力:答案字母按多重集作为字母块,accentKeys
+ * 可重复点击。备选答案若需要答案里没有的字母,只能来自 accentKeys。
+ */
+function lettersInputProblems(q: LettersQuestion): string[] {
+  const problems: string[] = [];
+  const accentKeys = new Set(q.accentKeys ?? []);
+  const words: Array<{ label: string; value: string }> = [
+    { label: "answer", value: q.answer },
+    ...(q.alternatives ?? []).map((value, index) => ({
+      label: `alternatives[${index}]`,
+      value,
+    })),
+  ];
+
+  for (const { label, value } of words) {
+    if (/\s/.test(value)) {
+      problems.push(`${q.id}: ${label} 含空格或空白 (${JSON.stringify(value)})`);
+      continue;
+    }
+    const remaining = multiset([...q.answer]);
+    for (const ch of value) {
+      const available = remaining.get(ch) ?? 0;
+      if (available > 0) {
+        remaining.set(ch, available - 1);
+      } else if (!accentKeys.has(ch)) {
+        const accentNote = ACCENTED_LETTER.test(ch) ? "；必要重音也未出现在 accentKeys" : "";
+        problems.push(`${q.id}: ${label} 字符「${ch}」无法输入${accentNote}`);
+      }
+    }
+  }
+  return problems;
+}
+
+function normalizeApostrophes(value: string): string {
+  return value.normalize("NFC").replace(/\u2019/g, "'");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * 以拉丁字母为词界,大小写不敏感。中文等非拉丁字符视为边界,所以
+ * answer "a" 不会命中 "banana" 这类英文长词内部,但独立出现的
+ * "a"/"A" 仍会被识别。
+ */
+function containsStandaloneFrenchWord(text: string, word: string): boolean {
+  const source = `(?<!\\p{Script=Latin})${escapeRegExp(normalizeApostrophes(word))}(?!\\p{Script=Latin})`;
+  return new RegExp(source, "iu").test(normalizeApostrophes(text));
 }
 
 const EXAMPLE_FIELD_SET = ["example"] as const;
@@ -66,13 +143,142 @@ function isNonEmptyString(value: unknown): value is string {
 
 /**
  * 真实读取所选题库的入口测试。
- * public 分支只断言真实入口的空库;私库路径与 regressions 仅在 internal
- * 分支访问,public 进程不会构造也不读取任何私有内容。
+ * public 分支只读取公开题库与公开 manifest 的相对路径;私库路径与
+ * regressions 仅在 internal 分支访问,public 进程不会构造也不读取任何
+ * 私有内容。数量从 manifest 读取,不写死章数/题数。
  */
-describe.skipIf(EDITION !== "public")("public: 真实所选库", () => {
-  test("合法空库:CHAPTERS 为空数组,不 mock 虚拟模块", () => {
-    expect(Array.isArray(CHAPTERS)).toBe(true);
-    expect(CHAPTERS).toEqual([]);
+describe.skipIf(EDITION !== "public")("public: 真实公开题库非空契约", () => {
+  test("真实入口非空,所选 manifest 的 schema/计数与实际加载一致,全库 ID 唯一", () => {
+    const manifest = readPublicJson<Manifest>("manifest.json");
+    const questions = questionsOf(CHAPTERS);
+
+    expect(CHAPTERS.length).toBeGreaterThan(0);
+    expect(questions.length).toBeGreaterThan(0);
+    expect(manifest.schemaVersion).toBe(1);
+    expect(manifest.edition).toBe("public");
+    expect(manifest.expectedChapterCount).toBeGreaterThan(0);
+    expect(manifest.expectedQuestionCount).toBeGreaterThan(0);
+    expect(manifest.chapters).toHaveLength(CHAPTERS.length);
+    expect(manifest.expectedChapterCount).toBe(CHAPTERS.length);
+    expect(manifest.expectedQuestionCount).toBe(questions.length);
+
+    const chapterIds = CHAPTERS.map((ch) => ch.id);
+    const lessonIds = CHAPTERS.flatMap((ch) =>
+      [...ch.lessons, ...ch.challenges].map((lesson) => lesson.id)
+    );
+    const questionIds = questions.map((q) => q.id);
+    const cardIds = CHAPTERS.flatMap((ch) => ch.cards.map((card) => card.id));
+    const allIds = [...chapterIds, ...lessonIds, ...questionIds, ...cardIds];
+
+    expect(new Set(chapterIds).size).toBe(chapterIds.length);
+    expect(new Set(lessonIds).size).toBe(lessonIds.length);
+    expect(new Set(questionIds).size).toBe(questionIds.length);
+    expect(new Set(cardIds).size).toBe(cardIds.length);
+    expect(new Set(allIds).size).toBe(allIds.length);
+  });
+
+  test("每章通过 schema 且均有卡片/练习/综合挑战,每题翻译与解析非空", () => {
+    expect(CHAPTERS.length).toBeGreaterThan(0);
+    const schemaErrors = CHAPTERS.flatMap((ch) =>
+      validateChapter(ch).map((error) => `${ch.id}: ${error}`)
+    );
+    expect(schemaErrors).toEqual([]);
+
+    expect(CHAPTERS.filter((ch) => ch.cards.length === 0).map((ch) => ch.id)).toEqual([]);
+    expect(CHAPTERS.filter((ch) => ch.lessons.length === 0).map((ch) => ch.id)).toEqual([]);
+    expect(CHAPTERS.filter((ch) => ch.challenges.length === 0).map((ch) => ch.id)).toEqual([]);
+
+    const questions = questionsOf(CHAPTERS);
+    expect(questions.filter((q) => !isNonEmptyString(q.translation)).map((q) => q.id)).toEqual([]);
+    expect(questions.filter((q) => !isNonEmptyString(q.explain)).map((q) => q.id)).toEqual([]);
+
+    for (const q of questions) {
+      const completed = completedQuestion(q);
+      expect(completed.prompt.trim(), `${q.id}: 补全后的题干为空`).not.toBe("");
+      if (q.type === "tiles") {
+        expect(completed.target, `${q.id}: tiles 完整目标句不正确`).toBe(q.answer.join(" "));
+      }
+    }
+  });
+
+  test("补块题 answer 与全部 alternatives 均可由 bank 多重集构造", () => {
+    const tiles = questionsOf(CHAPTERS).filter(
+      (q): q is TilesQuestion => q.type === "tiles"
+    );
+    expect(tiles.length).toBeGreaterThan(0);
+
+    const problems: string[] = [];
+    for (const q of tiles) {
+      const bank = multiset(q.bank);
+      const sequences: Array<{ label: string; value: string[] }> = [
+        { label: "answer", value: q.answer },
+        ...(q.alternatives ?? []).map((value, index) => ({
+          label: `alternatives[${index}]`,
+          value,
+        })),
+      ];
+      for (const { label, value } of sequences) {
+        const remaining = new Map(bank);
+        for (const word of value) {
+          const available = remaining.get(word) ?? 0;
+          if (available === 0) {
+            problems.push(`${q.id}: ${label} 词「${word}」超出 bank 多重集`);
+          } else {
+            remaining.set(word, available - 1);
+          }
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test("字母题 answer 与 alternatives 无空格,所需字母和必要重音可输入", () => {
+    const letters = questionsOf(CHAPTERS).filter(
+      (q): q is LettersQuestion => q.type === "letters"
+    );
+    expect(letters.length).toBeGreaterThan(0);
+    expect(letters.flatMap(lettersInputProblems)).toEqual([]);
+  });
+
+  test("字母题 translation 不以独立法文词直接泄露 answer/alternatives", () => {
+    const letters = questionsOf(CHAPTERS).filter(
+      (q): q is LettersQuestion => q.type === "letters"
+    );
+    expect(letters.length).toBeGreaterThan(0);
+
+    const problems: string[] = [];
+    for (const q of letters) {
+      const translation = q.translation ?? "";
+      const words = new Set([q.answer, ...(q.alternatives ?? [])]);
+      for (const word of words) {
+        if (containsStandaloneFrenchWord(translation, word)) {
+          problems.push(`${q.id}: translation 直接包含独立词「${word}」`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test("章级及关卡级选择题不能固定同一答案位置", () => {
+    const problems: string[] = [];
+    for (const ch of CHAPTERS) {
+      const choices = questionsOf([ch]).filter(
+        (q): q is ChoiceQuestion => q.type === "choice"
+      );
+      const positions = new Set(choices.map((q) => q.answer));
+      if (choices.length >= 8 && positions.size === 1) {
+        problems.push(
+          `${ch.id}: ${choices.length} 道 choice 的正确答案全部为索引 ${[...positions][0]}`
+        );
+      }
+      for (const lesson of [...ch.lessons, ...ch.challenges]) {
+        const questions = lesson.questions.filter((q) => q.type === "choice");
+        if (questions.length >= 3 && new Set(questions.map((q) => q.answer)).size === 1) {
+          problems.push(`${lesson.id}: 连续关卡内选择题答案位置固定`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
   });
 });
 
