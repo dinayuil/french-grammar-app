@@ -37,6 +37,41 @@ test("choice:单个 ... 填入正确选项", () => {
   });
 });
 
+test("choice:多空位组答按顺序逐空填入选项各部分", () => {
+  expect(
+    completedQuestion(
+      choice({ prompt: "① ___ sac. ② la porte ___ garage.", options: ["le / du", "un / du"], answer: 1 })
+    )
+  ).toEqual({
+    prompt: "① un sac. ② la porte du garage.",
+    target: null,
+  });
+});
+
+test("choice:多空位中 — 表示不加词并收拢空格", () => {
+  expect(
+    completedQuestion(
+      choice({
+        prompt: "① J'ai beaucoup ___ livres. ② J'ai deux ___ livres.",
+        options: ["de / de", "de / —"],
+        answer: 1,
+      })
+    )
+  ).toEqual({
+    prompt: "① J'ai beaucoup de livres. ② J'ai deux livres.",
+    target: null,
+  });
+});
+
+test("choice:单空位含' / '的选项仍整体填入", () => {
+  expect(
+    completedQuestion(choice({ prompt: "C'est ___ belle journée.", options: ["un / une", "une"], answer: 0 }))
+  ).toEqual({
+    prompt: "C'est un / une belle journée.",
+    target: null,
+  });
+});
+
 test("choice:双空题只填指定空并去掉标记", () => {
   expect(
     completedQuestion(

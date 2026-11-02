@@ -18,6 +18,18 @@ function tidy(s: string): string {
 
 function fillChoice(q: ChoiceQuestion): string {
   const value = q.options[q.answer];
+  const blanks = q.prompt.match(/___|\.\.\./g) ?? [];
+  const parts = value.split(" / ");
+  // 多空位组答题:选项按 " / " 分隔各空答案,按出现顺序逐空填入;— 表示不加任何词。
+  if (!/\(第(\d+)空\)/.test(q.prompt) && blanks.length > 1 && parts.length === blanks.length) {
+    let i = 0;
+    return tidy(
+      q.prompt.replace(/(___|\.\.\.)/g, () => {
+        const part = parts[i++];
+        return part === "—" ? "" : part;
+      }),
+    );
+  }
   const marker = q.prompt.match(/\(第(\d+)空\)/);
   const n = marker ? Number(marker[1]) : 1;
   let count = 0;
