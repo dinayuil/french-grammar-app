@@ -142,6 +142,21 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 /**
+ * 首页(HomeView)统一按显示顺序生成「第N章」编号,public/internal 共用同一 UI。
+ * 章节标题若自带「第N章 」前缀就会显示成双编号,所以直接对当前 edition 真实加载的
+ * 题库断言。该 describe 不带 skipIf:public 与 internal 进程各自检查所选题库。
+ */
+describe("两版共用 UI:章节标题不得自带第N章前缀", () => {
+  test("真实题库所有章节标题均不以「第N章」开头", () => {
+    expect(CHAPTERS.length).toBeGreaterThan(0);
+    const offenders = CHAPTERS
+      .map((ch) => ch.title)
+      .filter((title) => /^第\d+章/.test(title));
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
  * 真实读取所选题库的入口测试。
  * public 分支只读取公开题库与公开 manifest 的相对路径;私库路径与
  * regressions 仅在 internal 分支访问,public 进程不会构造也不读取任何

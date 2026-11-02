@@ -60,8 +60,7 @@ export function HomeView({ chapters, progress, onOpenLesson, onOpenCards, onOpen
         <div className="chapter-list">
           {chapters.map((ch, index) => {
             const open = openChapter === ch.id;
-            // 内部版章节标题自带「第N章 」前缀,不要再叠加编号;公开版标题无前缀,照旧编号。
-            const titleHasNumber = /^第\d+章/.test(ch.title);
+            // 编号统一由显示顺序生成,章节标题不得自带「第N章」前缀(两版共用)。
             const all = [...ch.lessons, ...ch.challenges];
             const doneCount = all.filter((l) => (progress.lessons[l.id]?.stars ?? 0) > 0).length;
             return (
@@ -70,11 +69,7 @@ export function HomeView({ chapters, progress, onOpenLesson, onOpenCards, onOpen
                   <button className="chapter-toggle" onClick={() => setOpenChapter(open ? null : ch.id)}>
                     <div>
                       <div className="chapter-title">
-                        {!titleHasNumber && (
-                          <>
-                            <span className="chapter-number">第{index + 1}章</span>{" "}
-                          </>
-                        )}
+                        <span className="chapter-number">第{index + 1}章</span>{" "}
                         {ch.title}
                       </div>
                       <div className="chapter-title-fr">{ch.titleFr}</div>
