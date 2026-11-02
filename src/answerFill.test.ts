@@ -63,6 +63,93 @@ test("choice:多空位中 — 表示不加词并收拢空格", () => {
   });
 });
 
+test("choice:选项分槽数与空数不一致时回退旧路径,只填第一空", () => {
+  expect(
+    completedQuestion(
+      choice({
+        prompt: "Le chat ___ et le chien ___.",
+        options: ["dort"],
+        answer: 0,
+      })
+    )
+  ).toEqual({
+    prompt: "Le chat dort et le chien ___.",
+    target: null,
+  });
+});
+
+test("choice:带（第N空）标记且选项含' / '时优先按标记填单一空", () => {
+  expect(
+    completedQuestion(
+      choice({
+        prompt: "Nous allons ... marché et ... piscine.(第2空)",
+        options: ["au / à la"],
+        answer: 0,
+      })
+    )
+  ).toEqual({
+    prompt: "Nous allons ... marché et au / à la piscine.",
+    target: null,
+  });
+});
+
+test("choice:四空位按顺序逐空填入", () => {
+  expect(
+    completedQuestion(
+      choice({
+        prompt: "___ père, ___ mère, ___ enfants et ___ amis.",
+        options: ["le / la / les / des"],
+        answer: 0,
+      })
+    )
+  ).toEqual({
+    prompt: "le père, la mère, les enfants et des amis.",
+    target: null,
+  });
+});
+
+test("choice:— 位于首空或末空时都不留下多余空格", () => {
+  expect(
+    completedQuestion(
+      choice({
+        prompt: "① ___ sac. ② la porte ___ garage.",
+        options: ["— / du"],
+        answer: 0,
+      })
+    )
+  ).toEqual({
+    prompt: "① sac. ② la porte du garage.",
+    target: null,
+  });
+  expect(
+    completedQuestion(
+      choice({
+        prompt: "① la porte ___ garage. ② ___ sac.",
+        options: ["du / —"],
+        answer: 0,
+      })
+    )
+  ).toEqual({
+    prompt: "① la porte du garage. ② sac.",
+    target: null,
+  });
+});
+
+test("choice:多空位补入 d' 与元音开头词时 tidy 收拢省音空格", () => {
+  expect(
+    completedQuestion(
+      choice({
+        prompt: "un verre ___ eau et beaucoup ___ étudiants.",
+        options: ["d' / d'"],
+        answer: 0,
+      })
+    )
+  ).toEqual({
+    prompt: "un verre d'eau et beaucoup d'étudiants.",
+    target: null,
+  });
+});
+
 test("choice:单空位含' / '的选项仍整体填入", () => {
   expect(
     completedQuestion(choice({ prompt: "C'est ___ belle journée.", options: ["un / une", "une"], answer: 0 }))

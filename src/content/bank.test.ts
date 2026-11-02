@@ -201,6 +201,25 @@ describe.skipIf(EDITION !== "public")("public: 真实公开题库非空契约", 
     }
   });
 
+  test("多空位 choice 题无（第N空）标记时补全题干不残留占位符", () => {
+    const multiBlank = questionsOf(CHAPTERS).filter((q): q is ChoiceQuestion => {
+      if (q.type !== "choice") return false;
+      const blanks = (q.prompt.match(/___|\.\.\./g) ?? []).length;
+      return (
+        blanks > 1 &&
+        !/\(第\d+空\)/.test(q.prompt) &&
+        q.options.every((option) => option.split(" / ").length === blanks)
+      );
+    });
+    expect(multiBlank.length).toBeGreaterThan(0);
+
+    const problems = multiBlank
+      .map((q) => ({ id: q.id, prompt: completedQuestion(q).prompt }))
+      .filter(({ prompt }) => /___|\.\.\./.test(prompt))
+      .map(({ id, prompt }) => `${id}: 补全后残留占位符 ${JSON.stringify(prompt)}`);
+    expect(problems).toEqual([]);
+  });
+
   test("补块题 answer 与全部 alternatives 均可由 bank 多重集构造", () => {
     const tiles = questionsOf(CHAPTERS).filter(
       (q): q is TilesQuestion => q.type === "tiles"
