@@ -86,6 +86,20 @@ const syntheticChapter: Chapter = {
   challenges: [],
 };
 
+const numberedChapter: Chapter = {
+  ...syntheticChapter,
+  id: "ch-numbered",
+  title: "第1章 动词 être 和 avoir",
+  titleFr: "Chapitre 1 : le verbe être et avoir",
+};
+
+const secondSyntheticChapter: Chapter = {
+  ...syntheticChapter,
+  id: "ch-synthetic-2",
+  title: "合成章节二",
+  titleFr: "Chapitre synthétique II",
+};
+
 const staleProgress: Progress = {
   ...DEFAULT_PROGRESS,
   mistakes: {
@@ -202,6 +216,7 @@ describe("有题模式下功能不被禁用", () => {
     expect($$(".chapter-card").length).toBe(1);
     expect(container.textContent).toContain("合成章节");
     expect($(".chapter-title")?.textContent).toContain("第1章");
+    expect($(".chapter-title")?.textContent).toBe("第1章 合成章节");
 
     click($(".chapter-toggle"));
     const lessonBtn = $(".lesson-item");
@@ -210,6 +225,27 @@ describe("有题模式下功能不被禁用", () => {
 
     click(lessonBtn);
     expect(onOpenLesson).toHaveBeenCalledWith("ch-synthetic", "les-synthetic-1");
+  });
+
+  test("标题已带第N章时不叠加编号", () => {
+    renderHomeView({ chapters: [numberedChapter], progress: DEFAULT_PROGRESS });
+    const title = $(".chapter-title");
+    expect(title).not.toBeNull();
+    expect(title!.textContent).not.toMatch(/第\d+章第\d+章/);
+    expect(title!.textContent).toBe("第1章 动词 être 和 avoir");
+    expect($$(".chapter-number").length).toBe(0);
+  });
+
+  test("多章编号按顺序精确显示且与标题之间有空格", () => {
+    renderHomeView({
+      chapters: [syntheticChapter, secondSyntheticChapter],
+      progress: DEFAULT_PROGRESS,
+    });
+    expect($$(".chapter-number").map((el) => el.textContent)).toEqual(["第1章", "第2章"]);
+    expect($$(".chapter-title").map((el) => el.textContent)).toEqual([
+      "第1章 合成章节",
+      "第2章 合成章节二",
+    ]);
   });
 
   test("错题 ID 对应现有题目时复习按钮可用", () => {
