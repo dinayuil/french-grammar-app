@@ -58,7 +58,7 @@ export function HomeView({ chapters, progress, onOpenLesson, onOpenCards, onOpen
         </div>
       ) : (
         <div className="chapter-list">
-          {chapters.map((ch) => {
+          {chapters.map((ch, index) => {
             const open = openChapter === ch.id;
             const all = [...ch.lessons, ...ch.challenges];
             const doneCount = all.filter((l) => (progress.lessons[l.id]?.stars ?? 0) > 0).length;
@@ -67,7 +67,10 @@ export function HomeView({ chapters, progress, onOpenLesson, onOpenCards, onOpen
                 <div className="chapter-head">
                   <button className="chapter-toggle" onClick={() => setOpenChapter(open ? null : ch.id)}>
                     <div>
-                      <div className="chapter-title">{ch.title}</div>
+                      <div className="chapter-title">
+                        <span className="chapter-number">第{index + 1}章</span>
+                        {ch.title}
+                      </div>
                       <div className="chapter-title-fr">{ch.titleFr}</div>
                     </div>
                     <div className="chapter-meta">

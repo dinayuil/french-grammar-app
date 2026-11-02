@@ -201,6 +201,7 @@ describe("有题模式下功能不被禁用", () => {
     renderHomeView({ chapters: [syntheticChapter], progress: DEFAULT_PROGRESS, onOpenLesson });
     expect($$(".chapter-card").length).toBe(1);
     expect(container.textContent).toContain("合成章节");
+    expect($(".chapter-title")?.textContent).toContain("第1章");
 
     click($(".chapter-toggle"));
     const lessonBtn = $(".lesson-item");

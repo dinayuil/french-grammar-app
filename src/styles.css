@@ -198,6 +198,15 @@ body {
   font-size: 16px;
 }
 
+.chapter-number {
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-light);
+  white-space: nowrap;
+}
+
 .chapter-title-fr {
   font-size: 13px;
   color: var(--text-light);
