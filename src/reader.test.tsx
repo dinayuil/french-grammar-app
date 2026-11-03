@@ -48,11 +48,13 @@ describe("ReaderView via App", () => {
     expect(container.textContent).toContain("第1章 · 合成测试章");
     expect(container.textContent).toContain(chapter.cards[0].title);
     expect($$(".reader-counter")[0]!.textContent).toBe("1/2");
+    expect(($$(".reader-progress-fill")[0] as HTMLElement).style.width).toBe("50%");
     expect($$(".reader-next")[0]!.textContent).toContain("下一张");
     expect(container.textContent).not.toContain("完成");
 
     click($$(".reader-next")[0]!);
     expect($$(".reader-counter")[0]!.textContent).toBe("2/2");
+    expect(($$(".reader-progress-fill")[0] as HTMLElement).style.width).toBe("100%");
     expect(($$(".reader-next")[0] as HTMLButtonElement).disabled).toBe(true);
 
     click($$(".reader-prev")[0]!);
