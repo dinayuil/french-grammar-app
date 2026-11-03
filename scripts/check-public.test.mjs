@@ -184,11 +184,45 @@ test("GitHub Actions workflow YAML is allowlisted", async (t) => {
     ".github/workflows/deploy-pages.yml",
     "name: deploy\non: workflow_dispatch\npermissions:\n  contents: read\njobs: {}\n"
   );
+  await writeAt(
+    appRoot,
+    ".github/workflows/ci.yml",
+    "name: ci\non: pull_request\npermissions:\n  contents: read\njobs: {}\n"
+  );
 
   const result = await checkPublic({ appRoot, publicRoot });
 
   assert.equal(result.ok, true, errorsOf(result));
   assert.ok(result.inventory.app.includes(".github/workflows/deploy-pages.yml"));
+  assert.ok(result.inventory.app.includes(".github/workflows/ci.yml"));
+});
+
+test("workflow allowlist rejects other workflows, nested dirs, .yaml duplicates, and hidden files", async (t) => {
+  const rejected = [
+    [".github/workflows/other.yml", /non-allowlisted app file/i],
+    [".github/workflows/nested/x.yml", /unexpected directory|non-allowlisted app file/i],
+    [".github/workflows/deploy-pages.yaml", /non-allowlisted app file/i],
+    [".github/workflows/.hidden.yml", /non-allowlisted app file/i],
+  ];
+
+  for (const [rel, pattern] of rejected) {
+    const { appRoot, publicRoot } = await sandbox(t);
+    await setupPublic(publicRoot);
+    await writeAt(appRoot, rel, "name: rejected\n");
+
+    const result = await checkPublic({ appRoot, publicRoot });
+
+    assertFails(result, pattern, rel);
+    assert.ok(errorsOf(result).includes(rel), `${rel}: error did not name the rejected path:\n${errorsOf(result)}`);
+  }
+});
+
+test("allowed workflow bytes are still scanned for secrets", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await writeAt(appRoot, ".github/workflows/ci.yml", `name: ci\n# ${PRIVATE_KEY_HEADER}\n`);
+
+  assertFails(await checkPublic({ appRoot, publicRoot }), /private key|secret/i, "workflow secret");
 });
 
 test("non-workflow .github files stay rejected", async (t) => {

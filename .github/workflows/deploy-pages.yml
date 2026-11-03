@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   CONTENT_PUBLIC_REPOSITORY: dinayuil/french-grammar-content-public
@@ -19,7 +19,7 @@ env:
 jobs:
   build:
     name: Test and build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -42,7 +42,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 22.x
           cache: npm
           cache-dependency-path: app/package-lock.json
 
@@ -80,7 +80,8 @@ jobs:
   deploy:
     name: Deploy
     needs: build
-    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       pages: write
@@ -92,3 +93,40 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+      - name: Smoke-test deployed page
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${PAGE_URL:-}" ]; then
+            echo "::error::deploy-pages did not report a page URL"
+            exit 1
+          fi
+
+          PAGE_URL="${PAGE_URL%/}/"
+          ORIGIN="$(printf '%s\n' "$PAGE_URL" | sed -E 's#^(https?://[^/]+).*#\1#')"
+
+          echo "Fetching deployed page: ${PAGE_URL}"
+          HTML="$(curl -fsSL --retry 3 --retry-delay 2 "$PAGE_URL")"
+
+          if ! printf '%s' "$HTML" | grep -q 'id="root"'; then
+            echo "::error::Deployed page at ${PAGE_URL} is missing id=\"root\""
+            exit 1
+          fi
+
+          ASSET="$(printf '%s' "$HTML" | grep -oE 'src="[^"]+\.js[^"]*"' | head -n 1 | sed -E 's/^src="//; s/"$//' || true)"
+          if [ -z "$ASSET" ]; then
+            echo "::error::Deployed page at ${PAGE_URL} has no JS asset"
+            exit 1
+          fi
+
+          case "$ASSET" in
+            http://* | https://*) ASSET_URL="$ASSET" ;;
+            /*) ASSET_URL="${ORIGIN}${ASSET}" ;;
+            *) ASSET_URL="${PAGE_URL}${ASSET}" ;;
+          esac
+
+          echo "Fetching deployed JS asset: ${ASSET_URL}"
+          curl -fsS --retry 3 --retry-delay 2 -o /dev/null "$ASSET_URL"

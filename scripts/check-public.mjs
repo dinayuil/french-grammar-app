@@ -46,6 +46,12 @@ const APP_ROOT_TEXT_FILES = new Set([
 ]);
 
 const APP_ROOT_JSON_FILES = new Set(["package.json", "package-lock.json", "tsconfig.json", "tsconfig.tools.json"]);
+// Exact workflow allowlist: no wildcards, no nested directories, no .yaml
+// duplicates, and no hidden files. Anything else under .github is rejected.
+const ALLOWED_APP_WORKFLOWS = new Set([
+  ".github/workflows/ci.yml",
+  ".github/workflows/deploy-pages.yml",
+]);
 const APP_SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".css"]);
 const APP_BUILD_EXTENSIONS = new Set([".ts", ".mjs", ".mts"]);
 const APP_SCRIPT_EXTENSIONS = new Set([".mjs", ".mts"]);
@@ -169,7 +175,7 @@ const PDF_SIGNATURE = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d]);
 export const RULES = Object.freeze([
   "App root source/config allowlist: .gitattributes, .gitignore, README.md, capacitor.config.ts, index.html, package.json, package-lock.json, start.bat, tsconfig.json, tsconfig.tools.json, vite.config.ts, build-apk.bat.",
   "App code allowlist: src/**/*.{ts,tsx,css}, build/**/*.{ts,mjs,mts}, scripts/**/*.{mjs,mts}.",
-  "GitHub Actions workflow allowlist: .github/workflows/**/*.{yml,yaml}; other .github files and directories are rejected.",
+  "GitHub Actions workflow allowlist: exactly .github/workflows/deploy-pages.yml and .github/workflows/ci.yml; other workflow files, nested workflow directories, .yaml duplicates, hidden files, and other .github files are rejected.",
   "Android template allowlist: the checked-in Gradle wrapper/config files, Java under android/app/src/main/java/**, XML/images under android/app/src/main/res/** or android/app/src/{public,internal}/res/**, and only the exact Gradle wrapper JAR under android/gradle/wrapper/.",
   "Public bank allowlist: root manifest.json, README.md, .gitignore, .gitattributes, plus exactly the chapter JSON paths declared by manifest.json. No other public file is allowed.",
   "Named app JSON allowlist: package.json, package-lock.json, tsconfig.json, tsconfig.tools.json only; any other app JSON is treated as real content and rejected.",
@@ -242,7 +248,7 @@ function isAllowedAppDirectory(rel) {
   if (rel === "src" || rel.startsWith("src/")) return true;
   if (rel === "build" || rel.startsWith("build/")) return true;
   if (rel === "scripts" || rel.startsWith("scripts/")) return true;
-  if (rel === ".github" || rel === ".github/workflows" || rel.startsWith(".github/workflows/")) return true;
+  if (rel === ".github" || rel === ".github/workflows") return true;
   if (ANDROID_EXACT_DIRS.has(rel)) return true;
   if (rel.startsWith("android/app/src/main/java/")) return true;
   if (rel.startsWith("android/app/src/main/res/")) return true;
@@ -277,7 +283,7 @@ function isAllowedAppTextFile(rel) {
   if (rel.startsWith("src/") && APP_SOURCE_EXTENSIONS.has(ext)) return true;
   if (rel.startsWith("build/") && APP_BUILD_EXTENSIONS.has(ext)) return true;
   if (rel.startsWith("scripts/") && APP_SCRIPT_EXTENSIONS.has(ext)) return true;
-  if (rel.startsWith(".github/workflows/") && (ext === ".yml" || ext === ".yaml")) return true;
+  if (ALLOWED_APP_WORKFLOWS.has(rel)) return true;
   if (ANDROID_TEXT_FILES.has(rel)) return true;
   if (rel.startsWith("android/app/src/main/java/") && ext === ".java") return true;
   if (rel.startsWith("android/app/src/main/res/") && ext === ".xml") return true;
