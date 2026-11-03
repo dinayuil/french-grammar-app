@@ -49,6 +49,7 @@ const APP_ROOT_JSON_FILES = new Set(["package.json", "package-lock.json", "tscon
 // Exact workflow allowlist: no wildcards, no nested directories, no .yaml
 // duplicates, and no hidden files. Anything else under .github is rejected.
 const ALLOWED_APP_WORKFLOWS = new Set([
+  ".github/workflows/build-public-apk.yml",
   ".github/workflows/ci.yml",
   ".github/workflows/deploy-pages.yml",
 ]);
@@ -175,7 +176,7 @@ const PDF_SIGNATURE = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d]);
 export const RULES = Object.freeze([
   "App root source/config allowlist: .gitattributes, .gitignore, README.md, capacitor.config.ts, index.html, package.json, package-lock.json, start.bat, tsconfig.json, tsconfig.tools.json, vite.config.ts, build-apk.bat.",
   "App code allowlist: src/**/*.{ts,tsx,css}, build/**/*.{ts,mjs,mts}, scripts/**/*.{mjs,mts}.",
-  "GitHub Actions workflow allowlist: exactly .github/workflows/deploy-pages.yml and .github/workflows/ci.yml; other workflow files, nested workflow directories, .yaml duplicates, hidden files, and other .github files are rejected.",
+  "GitHub Actions workflow allowlist: exactly .github/workflows/deploy-pages.yml, .github/workflows/ci.yml, and .github/workflows/build-public-apk.yml; other workflow files, nested workflow directories, .yaml duplicates, hidden files, and other .github files are rejected.",
   "Android template allowlist: the checked-in Gradle wrapper/config files, Java under android/app/src/main/java/**, XML/images under android/app/src/main/res/** or android/app/src/{public,internal}/res/**, and only the exact Gradle wrapper JAR under android/gradle/wrapper/.",
   "Public bank allowlist: root manifest.json, README.md, .gitignore, .gitattributes, plus exactly the chapter JSON paths declared by manifest.json. No other public file is allowed.",
   "Named app JSON allowlist: package.json, package-lock.json, tsconfig.json, tsconfig.tools.json only; any other app JSON is treated as real content and rejected.",
