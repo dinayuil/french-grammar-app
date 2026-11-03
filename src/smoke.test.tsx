@@ -169,9 +169,19 @@ test("选择题答错后标出正确答案", () => {
 
   click($$(".option-btn")[wrongIndex]!);
   expect($$(".option-btn.correct").length).toBe(0);
+  const feedbackBefore = container.querySelector(".feedback");
+  expect(feedbackBefore).not.toBeNull();
+  expect(feedbackBefore!.getAttribute("role")).toBe("status");
+  expect(feedbackBefore!.getAttribute("aria-live")).toBe("polite");
+  expect(feedbackBefore!.getAttribute("aria-atomic")).toBe("true");
+  expect(feedbackBefore!.className).toContain("visually-hidden");
+  expect(feedbackBefore!.textContent).toBe("");
   click($$(".btn-wide")[0]!); // 检查
 
   expect(container.textContent).toContain("答错了");
+  const feedback = container.querySelector(".feedback");
+  expect(feedback!.className).not.toContain("visually-hidden");
+  expect(feedback!.getAttribute("aria-atomic")).toBe("true");
   const correct = $$(".option-btn.correct");
   const wrong = $$(".option-btn.wrong");
   expect(correct.length).toBe(1);

@@ -100,6 +100,7 @@ export function LessonView({
     !!currentQ.translation &&
     progress.translationEnabled &&
     (progress.translationTiming === "before" || judged);
+  const judgedCorrect = (isRedo ? redoResults : results)[currentQid] === true;
 
   const submit = () => {
     if (judged) return;
@@ -206,20 +207,23 @@ export function LessonView({
         />
       </div>
 
-      {judged && (
-        <div
-          className={`feedback ${(isRedo ? redoResults : results)[currentQid] ? "good" : "bad"}`}
-          role="status"
-          aria-live="polite"
-        >
-          <div className="feedback-head">
-            {(isRedo ? redoResults : results)[currentQid]
-              ? `✓ 正确${(isRedo ? redoGains : gains)[currentQid] > 0 ? ` +${(isRedo ? redoGains : gains)[currentQid]} XP` : ""}`
-              : "✗ 答错了"}
-          </div>
-          {currentQ.explain && <div className="explain">{currentQ.explain}</div>}
-        </div>
-      )}
+      <div
+        className={`feedback ${judged ? (judgedCorrect ? "good" : "bad") : "visually-hidden"}`}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {judged && (
+          <>
+            <div className="feedback-head">
+              {judgedCorrect
+                ? `✓ 正确${(isRedo ? redoGains : gains)[currentQid] > 0 ? ` +${(isRedo ? redoGains : gains)[currentQid]} XP` : ""}`
+                : "✗ 答错了"}
+            </div>
+            {currentQ.explain && <div className="explain">{currentQ.explain}</div>}
+          </>
+        )}
+      </div>
 
       <div className="quiz-footer">
         {judged ? (

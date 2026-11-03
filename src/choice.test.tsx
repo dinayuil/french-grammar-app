@@ -93,12 +93,22 @@ test("复习关选择题:选中的备选答案判对,所有合法选项标 corre
   expect($$(".option-btn.correct").length).toBe(0);
   expect($$(".option-btn.wrong").length).toBe(0);
 
+  const feedbackBefore = container.querySelector(".feedback");
+  expect(feedbackBefore).not.toBeNull();
+  expect(feedbackBefore!.getAttribute("role")).toBe("status");
+  expect(feedbackBefore!.getAttribute("aria-live")).toBe("polite");
+  expect(feedbackBefore!.getAttribute("aria-atomic")).toBe("true");
+  expect(feedbackBefore!.className).toContain("visually-hidden");
+  expect(feedbackBefore!.textContent).toBe("");
+
   clickCheck();
 
   const feedback = container.querySelector(".feedback");
   expect(feedback).not.toBeNull();
+  expect(feedback!.className).not.toContain("visually-hidden");
   expect(feedback!.getAttribute("role")).toBe("status");
   expect(feedback!.getAttribute("aria-live")).toBe("polite");
+  expect(feedback!.getAttribute("aria-atomic")).toBe("true");
   expect(feedback!.className).toContain("good");
   expect(feedback!.textContent).toContain("正确");
 
@@ -121,11 +131,17 @@ test("答对主答案:仅合法选项标 correct,无 wrong,反馈可被读屏播
   expect(container.textContent).toContain(plainChoice.prompt);
 
   click(option(plainChoice.answer));
+  const feedbackBefore = container.querySelector(".feedback");
+  expect(feedbackBefore!.getAttribute("aria-atomic")).toBe("true");
+  expect(feedbackBefore!.className).toContain("visually-hidden");
+  expect(feedbackBefore!.textContent).toBe("");
   clickCheck();
 
   const feedback = container.querySelector(".feedback");
+  expect(feedback!.className).not.toContain("visually-hidden");
   expect(feedback!.getAttribute("role")).toBe("status");
   expect(feedback!.getAttribute("aria-live")).toBe("polite");
+  expect(feedback!.getAttribute("aria-atomic")).toBe("true");
   expect(feedback!.textContent).toContain("正确");
 
   expect($$(".option-btn.correct").length).toBe(1);
@@ -148,10 +164,13 @@ test("答错 → 结算 → 重做:重做前不残留上一次的 correct/wrong,
   expect(wrongIndex).toBeGreaterThanOrEqual(0);
 
   click(option(wrongIndex));
+  expect(container.querySelector(".feedback")?.className).toContain("visually-hidden");
   clickCheck();
   expect($$(".option-btn.correct").length).toBe(1);
   expect($$(".option-btn.wrong").length).toBe(1);
   expect(option(wrongIndex).className).not.toContain("selected");
+  expect(container.querySelector(".feedback")?.className).not.toContain("visually-hidden");
+  expect(container.querySelector(".feedback")?.textContent).toContain("答错了");
 
   clickContinue();
   expect(container.textContent).toContain("挑战完成");
@@ -161,6 +180,9 @@ test("答错 → 结算 → 重做:重做前不残留上一次的 correct/wrong,
   expect($$(".option-btn.correct").length).toBe(0);
   expect($$(".option-btn.wrong").length).toBe(0);
   expect($$(".option-btn.selected").length).toBe(0);
+  const redoFeedback = container.querySelector(".feedback");
+  expect(redoFeedback?.className).toContain("visually-hidden");
+  expect(redoFeedback?.textContent).toBe("");
 
   click(option(plainChoice.answer));
   clickCheck();
@@ -168,5 +190,6 @@ test("答错 → 结算 → 重做:重做前不残留上一次的 correct/wrong,
   expect($$(".option-btn.wrong").length).toBe(0);
   expect(option(plainChoice.answer).className).not.toContain("wrong");
   expect(option(plainChoice.answer).querySelector(".option-mark")?.textContent).toBe("✓");
+  expect(container.querySelector(".feedback")?.className).not.toContain("visually-hidden");
   expect(container.querySelector(".feedback")?.textContent).toContain("正确");
 });
