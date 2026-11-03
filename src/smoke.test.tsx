@@ -10,7 +10,7 @@ vi.mock("virtual:fge-content", async () => {
 import App from "./App";
 import { CHAPTERS } from "./content";
 import { STORAGE_KEY } from "./config";
-import type { Lesson, Question } from "./types";
+import type { ChoiceQuestion, Lesson, Question } from "./types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -145,6 +145,25 @@ test("答错判红并记入错题本", () => {
   expect(Object.keys(saved.mistakes)).toHaveLength(1);
   expect(Object.keys(saved.mistakes)[0]).toBe(firstLesson.questions[0].id);
   expect((Object.values(saved.mistakes) as { count: number }[])[0].count).toBe(1);
+});
+
+test("选择题答错后标出正确答案", () => {
+  act(() => root.render(<App />));
+  click($$(".chapter-toggle")[0]!);
+  const items = $$(".lesson-item");
+  click(items[items.length - 1]!); // 挑战关(选择题,无 alternatives)
+
+  const choiceQ = chapter.challenges[0].questions[0] as ChoiceQuestion;
+  const wrongIndex = choiceQ.answer === 0 ? 1 : 0;
+  click($$(".option-btn")[wrongIndex]!);
+  expect($$(".option-btn.correct").length).toBe(0);
+  click($$(".btn-wide")[0]!); // 检查
+
+  expect(container.textContent).toContain("答错了");
+  expect($$(".option-btn.correct").length).toBe(1);
+  expect($$(".option-btn")[choiceQ.answer]!.className).toContain("correct");
+  expect($$(".option-btn")[wrongIndex]!.className).toContain("wrong");
+  expect($$(".option-btn")[choiceQ.answer]!.textContent).toContain("✓");
 });
 
 test("复习关:错题组成的一关,答对移出错题本", () => {

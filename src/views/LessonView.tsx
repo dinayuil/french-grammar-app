@@ -267,6 +267,7 @@ function QuestionBody({
         response={(responses[q.id] as number) ?? null}
         onResponse={(n) => set(n)}
         disabled={judged}
+        judged={judged}
       />
     );
   }

@@ -386,6 +386,27 @@ body {
   cursor: not-allowed;
 }
 
+.option-btn.correct {
+  border-color: var(--green);
+  background: #e8ffd6;
+  color: var(--green-dark);
+}
+
+.option-btn.wrong {
+  border-color: var(--red);
+  background: #ffdfe0;
+  color: var(--red);
+}
+
+.option-btn.correct:disabled,
+.option-btn.wrong:disabled {
+  opacity: 1;
+}
+
+.option-mark {
+  font-weight: 700;
+}
+
 /* ---- 字母块 / 词块 ---- */
 .response-row {
   min-height: 56px;
