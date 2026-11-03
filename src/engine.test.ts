@@ -1,5 +1,6 @@
 import {
   judge,
+  acceptedChoiceIndices,
   normalizeText,
   applyAnswer,
   applyLessonComplete,
@@ -122,6 +123,22 @@ describe("judge", () => {
 
   test("tiles: alternatives 语序命中", () => {
     expect(judge(tilesAltQ, ["On", "lit", "un", "livre."])).toBe(true);
+  });
+});
+
+describe("acceptedChoiceIndices", () => {
+  test("answer 与 alternatives 全部视为正确答案", () => {
+    expect([...acceptedChoiceIndices(choiceQ)].sort((a, b) => a - b)).toEqual([0, 1]);
+  });
+
+  test("无 alternatives 时只有 answer", () => {
+    expect(acceptedChoiceIndices({ ...choiceQ, alternatives: undefined })).toEqual(new Set([0]));
+  });
+
+  test("所有合法下标都判对", () => {
+    for (const i of acceptedChoiceIndices(choiceQ)) {
+      expect(judge(choiceQ, i)).toBe(true);
+    }
   });
 });
 

@@ -366,6 +366,11 @@ body {
 }
 
 .option-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
   padding: 14px 16px;
   border: 2px solid var(--gray);
   border-radius: 10px;
@@ -389,13 +394,15 @@ body {
 .option-btn.correct {
   border-color: var(--green);
   background: #e8ffd6;
-  color: var(--green-dark);
+  /* #2f6b00 on #e8ffd6 ≈ 6.1:1,满足 WCAG AA 4.5:1 */
+  color: #2f6b00;
 }
 
 .option-btn.wrong {
   border-color: var(--red);
   background: #ffdfe0;
-  color: var(--red);
+  /* #b00020 on #ffdfe0 ≈ 5.9:1,满足 WCAG AA 4.5:1 */
+  color: #b00020;
 }
 
 .option-btn.correct:disabled,
@@ -405,6 +412,7 @@ body {
 
 .option-mark {
   font-weight: 700;
+  flex-shrink: 0;
 }
 
 /* ---- 字母块 / 词块 ---- */
@@ -482,12 +490,14 @@ body {
 
 .feedback.good {
   background: #e8ffd6;
-  color: var(--green-dark);
+  /* 与 .option-btn.correct 同一可读性标准 */
+  color: #2f6b00;
 }
 
 .feedback.bad {
   background: #ffdfe0;
-  color: var(--red);
+  /* 与 .option-btn.wrong 同一可读性标准 */
+  color: #b00020;
 }
 
 .feedback-head {
@@ -693,6 +703,8 @@ body {
 .goal-presets .option-btn {
   flex: 1;
   text-align: center;
+  /* .option-btn 是 flex 行;设置页单标签仍居中 */
+  justify-content: center;
 }
 
 .danger-row {

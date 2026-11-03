@@ -1,4 +1,12 @@
-import type { DayRecord, LettersQuestion, MistakeInfo, Progress, Question, TilesQuestion } from "./types";
+import type {
+  ChoiceQuestion,
+  DayRecord,
+  LettersQuestion,
+  MistakeInfo,
+  Progress,
+  Question,
+  TilesQuestion,
+} from "./types";
 import {
   XP_PER_CORRECT,
   XP_REDO_CORRECT,
@@ -20,13 +28,20 @@ function eqText(a: string, b: string): boolean {
   return normalizeText(a) === normalizeText(b);
 }
 
+/**
+ * choice 题的合法答案下标集合。answer 与 alternatives 全部是正式认可的正确答案:
+ * 判分同样通过,判分后全部标绿/✓,选中任一合法选项都不算错。
+ */
+export function acceptedChoiceIndices(q: ChoiceQuestion): Set<number> {
+  return new Set([q.answer, ...(q.alternatives ?? [])]);
+}
+
 /** 判分:choice 比下标;letters/tiles 先归一化,再依次比较 answer 与 alternatives。 */
 export function judge(q: Question, response: number | string | string[]): boolean {
   switch (q.type) {
     case "choice": {
       if (typeof response !== "number") return false;
-      if (response === q.answer) return true;
-      return q.alternatives?.includes(response) ?? false;
+      return acceptedChoiceIndices(q).has(response);
     }
     case "letters": {
       if (typeof response !== "string") return false;

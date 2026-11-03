@@ -207,7 +207,11 @@ export function LessonView({
       </div>
 
       {judged && (
-        <div className={`feedback ${(isRedo ? redoResults : results)[currentQid] ? "good" : "bad"}`}>
+        <div
+          className={`feedback ${(isRedo ? redoResults : results)[currentQid] ? "good" : "bad"}`}
+          role="status"
+          aria-live="polite"
+        >
           <div className="feedback-head">
             {(isRedo ? redoResults : results)[currentQid]
               ? `✓ 正确${(isRedo ? redoGains : gains)[currentQid] > 0 ? ` +${(isRedo ? redoGains : gains)[currentQid]} XP` : ""}`

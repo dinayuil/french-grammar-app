@@ -1,4 +1,5 @@
 import type { ChoiceQuestion } from "../types";
+import { acceptedChoiceIndices } from "../engine";
 
 interface Props {
   q: ChoiceQuestion;
@@ -10,17 +11,19 @@ interface Props {
 }
 
 export function ChoiceQuestion({ q, response, onResponse, disabled, judged }: Props) {
-  const accepted = new Set([q.answer, ...(q.alternatives ?? [])]);
+  // answer 与 alternatives 都是合法正确答案:全部标绿/✓,选中任一都不算错。
+  const accepted = acceptedChoiceIndices(q);
 
   return (
     <div className="choice-options">
       {q.options.map((opt, i) => {
+        const selected = !judged && response === i;
         const correct = judged && accepted.has(i);
         const wrong = judged && response === i && !correct;
         return (
           <button
             key={i}
-            className={`option-btn ${response === i ? "selected" : ""} ${
+            className={`option-btn ${selected ? "selected" : ""} ${
               correct ? "correct" : ""
             } ${wrong ? "wrong" : ""}`}
             disabled={disabled}
@@ -32,13 +35,11 @@ export function ChoiceQuestion({ q, response, onResponse, disabled, judged }: Pr
             {opt}
             {correct && (
               <span className="option-mark" aria-hidden="true">
-                {" "}
                 ✓
               </span>
             )}
             {wrong && (
               <span className="option-mark" aria-hidden="true">
-                {" "}
                 ✗
               </span>
             )}

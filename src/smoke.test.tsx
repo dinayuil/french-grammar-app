@@ -9,8 +9,9 @@ vi.mock("virtual:fge-content", async () => {
 
 import App from "./App";
 import { CHAPTERS } from "./content";
+import { acceptedChoiceIndices } from "./engine";
 import { STORAGE_KEY } from "./config";
-import type { ChoiceQuestion, Lesson, Question } from "./types";
+import type { Lesson, Question } from "./types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -74,6 +75,15 @@ function openFirstLesson() {
   act(() => root.render(<App />));
   click($$(".chapter-toggle")[0]!);
   click($$(".lesson-item")[0]!);
+}
+
+/** 按关卡标题进入,不依赖列表顺序。 */
+function openLessonByTitle(title: string) {
+  act(() => root.render(<App />));
+  click($$(".chapter-toggle")[0]!);
+  const item = $$(".lesson-item").find((b) => b.textContent?.includes(title));
+  expect(item).toBeDefined();
+  click(item!);
 }
 
 function playLesson(lesson: Lesson, wrongFirst = false) {
@@ -148,22 +158,37 @@ test("答错判红并记入错题本", () => {
 });
 
 test("选择题答错后标出正确答案", () => {
-  act(() => root.render(<App />));
-  click($$(".chapter-toggle")[0]!);
-  const items = $$(".lesson-item");
-  click(items[items.length - 1]!); // 挑战关(选择题,无 alternatives)
+  const challenge = chapter.challenges[0];
+  openLessonByTitle(challenge.title);
 
-  const choiceQ = chapter.challenges[0].questions[0] as ChoiceQuestion;
-  const wrongIndex = choiceQ.answer === 0 ? 1 : 0;
+  const choiceQ = challenge.questions[0];
+  if (choiceQ.type !== "choice") throw new Error("挑战关首题应为选择题");
+  const accepted = acceptedChoiceIndices(choiceQ);
+  const wrongIndex = choiceQ.options.findIndex((_, i) => !accepted.has(i));
+  expect(wrongIndex).toBeGreaterThanOrEqual(0);
+
   click($$(".option-btn")[wrongIndex]!);
   expect($$(".option-btn.correct").length).toBe(0);
   click($$(".btn-wide")[0]!); // 检查
 
   expect(container.textContent).toContain("答错了");
-  expect($$(".option-btn.correct").length).toBe(1);
-  expect($$(".option-btn")[choiceQ.answer]!.className).toContain("correct");
-  expect($$(".option-btn")[wrongIndex]!.className).toContain("wrong");
-  expect($$(".option-btn")[choiceQ.answer]!.textContent).toContain("✓");
+  const correct = $$(".option-btn.correct");
+  const wrong = $$(".option-btn.wrong");
+  expect(correct.length).toBe(1);
+  expect(wrong.length).toBe(1);
+  expect(correct[0]).toBe($$(".option-btn")[choiceQ.answer]);
+  expect(wrong[0]).toBe($$(".option-btn")[wrongIndex]);
+  expect(correct[0].className).not.toContain("wrong");
+  expect(wrong[0].className).not.toContain("correct");
+  expect(wrong[0].className).not.toContain("selected");
+  expect(correct[0].querySelector(".option-mark")?.textContent).toBe("✓");
+  expect(wrong[0].querySelector(".option-mark")?.textContent).toBe("✗");
+  expect(correct[0].getAttribute("aria-label")).toBe(
+    `${choiceQ.options[choiceQ.answer]}，正确答案`
+  );
+  expect(wrong[0].getAttribute("aria-label")).toBe(
+    `${choiceQ.options[wrongIndex]}，所选答案错误`
+  );
 });
 
 test("复习关:错题组成的一关,答对移出错题本", () => {
@@ -318,14 +343,17 @@ test("设置页:翻译开关与显示时机持久化", () => {
 });
 
 test("挑战关可玩:普通关 + 挑战关全部列出,首题判分正确", () => {
+  const challenge = chapter.challenges[0];
   act(() => root.render(<App />));
   click($$(".chapter-toggle")[0]!);
   const items = $$(".lesson-item");
   expect(items.length).toBe(allLessons.length);
   expect(items.filter((b) => b.className.includes("kind-challenge")).length).toBe(chapter.challenges.length);
 
-  click(items[items.length - 1]!);
-  const challengeQ = chapter.challenges[0].questions[0];
+  const item = items.find((b) => b.textContent?.includes(challenge.title));
+  expect(item).toBeDefined();
+  click(item!);
+  const challengeQ = challenge.questions[0];
   expect(container.textContent).toContain(challengeQ.prompt);
   answerCorrectly(challengeQ);
   click($$(".btn-wide")[0]!);

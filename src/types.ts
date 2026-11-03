@@ -12,6 +12,7 @@ export interface ChoiceQuestion extends BaseQuestion {
   type: "choice";
   options: string[];
   answer: number;
+  /** 其他合法答案下标:与 answer 同等有效(判分通过、标绿/✓、不算错) */
   alternatives?: number[];
 }
 
