@@ -1,4 +1,13 @@
-import type { Chapter } from "../types";
+import type { Chapter, Question } from "../types";
+
+const placeholderQuestion: Question = {
+  id: "placeholder-q",
+  prompt: "Placeholder",
+  explain: "Placeholder explain.",
+  type: "choice",
+  options: ["A", "B"],
+  answer: 0,
+};
 
 /**
  * 通用测试专用的合成章节。
@@ -105,3 +114,60 @@ export const syntheticChapter: Chapter = {
     },
   ],
 };
+
+export const libraryChapters: Chapter[] = [
+  {
+    id: "lib-ch1",
+    title: "第一讲解章",
+    titleFr: "Chapitre d'explication I",
+    cards: [
+      {
+        id: "lib-ch1-card-u1-1",
+        title: "Été 与季节",
+        body: "En été, il fait chaud.\n第二行。",
+      },
+      {
+        id: "lib-ch1-card-u1-2",
+        title: "否定基础",
+        body: "ne … pas 夹住动词。",
+      },
+      {
+        id: "lib-ch1-card-u2-1",
+        title: "冠词与缩合",
+        body: "à + le → au。",
+      },
+    ],
+    lessons: [
+      {
+        id: "lib-ch1-l1",
+        title: "第一讲解章练习",
+        kind: "lesson",
+        source: "测试",
+        questions: [placeholderQuestion],
+      },
+    ],
+    challenges: [],
+  },
+  {
+    id: "lib-ch2",
+    title: "第二讲解章",
+    titleFr: "Chapitre d'explication II",
+    cards: [
+      {
+        id: "lib-ch2-card-1",
+        title: "扁平卡片",
+        body: "只有第一行。\n第二行不应出现。",
+      },
+    ],
+    lessons: [
+      {
+        id: "lib-ch2-l1",
+        title: "第二讲解章练习",
+        kind: "lesson",
+        source: "测试",
+        questions: [placeholderQuestion],
+      },
+    ],
+    challenges: [],
+  },
+];

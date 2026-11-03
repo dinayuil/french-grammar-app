@@ -43,6 +43,7 @@ function renderApp() {
 function renderHomeView(props: {
   chapters: Chapter[];
   progress: Progress;
+  openChapterId?: string;
   onOpenLesson?: (chapterId: string, lessonId: string) => void;
   onOpenCards?: (chapterId: string) => void;
   onOpenReview?: () => void;
@@ -52,6 +53,7 @@ function renderHomeView(props: {
       <HomeView
         chapters={props.chapters}
         progress={props.progress}
+        openChapterId={props.openChapterId}
         onOpenLesson={props.onOpenLesson ?? vi.fn()}
         onOpenCards={props.onOpenCards ?? vi.fn()}
         onOpenReview={props.onOpenReview ?? vi.fn()}
@@ -251,5 +253,14 @@ describe("有题模式下功能不被禁用", () => {
     expect($$(".review-count").length).toBe(1);
     click(reviewBtn);
     expect(onOpenReview).toHaveBeenCalled();
+  });
+
+  test("openChapterId 自动展开对应章节", () => {
+    renderHomeView({
+      chapters: [syntheticChapter],
+      progress: DEFAULT_PROGRESS,
+      openChapterId: "ch-synthetic",
+    });
+    expect($$(".lesson-item").length).toBe(1);
   });
 });

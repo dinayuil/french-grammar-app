@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Chapter, Progress } from "../types";
 import { today } from "../storage";
 import { streakFor } from "../engine";
@@ -9,13 +9,25 @@ import { LevelBar } from "../components/LevelBar";
 interface Props {
   chapters: Chapter[];
   progress: Progress;
+  openChapterId?: string;
   onOpenLesson: (chapterId: string, lessonId: string) => void;
   onOpenCards: (chapterId: string) => void;
   onOpenReview: () => void;
 }
 
-export function HomeView({ chapters, progress, onOpenLesson, onOpenCards, onOpenReview }: Props) {
-  const [openChapter, setOpenChapter] = useState<string | null>(null);
+export function HomeView({
+  chapters,
+  progress,
+  openChapterId,
+  onOpenLesson,
+  onOpenCards,
+  onOpenReview,
+}: Props) {
+  const [openChapter, setOpenChapter] = useState<string | null>(openChapterId ?? null);
+
+  useEffect(() => {
+    setOpenChapter(openChapterId ?? null);
+  }, [openChapterId]);
   const t = today();
   const todayXp = progress.days[t]?.xp ?? 0;
   const streak = streakFor(progress.days, progress.dailyGoal, t);

@@ -111,15 +111,16 @@ test("主页:全部章节、关卡全部直接可玩(无锁定)", () => {
   expect(items.every((b) => !b.className.includes("st-locked"))).toBe(true);
 });
 
-test("讲解独立入口:章节卡上的「讲解」按钮打开知识卡", () => {
+test("讲解独立入口:章节卡上的「讲解」按钮打开阅读器", () => {
   act(() => root.render(<App />));
   click($$(".btn-cards")[0]!);
+  expect($$(".reader").length).toBe(1);
   expect(container.textContent).toContain(chapter.cards[0].title);
   expect(container.textContent).toContain(chapter.cards[0].body);
   for (let i = 0; i < chapter.cards.length - 1; i++) {
-    click($$(".btn-primary").filter((b) => b.textContent?.includes("下一张"))[0]!);
+    click($$(".reader-next")[0]!);
   }
-  click($$(".btn-primary").filter((b) => b.textContent?.includes("完成"))[0]!);
+  click($$(".reader-back")[0]!);
   expect($$(".chapter-card").length).toBe(CHAPTERS.length);
 });
 

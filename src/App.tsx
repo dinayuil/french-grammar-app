@@ -4,15 +4,17 @@ import { CHAPTERS } from "./content";
 import { buildReviewLesson } from "./content/review";
 import { HomeView } from "./views/HomeView";
 import { LessonView } from "./views/LessonView";
-import { CardsView } from "./views/CardsView";
+import { ReaderView } from "./views/ReaderView";
+import { LibraryView } from "./views/LibraryView";
 import { StatsView } from "./views/StatsView";
 import { SettingsView } from "./views/SettingsView";
 import type { Chapter, Progress } from "./types";
 
 type View =
-  | { name: "home" }
+  | { name: "home"; openChapterId?: string }
   | { name: "lesson"; chapterId: string; lessonId: string }
-  | { name: "cards"; chapterId: string }
+  | { name: "reader"; chapterId: string; cardId?: string; from: "library" | "home" }
+  | { name: "library" }
   | { name: "review" }
   | { name: "stats" }
   | { name: "settings" };
@@ -20,6 +22,7 @@ type View =
 export default function App() {
   const [view, setView] = useState<View>({ name: "home" });
   const [progress, setProgress] = useState<Progress>(() => loadProgress());
+  const [libraryQuery, setLibraryQuery] = useState("");
 
   const updateProgress = (p: Progress) => {
     setProgress(p);
@@ -32,14 +35,37 @@ export default function App() {
       <HomeView
         chapters={CHAPTERS}
         progress={progress}
+        openChapterId={view.openChapterId}
         onOpenLesson={(chapterId, lessonId) => setView({ name: "lesson", chapterId, lessonId })}
-        onOpenCards={(chapterId) => setView({ name: "cards", chapterId })}
+        onOpenCards={(chapterId) => setView({ name: "reader", chapterId, from: "home" })}
         onOpenReview={() => setView({ name: "review" })}
       />
     );
-  } else if (view.name === "cards") {
-    const ch = CHAPTERS.find((c) => c.id === view.chapterId);
-    body = ch ? <CardsView chapter={ch} onExit={() => setView({ name: "home" })} /> : null;
+  } else if (view.name === "library") {
+    body = (
+      <LibraryView
+        chapters={CHAPTERS}
+        query={libraryQuery}
+        onQueryChange={setLibraryQuery}
+        onOpenCard={(chapterId, cardId) =>
+          setView({ name: "reader", chapterId, cardId, from: "library" })
+        }
+      />
+    );
+  } else if (view.name === "reader") {
+    const chapterIndex = CHAPTERS.findIndex((c) => c.id === view.chapterId);
+    const ch = CHAPTERS[chapterIndex];
+    body = ch ? (
+      <ReaderView
+        chapter={ch}
+        chapterNumber={chapterIndex + 1}
+        initialCardId={view.cardId}
+        onBack={() =>
+          setView(view.from === "library" ? { name: "library" } : { name: "home" })
+        }
+        onPracticeChapter={() => setView({ name: "home", openChapterId: ch.id })}
+      />
+    ) : null;
   } else if (view.name === "review") {
     body = <ReviewLessonView progress={progress} onProgress={updateProgress} onHome={() => setView({ name: "home" })} />;
   } else if (view.name === "lesson") {
@@ -79,15 +105,24 @@ export default function App() {
     body = <SettingsView progress={progress} onChange={updateProgress} />;
   }
 
+  const isPractice = view.name === "home" || view.name === "lesson" || view.name === "review";
+  const isLibrary = view.name === "library" || view.name === "reader";
+
   return (
     <div className="app">
       <div className="content">{body}</div>
       <nav className="bottom-nav">
         <button
-          className={`nav-item ${view.name === "home" || view.name === "lesson" ? "active" : ""}`}
+          className={`nav-item ${isPractice ? "active" : ""}`}
           onClick={() => setView({ name: "home" })}
         >
           练习
+        </button>
+        <button
+          className={`nav-item ${isLibrary ? "active" : ""}`}
+          onClick={() => setView({ name: "library" })}
+        >
+          讲解
         </button>
         <button className={`nav-item ${view.name === "stats" ? "active" : ""}`} onClick={() => setView({ name: "stats" })}>
           统计
