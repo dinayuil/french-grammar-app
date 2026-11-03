@@ -8,6 +8,7 @@ vi.mock("virtual:fge-content", async () => {
 });
 
 import App from "./App";
+import { ChoiceQuestion as ChoiceQuestionView } from "./components/ChoiceQuestion";
 import { CHAPTERS } from "./content";
 import { STORAGE_KEY } from "./config";
 import { acceptedChoiceIndices } from "./engine";
@@ -82,6 +83,39 @@ function savedProgress() {
   return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
 }
 
+function renderChoice(q: ChoiceQuestion, response: number | null, judged: boolean) {
+  act(() => {
+    root.render(
+      <ChoiceQuestionView
+        q={q}
+        response={response}
+        onResponse={() => {}}
+        disabled={judged}
+        judged={judged}
+      />
+    );
+  });
+}
+
+const threeOptionAltChoice: ChoiceQuestion = {
+  id: "t-three-alt",
+  prompt: "三选一:两个合法答案",
+  explain: "",
+  type: "choice",
+  options: ["premier", "deuxième", "troisième"],
+  answer: 0,
+  alternatives: [1],
+};
+
+const shiftedChoice: ChoiceQuestion = {
+  id: "t-shifted",
+  prompt: "三选一:正确答案在中间",
+  explain: "",
+  type: "choice",
+  options: ["zéro", "un", "deux"],
+  answer: 1,
+};
+
 test("复习关选择题:选中的备选答案判对,所有合法选项标 correct 且无 wrong", () => {
   seed({ mistakes: { [altChoice.id]: { lastWrong: "2026-10-20", count: 3 } } });
   act(() => root.render(<App />));
@@ -122,7 +156,7 @@ test("复习关选择题:选中的备选答案判对,所有合法选项标 corre
     expect(option(i).getAttribute("aria-label")).toBe(`${altChoice.options[i]}，正确答案`);
   }
   expect(option(1).className).toContain("correct");
-  expect(option(1).getAttribute("aria-label")).toBe("sous，正确答案");
+  expect(option(1).getAttribute("aria-label")).toBe(`${altChoice.options[1]}，正确答案`);
   expect(savedProgress().mistakes[altChoice.id]).toBeUndefined();
 });
 
@@ -132,12 +166,14 @@ test("答对主答案:仅合法选项标 correct,无 wrong,反馈可被读屏播
 
   click(option(plainChoice.answer));
   const feedbackBefore = container.querySelector(".feedback");
+  expect(feedbackBefore).not.toBeNull();
   expect(feedbackBefore!.getAttribute("aria-atomic")).toBe("true");
   expect(feedbackBefore!.className).toContain("visually-hidden");
   expect(feedbackBefore!.textContent).toBe("");
   clickCheck();
 
   const feedback = container.querySelector(".feedback");
+  expect(feedback).not.toBeNull();
   expect(feedback!.className).not.toContain("visually-hidden");
   expect(feedback!.getAttribute("role")).toBe("status");
   expect(feedback!.getAttribute("aria-live")).toBe("polite");
@@ -192,4 +228,60 @@ test("答错 → 结算 → 重做:重做前不残留上一次的 correct/wrong,
   expect(option(plainChoice.answer).querySelector(".option-mark")?.textContent).toBe("✓");
   expect(container.querySelector(".feedback")?.className).not.toContain("visually-hidden");
   expect(container.querySelector(".feedback")?.textContent).toContain("正确");
+});
+
+test("三选一 + alternatives:选中未接受的第三项,前两项标 correct、第三项标 wrong", () => {
+  renderChoice(threeOptionAltChoice, 2, true);
+
+  const correct = $$(".option-btn.correct");
+  const wrong = $$(".option-btn.wrong");
+  expect(correct.length).toBe(2);
+  expect(wrong.length).toBe(1);
+  expect(wrong[0]).toBe(option(2));
+  expect($$(".option-btn.selected").length).toBe(0);
+
+  for (const i of acceptedChoiceIndices(threeOptionAltChoice)) {
+    expect(option(i).className).toContain("correct");
+    expect(option(i).className).not.toContain("wrong");
+    expect(option(i).className).not.toContain("selected");
+    expect(option(i).querySelector(".option-mark")?.textContent).toBe("✓");
+    expect(option(i).getAttribute("aria-label")).toBe(
+      `${threeOptionAltChoice.options[i]}，正确答案`
+    );
+  }
+
+  expect(option(2).className).toContain("wrong");
+  expect(option(2).className).not.toContain("correct");
+  expect(option(2).className).not.toContain("selected");
+  expect(option(2).querySelector(".option-mark")?.textContent).toBe("✗");
+  expect(option(2).getAttribute("aria-label")).toBe(
+    `${threeOptionAltChoice.options[2]}，所选答案错误`
+  );
+});
+
+test("答案下标为 1:判分不总是标记下标 0", () => {
+  renderChoice(shiftedChoice, 0, true);
+
+  expect($$(".option-btn.correct").length).toBe(1);
+  expect($$(".option-btn.wrong").length).toBe(1);
+  expect($$(".option-btn.selected").length).toBe(0);
+
+  expect(option(1).className).toContain("correct");
+  expect(option(1).className).not.toContain("wrong");
+  expect(option(1).className).not.toContain("selected");
+  expect(option(1).querySelector(".option-mark")?.textContent).toBe("✓");
+  expect(option(1).getAttribute("aria-label")).toBe(
+    `${shiftedChoice.options[1]}，正确答案`
+  );
+
+  expect(option(0).className).toContain("wrong");
+  expect(option(0).className).not.toContain("correct");
+  expect(option(0).className).not.toContain("selected");
+  expect(option(0).querySelector(".option-mark")?.textContent).toBe("✗");
+  expect(option(0).getAttribute("aria-label")).toBe(
+    `${shiftedChoice.options[0]}，所选答案错误`
+  );
+
+  expect(option(2).className).not.toContain("correct");
+  expect(option(2).className).not.toContain("wrong");
 });

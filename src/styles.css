@@ -1,7 +1,9 @@
 :root {
   --green: #58cc02;
   --green-dark: #46a302;
+  --green-ink: #2f6b00;
   --red: #ff4b4b;
+  --red-ink: #b00020;
   --gold: #ffc800;
   --gray: #e5e5e5;
   --gray-dark: #afafaf;
@@ -366,10 +368,6 @@ body {
 }
 
 .option-btn {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
   min-height: 44px;
   padding: 14px 16px;
   border: 2px solid var(--gray);
@@ -379,6 +377,14 @@ body {
   font-size: 16px;
   text-align: left;
   cursor: pointer;
+}
+
+/* 选择题选项:文本与 ✓/✗ 分列两端,长选项换行时标记不缩水 */
+.choice-options .option-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .option-btn.selected {
@@ -394,15 +400,15 @@ body {
 .option-btn.correct {
   border-color: var(--green);
   background: #e8ffd6;
-  /* #2f6b00 on #e8ffd6 ≈ 6.1:1,满足 WCAG AA 4.5:1 */
-  color: #2f6b00;
+  /* var(--green-ink) on #e8ffd6 ≈ 6.1:1,满足 WCAG AA 4.5:1 */
+  color: var(--green-ink);
 }
 
 .option-btn.wrong {
   border-color: var(--red);
   background: #ffdfe0;
-  /* #b00020 on #ffdfe0 ≈ 5.9:1,满足 WCAG AA 4.5:1 */
-  color: #b00020;
+  /* var(--red-ink) on #ffdfe0 ≈ 5.9:1,满足 WCAG AA 4.5:1 */
+  color: var(--red-ink);
 }
 
 .option-btn.correct:disabled,
@@ -504,13 +510,13 @@ body {
 .feedback.good {
   background: #e8ffd6;
   /* 与 .option-btn.correct 同一可读性标准 */
-  color: #2f6b00;
+  color: var(--green-ink);
 }
 
 .feedback.bad {
   background: #ffdfe0;
   /* 与 .option-btn.wrong 同一可读性标准 */
-  color: #b00020;
+  color: var(--red-ink);
 }
 
 .feedback-head {
@@ -716,8 +722,6 @@ body {
 .goal-presets .option-btn {
   flex: 1;
   text-align: center;
-  /* .option-btn 是 flex 行;设置页单标签仍居中 */
-  justify-content: center;
 }
 
 .danger-row {
