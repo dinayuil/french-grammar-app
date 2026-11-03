@@ -181,6 +181,11 @@ test("GitHub Actions workflow YAML is allowlisted", async (t) => {
   await setupPublic(publicRoot);
   await writeAt(
     appRoot,
+    ".github/workflows/build-public-apk.yml",
+    "name: apk\non: workflow_dispatch\npermissions:\n  contents: read\njobs: {}\n"
+  );
+  await writeAt(
+    appRoot,
     ".github/workflows/deploy-pages.yml",
     "name: deploy\non: workflow_dispatch\npermissions:\n  contents: read\njobs: {}\n"
   );
@@ -193,6 +198,7 @@ test("GitHub Actions workflow YAML is allowlisted", async (t) => {
   const result = await checkPublic({ appRoot, publicRoot });
 
   assert.equal(result.ok, true, errorsOf(result));
+  assert.ok(result.inventory.app.includes(".github/workflows/build-public-apk.yml"));
   assert.ok(result.inventory.app.includes(".github/workflows/deploy-pages.yml"));
   assert.ok(result.inventory.app.includes(".github/workflows/ci.yml"));
 });
@@ -200,6 +206,7 @@ test("GitHub Actions workflow YAML is allowlisted", async (t) => {
 test("workflow allowlist rejects other workflows, nested dirs, .yaml duplicates, and hidden files", async (t) => {
   const rejected = [
     [".github/workflows/other.yml", /non-allowlisted app file/i],
+    [".github/workflows/build-public-apk.yaml", /non-allowlisted app file/i],
     [".github/workflows/nested/x.yml", /unexpected directory|non-allowlisted app file/i],
     [".github/workflows/deploy-pages.yaml", /non-allowlisted app file/i],
     [".github/workflows/.hidden.yml", /non-allowlisted app file/i],

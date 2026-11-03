@@ -30,6 +30,10 @@ npm ci
 
 仓库Pages的Source为GitHub Actions；项目站继承`dinayuil.github.io`用户站的自定义域名；`github-pages`环境只允许`main`。新建仓库或迁移时，需在Settings → Pages选择GitHub Actions作为Source。
 
+## Public APK
+
+公开版 APK 由 `Build public debug APK` 工作流构建，仅支持手动触发或推送 `v*` 标签（APK 构建较慢，不随每次提交运行）。手动触发或标签构建必须指向 `main` 上的提交；未合并的功能分支引用会被工作流拒绝。工作流使用固定的公开题库提交，只构建公开版 debug APK，不上架应用商店，也不进行发布签名。构建产物以 `app-public-debug` 为 artifact 名称上传，保留 14 天。
+
 ## 内容模式
 
 公开版使用公开题库。内容仓库不是本仓库的一部分，而是与本仓库同级的独立仓库：

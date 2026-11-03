@@ -1,0 +1,102 @@
+name: Build public debug APK
+
+# APK builds are manual/tag-triggered because they are slow.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-apk
+  cancel-in-progress: false
+
+env:
+  CONTENT_PUBLIC_REPOSITORY: dinayuil/french-grammar-content-public
+  CONTENT_PUBLIC_REF: 43c2ae4f371d93f3366695ece8c01718438128b4
+  FGE_PUBLIC_CONTENT_DIR: ../content-public
+
+jobs:
+  build-public-apk:
+    name: Build public debug APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout app
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: app
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify commit is on main
+        working-directory: app
+        run: |
+          set -euo pipefail
+
+          if ! git fetch origin main --no-tags; then
+            echo "::error::Could not fetch origin/main to verify the APK build commit"
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::Public APK builds must come from a commit reachable from origin/main; unmerged feature-branch or tag refs are rejected"
+            exit 1
+          fi
+
+      - name: Checkout public content
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.CONTENT_PUBLIC_REPOSITORY }}
+          ref: ${{ env.CONTENT_PUBLIC_REF }}
+          path: content-public
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+          cache-dependency-path: |
+            app/android/**/*.gradle*
+            app/android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
+
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Run public test suite
+        working-directory: app
+        run: npm test
+
+      - name: Check public inventory
+        working-directory: app
+        run: npm run check:public -- --public ../content-public
+
+      - name: Build public debug APK
+        working-directory: app
+        run: npm run apk
+
+      - name: Upload public debug APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app-public-debug
+          path: app/android/app/build/outputs/apk/public/debug/app-public-debug.apk
+          if-no-files-found: error
+          retention-days: 14
