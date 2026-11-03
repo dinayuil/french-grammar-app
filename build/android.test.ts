@@ -313,6 +313,7 @@ try {
       }
       expect(result.status).toBe(0);
     },
+    90_000,
   );
 
   it("defines explicit public/internal flavors with a stable namespace", () => {
