@@ -106,10 +106,13 @@ jobs:
           fi
 
           PAGE_URL="${PAGE_URL%/}/"
-          ORIGIN="$(printf '%s\n' "$PAGE_URL" | sed -E 's#^(https?://[^/]+).*#\1#')"
+          case "$PAGE_URL" in
+            http://*) PAGE_URL="https://${PAGE_URL#http://}" ;;
+          esac
+          ORIGIN="$(printf '%s\n' "$PAGE_URL" | sed -E 's#^(https://[^/]+).*#\1#')"
 
           echo "Fetching deployed page: ${PAGE_URL}"
-          HTML="$(curl -fsSL --retry 3 --retry-delay 2 "$PAGE_URL")"
+          HTML="$(curl -fsSL --proto '=https' --max-time 30 --retry 3 --retry-delay 2 "$PAGE_URL")"
 
           if ! printf '%s' "$HTML" | grep -q 'id="root"'; then
             echo "::error::Deployed page at ${PAGE_URL} is missing id=\"root\""
@@ -123,10 +126,24 @@ jobs:
           fi
 
           case "$ASSET" in
-            http://* | https://*) ASSET_URL="$ASSET" ;;
+            http://*) ASSET_URL="https://${ASSET#http://}" ;;
+            https://*) ASSET_URL="$ASSET" ;;
             /*) ASSET_URL="${ORIGIN}${ASSET}" ;;
             *) ASSET_URL="${PAGE_URL}${ASSET}" ;;
           esac
 
           echo "Fetching deployed JS asset: ${ASSET_URL}"
-          curl -fsS --retry 3 --retry-delay 2 -o /dev/null "$ASSET_URL"
+          ASSET_FILE="$(mktemp)"
+          trap 'rm -f "$ASSET_FILE"' EXIT
+          if ! ASSET_STATUS="$(curl -fsSL --proto '=https' --max-time 30 --retry 3 --retry-delay 2 -o "$ASSET_FILE" -w '%{http_code}' "$ASSET_URL")"; then
+            echo "::error::Failed to fetch deployed JS asset at ${ASSET_URL}"
+            exit 1
+          fi
+          if [ "$ASSET_STATUS" != "200" ]; then
+            echo "::error::Deployed JS asset at ${ASSET_URL} returned HTTP ${ASSET_STATUS}"
+            exit 1
+          fi
+          if [ ! -s "$ASSET_FILE" ]; then
+            echo "::error::Deployed JS asset at ${ASSET_URL} is empty"
+            exit 1
+          fi
