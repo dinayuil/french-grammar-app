@@ -155,6 +155,7 @@ test("exported rules document the allowlists and the guard's limits", () => {
   const text = RULES.join("\n");
   assert.match(text, /package\.json/);
   assert.match(text, /src\/\*\*/);
+  assert.match(text, /\.github\/workflows/);
   assert.match(text, /manifest\.json/);
   assert.match(text, /skipped/i);
   assert.match(text, /not proof/i);
@@ -173,6 +174,31 @@ test("a legitimate empty public bank passes with normal generic templates", asyn
   assert.ok(result.inventory.app.includes("android/gradle/wrapper/gradle-wrapper.jar"));
   assert.ok(result.inventory.app.includes("android/app/src/main/res/mipmap-hdpi/ic_launcher.png"));
   assert.deepEqual(result.inventory.public.sort(), [".gitignore", "README.md", "manifest.json"]);
+});
+
+test("GitHub Actions workflow YAML is allowlisted", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await writeAt(
+    appRoot,
+    ".github/workflows/deploy-pages.yml",
+    "name: deploy\non: workflow_dispatch\npermissions:\n  contents: read\njobs: {}\n"
+  );
+
+  const result = await checkPublic({ appRoot, publicRoot });
+
+  assert.equal(result.ok, true, errorsOf(result));
+  assert.ok(result.inventory.app.includes(".github/workflows/deploy-pages.yml"));
+});
+
+test("non-workflow .github files stay rejected", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await writeAt(appRoot, ".github/notes.txt", "not a workflow\n");
+
+  const result = await checkPublic({ appRoot, publicRoot });
+
+  assertFails(result, /non-allowlisted|unknown|unexpected/i, "github notes");
 });
 
 test("a synthetic original chapter bank passes and reports real counts", async (t) => {
