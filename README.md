@@ -24,7 +24,7 @@ npm ci
 
 ## GitHub Pages
 
-公开网页版由`.github/workflows/deploy-pages.yml`在`main`推送或`main`上手动触发时部署。工作流检出`content-public`的固定提交，运行完整公开测试和`check:public`后构建`dist/public`；构建基路径由`actions/configure-pages`的`base_path`决定。
+公开网页版由`.github/workflows/deploy-pages.yml`在`main`推送或`main`上手动触发时部署。工作流检出`content-public`的固定提交，运行完整公开测试和`check:public`后构建`dist/public`；构建基路径由`actions/configure-pages`的`base_path`决定。上传前会本地校验构建产物：`index.html` 非空且含 `id="root"`，引用的 JS 资源存在、非空并与基路径匹配。部署后的外部冒烟检查为尽力而为：自定义域名的边缘可能以 403/429 拦截 GitHub Actions，此时只告警并跳过；404/500 或空资源仍会导致检查失败。
 
 账号用户站启用自定义域名时，`https://dinayuil.github.io/french-grammar-app/`会跳转到上面的自定义域名。公开题库更新时，同步更新`.github/workflows/deploy-pages.yml`与`.github/workflows/ci.yml`中的`CONTENT_PUBLIC_REF`。
 
