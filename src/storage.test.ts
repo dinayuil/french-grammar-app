@@ -279,4 +279,29 @@ describe("saveProgress / loadProgress 往返", () => {
     expect(p.dailyGoal).toBe(120);
     expect(p.days["2026-10-27"]).toEqual({ xp: 12, earnedQids: ["q1"], bonusIds: ["l1"] });
   });
+
+  test("days 的 sharePrompted:true 保存往返后保留", () => {
+    saveProgress({
+      ...DEFAULT_PROGRESS,
+      days: {
+        "2026-10-27": { xp: 12, earnedQids: ["q1"], bonusIds: ["l1"], sharePrompted: true },
+      },
+    });
+    const day = loadProgress().days["2026-10-27"];
+    expect(day.sharePrompted).toBe(true);
+    expect(day).toEqual({ xp: 12, earnedQids: ["q1"], bonusIds: ["l1"], sharePrompted: true });
+  });
+
+  test("旧数据 days 无 sharePrompted:加载后仍为 undefined(不补 false)", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        ...DEFAULT_PROGRESS,
+        days: { "2026-10-27": { xp: 12, earnedQids: [], bonusIds: [] } },
+      })
+    );
+    const day = loadProgress().days["2026-10-27"];
+    expect(day.sharePrompted).toBeUndefined();
+    expect("sharePrompted" in day).toBe(false);
+  });
 });
