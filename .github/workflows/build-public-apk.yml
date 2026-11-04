@@ -1,9 +1,12 @@
 name: Build public debug APK
 
-# APK builds are manual/tag-triggered because they are slow.
+# APK builds are slow, so they run on main pushes and v* tags rather than on
+# every branch push; workflow_dispatch is also available.
 on:
   workflow_dispatch:
   push:
+    branches:
+      - "main"
     tags:
       - "v*"
 
