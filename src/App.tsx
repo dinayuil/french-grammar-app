@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { loadProgress, saveProgress } from "./storage";
 import { CHAPTERS } from "./content";
 import { buildReviewLesson } from "./content/review";
@@ -9,6 +9,15 @@ import { LibraryView } from "./views/LibraryView";
 import { StatsView } from "./views/StatsView";
 import { SettingsView } from "./views/SettingsView";
 import type { Chapter, Progress } from "./types";
+import {
+  applyTheme,
+  getSystemPrefersDark,
+  loadThemeChoice,
+  resolveTheme,
+  saveThemeChoice,
+  watchSystemTheme,
+  type ThemeChoice,
+} from "./theme";
 
 type View =
   | { name: "home"; openChapterId?: string }
@@ -23,6 +32,21 @@ export default function App() {
   const [view, setView] = useState<View>({ name: "home" });
   const [progress, setProgress] = useState<Progress>(() => loadProgress());
   const [libraryQuery, setLibraryQuery] = useState("");
+
+  const [themeChoice, setThemeChoice] = useState<ThemeChoice>(() => loadThemeChoice());
+  const [systemDark, setSystemDark] = useState(() => getSystemPrefersDark());
+  const resolvedTheme = resolveTheme(themeChoice, systemDark);
+
+  useEffect(() => {
+    applyTheme(resolvedTheme);
+  }, [resolvedTheme]);
+
+  useEffect(() => watchSystemTheme(() => setSystemDark(getSystemPrefersDark())), []);
+
+  const changeTheme = (choice: ThemeChoice) => {
+    setThemeChoice(choice);
+    saveThemeChoice(choice);
+  };
 
   const updateProgress = (p: Progress) => {
     setProgress(p);
@@ -102,7 +126,14 @@ export default function App() {
   } else if (view.name === "stats") {
     body = <StatsView progress={progress} />;
   } else {
-    body = <SettingsView progress={progress} onChange={updateProgress} />;
+    body = (
+      <SettingsView
+        progress={progress}
+        onChange={updateProgress}
+        themeChoice={themeChoice}
+        onThemeChange={changeTheme}
+      />
+    );
   }
 
   const isPractice = view.name === "home" || view.name === "lesson" || view.name === "review";

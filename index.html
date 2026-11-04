@@ -3,6 +3,42 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#ffffff" />
+    <script>
+      // 在 React/CSS 绘制前应用主题，避免启动闪烁。键必须与 src/theme.ts 一致。
+      (function () {
+        try {
+          var key = "fge.theme.v1";
+          var stored = localStorage.getItem(key);
+          var choice =
+            stored === "light" || stored === "dark" || stored === "system"
+              ? stored
+              : "system";
+          var theme = choice;
+          if (choice === "system") {
+            var prefersDark = false;
+            try {
+              if (typeof window.matchMedia === "function") {
+                prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+              }
+            } catch (error) {
+              prefersDark = false;
+            }
+            theme = prefersDark ? "dark" : "light";
+          }
+          var root = document.documentElement;
+          root.setAttribute("data-theme", theme);
+          root.style.colorScheme = theme;
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) {
+            meta.setAttribute("content", theme === "dark" ? "#131f24" : "#ffffff");
+          }
+        } catch (error) {
+          // 存储/媒体查询不可用：交给 CSS 的 prefers-color-scheme 兜底。
+        }
+      })();
+    </script>
     <title>法语语法练习</title>
   </head>
   <body>
