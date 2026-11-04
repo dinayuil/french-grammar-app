@@ -412,6 +412,31 @@ try {
     }
   });
 
+  it("provides night colors and a theme-aware webview background", () => {
+    const night = readAppFile(
+      "android",
+      "app",
+      "src",
+      "main",
+      "res",
+      "values-night",
+      "colors.xml",
+    );
+    expect(night).toContain('<color name="colorPrimary">#131f24</color>');
+    expect(night).toContain('<color name="colorPrimaryDark">#131f24</color>');
+    expect(night).toContain('<color name="colorAccent">#6ad923</color>');
+    const layout = readAppFile(
+      "android",
+      "app",
+      "src",
+      "main",
+      "res",
+      "layout",
+      "activity_main.xml",
+    );
+    expect(layout).toContain("?android:attr/colorBackground");
+  });
+
   it("leaves MainActivity and manifest labels on the stable namespace", () => {
     const activity = readAppFile(
       "android",
