@@ -803,6 +803,32 @@ body {
   margin-top: 6px;
 }
 
+.stats-share {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.stats-share-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 10px 18px;
+  font-size: 14px;
+}
+
+.stats-share-status {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.stats-share-status.is-error {
+  color: var(--danger-action);
+}
+
 /* ---- 设置页 ---- */
 .settings {
   padding-top: 8px;
