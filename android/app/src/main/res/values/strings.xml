@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">法语语法练习</string>
-    <string name="title_activity_main">法语语法练习</string>
+    <string name="app_name">法语语法练习·内部版</string>
+    <string name="title_activity_main">法语语法练习·内部版</string>
     <string name="package_name">com.fge.app</string>
     <string name="custom_url_scheme">com.fge.app</string>
 </resources>

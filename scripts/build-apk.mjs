@@ -21,7 +21,7 @@ export class PackagingError extends Error {
 export const EDITIONS = Object.freeze({
   public: Object.freeze({
     appId: 'com.fge.open',
-    appName: '法语语法练习·公开版',
+    appName: '法语语法练习',
     webDir: 'dist/public',
     gradleTask: 'assemblePublicDebug',
     apkPath: path.join(
@@ -37,7 +37,7 @@ export const EDITIONS = Object.freeze({
   }),
   internal: Object.freeze({
     appId: 'com.fge.app',
-    appName: '法语语法练习',
+    appName: '法语语法练习·内部版',
     webDir: 'dist/internal',
     gradleTask: 'assembleInternalDebug',
     apkPath: path.join(

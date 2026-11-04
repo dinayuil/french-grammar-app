@@ -32,7 +32,7 @@ npm ci
 
 ## Public APK
 
-公开版 APK 由 `Build public debug APK` 工作流构建，仅支持手动触发或推送 `v*` 标签（APK 构建较慢，不随每次提交运行）。手动触发或标签构建必须指向 `main` 上的提交；未合并的功能分支引用会被工作流拒绝。工作流使用固定的公开题库提交，只构建公开版 debug APK，不上架应用商店，也不进行发布签名。构建产物以 `app-public-debug` 为 artifact 名称上传，保留 14 天。
+公开版 APK 由 `Build public debug APK` 工作流构建，在 `main` 推送、`v*` 标签或手动触发时运行。手动触发或标签构建必须指向 `main` 上的提交；未合并的功能分支引用会被工作流拒绝。工作流使用固定的公开题库提交，只构建公开版 debug APK，不上架应用商店，也不进行发布签名。构建产物以 `app-public-debug` 为 artifact 名称上传，保留 14 天。
 
 ## 内容模式
 
@@ -80,7 +80,7 @@ npm run apk
 
 Windows也可使用`build-apk.bat public`。打包按网页构建→Capacitor同步→Gradle顺序执行；若意外中断留下`android/.fge-apk.lock`，先确认相关打包和Gradle进程已经停止，再清理这个锁文件。
 
-公开版名称为“法语语法练习·公开版”。debug APK仅供本地测试，不用于商店发布。
+公开版名称为“法语语法练习”。debug APK仅供本地测试，不用于商店发布。
 
 ## 隐私边界
 
