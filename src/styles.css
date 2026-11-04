@@ -259,6 +259,8 @@ body {
   border-radius: 12px;
   margin-bottom: 12px;
   overflow: hidden;
+  scroll-margin-top: 16px;
+  scroll-margin-bottom: calc(var(--nav-h) + 24px);
 }
 
 .chapter-head {
