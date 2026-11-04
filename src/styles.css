@@ -1,16 +1,114 @@
 :root {
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-muted: #f7f7f7;
+  --border: #e5e5e5;
+  --text: #3c3c3c;
+  --text-secondary: #6e6e6e;
   --green: #58cc02;
+  --on-green: #1a2e05;
   --green-dark: #46a302;
   --green-ink: #2f6b00;
+  --success-bg: #e8ffd6;
   --red: #ff4b4b;
+  --danger-action: #b00020;
+  --on-danger: #ffffff;
   --red-ink: #b00020;
+  --error-bg: #ffdfe0;
   --gold: #ffc800;
-  --gray: #e5e5e5;
-  --gray-dark: #afafaf;
-  --text: #3c3c3c;
-  --text-light: #777;
-  --bg: #fff;
+  --on-gold: #3c3c3c;
+  --blue-bg: #f0f9ff;
+  --blue-ink: #0369a1;
+  --blue-accent: #1d4ed8;
+  --on-blue: #ffffff;
+  --blue-border: #bae6fd;
+  --challenge-bg: #fff8e1;
+  --highlight-bg: #d7f5a6;
+  --overlay: rgba(0, 0, 0, 0.35);
+  --focus: 0 0 0 3px #2f6b00;
+  --disabled: #afafaf;
+  --nav-active: var(--green-ink);
+  /* 旧 token 的语义等价别名 */
+  --gray: var(--border);
+  --gray-dark: var(--disabled);
+  --text-light: var(--text-secondary);
   --nav-h: 56px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #131f24;
+  --surface: #1b2a31;
+  --surface-muted: #24343c;
+  --border: #2e3f48;
+  --text: #e4e6e8;
+  --text-secondary: #9aa2a8;
+  --green: #6ad923;
+  --on-green: #0a1a10;
+  --green-dark: #86e44a;
+  --green-ink: #b8f08f;
+  --success-bg: #1a3a0f;
+  --red: #ff6b6b;
+  --danger-action: #ff6b6b;
+  --on-danger: #3d0f12;
+  --red-ink: #ffb3b3;
+  --error-bg: #3d0f12;
+  --gold: #ffd54f;
+  --on-gold: #2a1f00;
+  --blue-bg: #102a47;
+  --blue-ink: #7ec9ff;
+  --blue-accent: #60a5fa;
+  --on-blue: #0b1a2a;
+  --blue-border: #1a3f5c;
+  --challenge-bg: #2a2311;
+  --highlight-bg: #3a5a1c;
+  --overlay: rgba(0, 0, 0, 0.55);
+  --focus: 0 0 0 3px #86e44a;
+  --disabled: #5a6a72;
+  --nav-active: var(--green);
+}
+
+/* 无脚本或脚本失败时的系统深色兜底 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg: #131f24;
+    --surface: #1b2a31;
+    --surface-muted: #24343c;
+    --border: #2e3f48;
+    --text: #e4e6e8;
+    --text-secondary: #9aa2a8;
+    --green: #6ad923;
+    --on-green: #0a1a10;
+    --green-dark: #86e44a;
+    --green-ink: #b8f08f;
+    --success-bg: #1a3a0f;
+    --red: #ff6b6b;
+    --danger-action: #ff6b6b;
+    --on-danger: #3d0f12;
+    --red-ink: #ffb3b3;
+    --error-bg: #3d0f12;
+    --gold: #ffd54f;
+    --on-gold: #2a1f00;
+    --blue-bg: #102a47;
+    --blue-ink: #7ec9ff;
+    --blue-accent: #60a5fa;
+    --on-blue: #0b1a2a;
+    --blue-border: #1a3f5c;
+    --challenge-bg: #2a2311;
+    --highlight-bg: #3a5a1c;
+    --overlay: rgba(0, 0, 0, 0.55);
+    --focus: 0 0 0 3px #86e44a;
+    --disabled: #5a6a72;
+    --nav-active: var(--green);
+  }
+}
+
+*:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+  border-radius: inherit;
 }
 
 * {
@@ -187,9 +285,9 @@ body {
   margin-right: 12px;
   padding: 6px 10px;
   font-size: 12px;
-  background: #f0f9ff;
-  color: #0369a1;
-  border: 1px solid #bae6fd;
+  background: var(--blue-bg);
+  color: var(--blue-ink);
+  border: 1px solid var(--blue-border);
   border-radius: 8px;
   cursor: pointer;
   font-weight: 700;
@@ -251,7 +349,7 @@ body {
 }
 
 .lesson-item.kind-challenge {
-  background: #fff8e1;
+  background: var(--challenge-bg);
 }
 
 .lesson-status {
@@ -261,7 +359,7 @@ body {
 .lesson-badge {
   margin-left: auto;
   background: var(--gold);
-  color: #fff;
+  color: var(--on-gold);
   font-size: 11px;
   font-weight: 700;
   border-radius: 8px;
@@ -339,7 +437,7 @@ body {
 
 .btn-primary {
   background: var(--green);
-  color: #fff;
+  color: var(--on-green);
 }
 
 .btn-primary:disabled {
@@ -372,7 +470,8 @@ body {
   padding: 14px 16px;
   border: 2px solid var(--gray);
   border-radius: 10px;
-  background: #fff;
+  background: var(--surface);
+  color: var(--text);
   font: inherit;
   font-size: 16px;
   text-align: left;
@@ -389,7 +488,7 @@ body {
 
 .option-btn.selected {
   border-color: var(--green);
-  background: #e8ffd6;
+  background: var(--success-bg);
 }
 
 .option-btn:disabled {
@@ -399,15 +498,15 @@ body {
 
 .option-btn.correct {
   border-color: var(--green);
-  background: #e8ffd6;
-  /* var(--green-ink) on #e8ffd6 ≈ 6.1:1,满足 WCAG AA 4.5:1 */
+  background: var(--success-bg);
+  /* var(--green-ink) on var(--success-bg) ≈ 6.1:1,满足 WCAG AA 4.5:1 */
   color: var(--green-ink);
 }
 
 .option-btn.wrong {
   border-color: var(--red);
-  background: #ffdfe0;
-  /* var(--red-ink) on #ffdfe0 ≈ 5.9:1,满足 WCAG AA 4.5:1 */
+  background: var(--error-bg);
+  /* var(--red-ink) on var(--error-bg) ≈ 5.9:1,满足 WCAG AA 4.5:1 */
   color: var(--red-ink);
 }
 
@@ -457,7 +556,8 @@ body {
   padding: 0 10px;
   border: 2px solid var(--gray);
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface);
+  color: var(--text);
   font: inherit;
   font-size: 16px;
   cursor: pointer;
@@ -469,7 +569,7 @@ body {
 }
 
 .tile.placed {
-  background: #e8ffd6;
+  background: var(--success-bg);
   border-color: var(--green);
 }
 
@@ -484,7 +584,7 @@ body {
   min-width: 36px;
   height: 36px;
   font-size: 15px;
-  background: #f7f7f7;
+  background: var(--surface-muted);
 }
 
 /* ---- 判分反馈 ---- */
@@ -508,13 +608,13 @@ body {
 }
 
 .feedback.good {
-  background: #e8ffd6;
+  background: var(--success-bg);
   /* 与 .option-btn.correct 同一可读性标准 */
   color: var(--green-ink);
 }
 
 .feedback.bad {
-  background: #ffdfe0;
+  background: var(--error-bg);
   /* 与 .option-btn.wrong 同一可读性标准 */
   color: var(--red-ink);
 }
@@ -534,7 +634,8 @@ body {
   margin-top: 10px;
   padding: 10px 12px;
   border-radius: 8px;
-  background: #eef7ff;
+  background: var(--blue-bg);
+  color: var(--text);
   font-size: 15px;
   font-weight: 600;
 }
@@ -543,8 +644,8 @@ body {
   margin-bottom: 12px;
   padding: 10px 12px;
   border-radius: 8px;
-  background: #f6f6f6;
-  color: var(--text-light);
+  background: var(--surface-muted);
+  color: var(--text-secondary);
   font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -555,7 +656,7 @@ body {
   margin-right: 8px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: var(--gray);
+  background: var(--border);
   color: var(--text);
   font-size: 12px;
   font-weight: 700;
@@ -595,9 +696,9 @@ body {
   gap: 8px;
   padding: 12px;
   margin-bottom: 16px;
-  background: #e8f1ff;
-  color: #1d4ed8;
-  border: 2px solid #bfdbfe;
+  background: var(--blue-bg);
+  color: var(--blue-ink);
+  border: 2px solid var(--blue-border);
   border-radius: 12px;
   font: inherit;
   font-weight: 700;
@@ -610,8 +711,8 @@ body {
 }
 
 .review-count {
-  background: #1d4ed8;
-  color: #fff;
+  background: var(--blue-accent);
+  color: var(--on-blue);
   border-radius: 10px;
   min-width: 20px;
   padding: 1px 7px;
@@ -724,6 +825,26 @@ body {
   text-align: center;
 }
 
+.theme-option {
+  flex: 1;
+  min-height: 44px;
+  padding: 10px 8px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+}
+
+.theme-option.selected {
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--on-green);
+}
+
 .danger-row {
   display: flex;
   align-items: center;
@@ -733,14 +854,14 @@ body {
 }
 
 .btn-danger {
-  background: var(--red);
-  color: #fff;
+  background: var(--danger-action);
+  color: var(--on-danger);
 }
 
 .btn-danger-outline {
-  background: #fff;
-  color: var(--red);
-  border: 2px solid var(--red);
+  background: var(--surface);
+  color: var(--red-ink);
+  border: 2px solid var(--danger-action);
 }
 
 /* ---- 结算页 ---- */
@@ -770,7 +891,7 @@ body {
 }
 
 .settlement-sub.good {
-  color: var(--green-dark);
+  color: var(--green-ink);
   font-weight: 700;
 }
 
@@ -793,7 +914,7 @@ body {
 
 .xp-num {
   font-weight: 700;
-  color: var(--green-dark);
+  color: var(--green-ink);
 }
 
 .xp-total {
@@ -856,12 +977,12 @@ body {
   background: none;
   font: inherit;
   font-weight: 700;
-  color: var(--gray-dark);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
 .nav-item.active {
-  color: var(--green);
+  color: var(--nav-active);
 }
 
 /* ---- 讲解库 ---- */
@@ -886,12 +1007,17 @@ body {
   width: 100%;
   min-height: 44px;
   padding: 10px 14px;
-  border: 2px solid var(--gray);
+  border: 2px solid var(--border);
   border-radius: 12px;
   font: inherit;
   font-size: 16px;
-  background: var(--bg);
+  background: var(--surface);
   color: var(--text);
+}
+
+.library-search::placeholder {
+  color: var(--text-secondary);
+  opacity: 1;
 }
 
 .library-search:focus {
@@ -1003,7 +1129,7 @@ body {
 }
 
 .library-card-item:hover {
-  background: #f7f7f7;
+  background: var(--surface-muted);
 }
 
 .library-card-index {
@@ -1047,7 +1173,7 @@ body {
 .library-result-chapter {
   font-size: 12px;
   font-weight: 700;
-  color: var(--green-dark);
+  color: var(--green-ink);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -1055,7 +1181,7 @@ body {
 .library-result-item {
   width: 100%;
   padding: 12px 14px;
-  background: #f7f7f7;
+  background: var(--surface-muted);
   border: 2px solid transparent;
   border-radius: 12px;
   cursor: pointer;
@@ -1095,7 +1221,7 @@ body {
 }
 
 mark {
-  background: #d7f5a6;
+  background: var(--highlight-bg);
   color: inherit;
   border-radius: 3px;
   padding: 0 2px;
@@ -1204,7 +1330,7 @@ mark {
 
 .reader-next {
   background: var(--green);
-  color: #fff;
+  color: var(--on-green);
 }
 
 .reader-prev:disabled,
@@ -1215,8 +1341,8 @@ mark {
 
 .reader-practice {
   margin-left: auto;
-  background: #e8f1ff;
-  color: #1d4ed8;
+  background: var(--blue-bg);
+  color: var(--blue-ink);
 }
 
 .reader-empty {
@@ -1242,7 +1368,7 @@ mark {
 .reader-drawer-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--overlay);
 }
 
 .reader-drawer-panel {
@@ -1251,7 +1377,7 @@ mark {
   width: 100%;
   max-width: 520px;
   margin: 0 auto;
-  background: var(--bg);
+  background: var(--surface);
   border-radius: 16px 16px 0 0;
   display: flex;
   flex-direction: column;
@@ -1329,8 +1455,9 @@ mark {
 }
 
 .reader-toc-item.active {
-  background: #e8ffd6;
+  background: var(--success-bg);
   border-left-color: var(--green);
+  color: var(--green-ink);
 }
 
 .reader-toc-index {
@@ -1380,5 +1507,17 @@ mark {
 
   .library-chapter-count {
     margin-left: 0;
+  }
+}
+
+/* ---- 减少动效 ---- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
