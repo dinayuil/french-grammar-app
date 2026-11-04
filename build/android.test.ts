@@ -413,6 +413,19 @@ try {
   });
 
   it("provides night colors and a theme-aware webview background", () => {
+    const light = readAppFile(
+      "android",
+      "app",
+      "src",
+      "main",
+      "res",
+      "values",
+      "colors.xml",
+    );
+    expect(light).toContain('<color name="colorPrimary">#ffffff</color>');
+    expect(light).toContain('<color name="colorPrimaryDark">#ffffff</color>');
+    expect(light).toContain('<color name="colorAccent">#58cc02</color>');
+
     const night = readAppFile(
       "android",
       "app",
@@ -425,6 +438,7 @@ try {
     expect(night).toContain('<color name="colorPrimary">#131f24</color>');
     expect(night).toContain('<color name="colorPrimaryDark">#131f24</color>');
     expect(night).toContain('<color name="colorAccent">#6ad923</color>');
+
     const layout = readAppFile(
       "android",
       "app",
@@ -432,9 +446,38 @@ try {
       "main",
       "res",
       "layout",
-      "activity_main.xml",
+      "capacitor_bridge_layout_main.xml",
     );
-    expect(layout).toContain("?android:attr/colorBackground");
+    const webView =
+      layout.match(/<com\.getcapacitor\.CapacitorWebView[\s\S]*?\/>/)?.[0] ??
+      "";
+    expect(webView).toContain('android:id="@+id/webview"');
+    expect(webView).toContain('android:background="?android:attr/colorBackground"');
+
+    const styles = readAppFile(
+      "android",
+      "app",
+      "src",
+      "main",
+      "res",
+      "values",
+      "styles.xml",
+    );
+    const activeTheme =
+      styles.match(/<style name="AppTheme\.NoActionBar"[\s\S]*?<\/style>/)?.[0] ??
+      "";
+    expect(activeTheme).toContain(
+      'parent="Theme.AppCompat.DayNight.NoActionBar"',
+    );
+    expect(activeTheme).toContain(
+      '<item name="colorPrimary">@color/colorPrimary</item>',
+    );
+    expect(activeTheme).toContain(
+      '<item name="colorPrimaryDark">@color/colorPrimaryDark</item>',
+    );
+    expect(activeTheme).toContain(
+      '<item name="colorAccent">@color/colorAccent</item>',
+    );
   });
 
   it("leaves MainActivity and manifest labels on the stable namespace", () => {
