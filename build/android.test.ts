@@ -412,6 +412,111 @@ try {
     }
   });
 
+  it("provides night colors and a theme-aware webview background", () => {
+    const light = readAppFile(
+      "android",
+      "app",
+      "src",
+      "main",
+      "res",
+      "values",
+      "colors.xml",
+    );
+    expect(light).toContain('<color name="colorPrimary">#ffffff</color>');
+    expect(light).toContain('<color name="colorPrimaryDark">#ffffff</color>');
+    expect(light).toContain('<color name="colorAccent">#58cc02</color>');
+
+    const night = readAppFile(
+      "android",
+      "app",
+      "src",
+      "main",
+      "res",
+      "values-night",
+      "colors.xml",
+    );
+    expect(night).toContain('<color name="colorPrimary">#131f24</color>');
+    expect(night).toContain('<color name="colorPrimaryDark">#131f24</color>');
+    expect(night).toContain('<color name="colorAccent">#6ad923</color>');
+
+    const layout = readAppFile(
+      "android",
+      "app",
+      "src",
+      "main",
+      "res",
+      "layout",
+      "capacitor_bridge_layout_main.xml",
+    );
+    const webView =
+      layout.match(/<com\.getcapacitor\.CapacitorWebView[\s\S]*?\/>/)?.[0] ??
+      "";
+    expect(webView).toContain('android:id="@+id/webview"');
+    expect(webView).toContain('android:background="?android:attr/colorBackground"');
+
+    const styles = readAppFile(
+      "android",
+      "app",
+      "src",
+      "main",
+      "res",
+      "values",
+      "styles.xml",
+    );
+    const activeTheme =
+      styles.match(/<style name="AppTheme\.NoActionBar"[\s\S]*?<\/style>/)?.[0] ??
+      "";
+    expect(activeTheme).toContain(
+      'parent="Theme.AppCompat.DayNight.NoActionBar"',
+    );
+    expect(activeTheme).toContain(
+      '<item name="colorPrimary">@color/colorPrimary</item>',
+    );
+    expect(activeTheme).toContain(
+      '<item name="colorPrimaryDark">@color/colorPrimaryDark</item>',
+    );
+    expect(activeTheme).toContain(
+      '<item name="colorAccent">@color/colorAccent</item>',
+    );
+  });
+
+  it("keeps the app bridge layout in sync with the Capacitor package except the WebView background", () => {
+    const appLayout = readAppFile(
+      "android",
+      "app",
+      "src",
+      "main",
+      "res",
+      "layout",
+      "capacitor_bridge_layout_main.xml",
+    ).replace(/\r\n/g, "\n");
+    const packageLayoutPath = appFile(
+      "node_modules",
+      "@capacitor",
+      "android",
+      "capacitor",
+      "src",
+      "main",
+      "res",
+      "layout",
+      "capacitor_bridge_layout_main.xml",
+    );
+    expect(existsSync(packageLayoutPath)).toBe(true);
+    const packageLayout = readFileSync(packageLayoutPath, "utf8").replace(
+      /\r\n/g,
+      "\n",
+    );
+
+    expect(appLayout.match(/android:background="[^"]*"/g)).toEqual([
+      'android:background="?android:attr/colorBackground"',
+    ]);
+    const withoutBackground = appLayout.replace(
+      /\s*android:background="[^"]*"/,
+      "",
+    );
+    expect(withoutBackground).toBe(packageLayout);
+  });
+
   it("leaves MainActivity and manifest labels on the stable namespace", () => {
     const activity = readAppFile(
       "android",

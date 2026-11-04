@@ -4,6 +4,7 @@ import {
   normalizeText,
   applyAnswer,
   applyLessonComplete,
+  markSharePrompted,
   starsFor,
   reviewQueue,
   lettersBank,
@@ -261,6 +262,46 @@ describe("applyLessonComplete", () => {
   });
 });
 
+describe("markSharePrompted", () => {
+  const day: DayRecord = { xp: 25, earnedQids: ["q1", "q2"], bonusIds: ["l1"] };
+
+  test("已有当天记录:设置 sharePrompted,保留 xp/earnedQids/bonusIds,不动顶层数据", () => {
+    const base = P({
+      xp: 40,
+      days: { [T]: day, "2026-10-26": { xp: 5, earnedQids: [], bonusIds: [] } },
+      lessons: { l1: { completed: true, stars: 2 } },
+      mistakes: { q9: { lastWrong: "2026-10-26", count: 2 } },
+    });
+    const p = markSharePrompted(base, T);
+    expect(p.days[T]).toEqual({ ...day, sharePrompted: true });
+    expect(p.days["2026-10-26"]).toEqual({ xp: 5, earnedQids: [], bonusIds: [] });
+    expect(p.xp).toBe(40);
+    expect(p.lessons).toEqual(base.lessons);
+    expect(p.mistakes).toEqual(base.mistakes);
+  });
+
+  test("当天没有记录:创建 {xp:0, earnedQids:[], bonusIds:[], sharePrompted:true}", () => {
+    const p = markSharePrompted(P(), T);
+    expect(p.days[T]).toEqual({ xp: 0, earnedQids: [], bonusIds: [], sharePrompted: true });
+    expect(p.xp).toBe(0);
+    expect(p.lessons).toEqual({});
+    expect(p.mistakes).toEqual({});
+  });
+
+  test("已为 true:保持 true,不重复添加", () => {
+    const base = P({ days: { [T]: { ...day, sharePrompted: true } } });
+    const p = markSharePrompted(base, T);
+    expect(p.days[T]).toEqual({ ...day, sharePrompted: true });
+  });
+
+  test("immutable:不改入参", () => {
+    const base = P({ days: { [T]: day } });
+    markSharePrompted(base, T);
+    expect(base.days[T]).toEqual(day);
+    expect(base.days[T].sharePrompted).toBeUndefined();
+  });
+});
+
 describe("reviewQueue(复习关选题)", () => {
   test("lastWrong 升序:错得最久的优先", () => {
     const mistakes = {
@@ -402,6 +443,14 @@ describe("streakFor", () => {
 
   test("只有今天达标 → 1", () => {
     expect(streakFor({ "2026-10-27": met() }, goal, T)).toBe(1);
+  });
+
+  test("目标为 0 → 0(无目标不构成连击)", () => {
+    expect(streakFor({}, 0, T)).toBe(0);
+  });
+
+  test("目标为负数 → 0(不得无限循环)", () => {
+    expect(streakFor({}, -5, T)).toBe(0);
   });
 });
 

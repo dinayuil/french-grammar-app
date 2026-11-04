@@ -20,6 +20,7 @@ interface Props {
   lesson: Lesson;
   progress: Progress;
   onProgress: (p: Progress) => void;
+  onSettlement?: (progress: Progress) => void;
   onExit: () => void;
   onNextLesson: () => void;
   onFinish: (wrongQids: string[]) => void;
@@ -30,6 +31,7 @@ export function LessonView({
   lesson,
   progress,
   onProgress,
+  onSettlement,
   onExit,
   onNextLesson,
   onFinish,
@@ -59,6 +61,7 @@ export function LessonView({
     setSessionStars(stars);
     const np = applyLessonComplete(progress, today(), lesson.id, lesson.kind, mistakesThisRun, stars);
     onProgress(np);
+    onSettlement?.(np);
     playSound("complete", progress.sound);
     if (levelFor(np.xp) > beforeLevel) playSound("levelup", progress.sound, 0.5);
   };

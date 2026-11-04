@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from "react";
-import { loadProgress, saveProgress } from "./storage";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { loadProgress, saveProgress, today } from "./storage";
+import { markSharePrompted } from "./engine";
 import { CHAPTERS } from "./content";
 import { buildReviewLesson } from "./content/review";
 import { HomeView } from "./views/HomeView";
@@ -8,7 +9,18 @@ import { ReaderView } from "./views/ReaderView";
 import { LibraryView } from "./views/LibraryView";
 import { StatsView } from "./views/StatsView";
 import { SettingsView } from "./views/SettingsView";
+import { GoalReachedDialog } from "./components/GoalReachedDialog";
+import { shareStatsCard, type ShareResult } from "./share/shareStats";
 import type { Chapter, Progress } from "./types";
+import {
+  applyTheme,
+  getSystemPrefersDark,
+  loadThemeChoice,
+  resolveTheme,
+  saveThemeChoice,
+  watchSystemTheme,
+  type ThemeChoice,
+} from "./theme";
 
 type View =
   | { name: "home"; openChapterId?: string }
@@ -19,14 +31,69 @@ type View =
   | { name: "stats" }
   | { name: "settings" };
 
+/** spec 4.2:弹窗关闭后焦点回到结算页的「下一关」;没有下一关时回到「返回」。 */
+function findSettlementAction(): HTMLElement | null {
+  const next = document.querySelector<HTMLElement>(".settlement-actions .btn-primary");
+  if (next) return next;
+  const secondary = document.querySelectorAll<HTMLElement>(
+    ".settlement-actions .btn-secondary"
+  );
+  return secondary[secondary.length - 1] ?? null;
+}
+
 export default function App() {
   const [view, setView] = useState<View>({ name: "home" });
   const [progress, setProgress] = useState<Progress>(() => loadProgress());
+  const progressRef = useRef(progress);
   const [libraryQuery, setLibraryQuery] = useState("");
+  const [goalDialogProgress, setGoalDialogProgress] = useState<Progress | null>(null);
+
+  const [themeChoice, setThemeChoice] = useState<ThemeChoice>(() => loadThemeChoice());
+  const [systemDark, setSystemDark] = useState(() => getSystemPrefersDark());
+  const resolvedTheme = resolveTheme(themeChoice, systemDark);
+
+  useEffect(() => {
+    applyTheme(resolvedTheme);
+  }, [resolvedTheme]);
+
+  useEffect(() => watchSystemTheme(() => setSystemDark(getSystemPrefersDark())), []);
+
+  const changeTheme = (choice: ThemeChoice) => {
+    setThemeChoice(choice);
+    saveThemeChoice(choice);
+  };
 
   const updateProgress = (p: Progress) => {
+    progressRef.current = p;
     setProgress(p);
     saveProgress(p);
+  };
+
+  const handleSettlement = (np: Progress) => {
+    const date = today();
+    const day = np.days[date];
+    if (np.dailyGoal > 0 && (day?.xp ?? 0) >= np.dailyGoal && !day?.sharePrompted) {
+      const marked = markSharePrompted(np, date);
+      // 先展示弹窗:标记持久化失败不能阻塞达标提醒(spec 4.2)。
+      setGoalDialogProgress(marked);
+      try {
+        updateProgress(marked);
+      } catch {
+        // updateProgress 已先更新内存状态;仅本次会话内不再重复提醒。
+      }
+    }
+  };
+
+  const shareStats = async (): Promise<ShareResult> => {
+    const date = today();
+    const result = await shareStatsCard(progressRef.current, date);
+    if (result.status === "shared" || result.status === "downloaded") {
+      const current = progressRef.current;
+      if (!current.days[date]?.sharePrompted) {
+        updateProgress(markSharePrompted(current, date));
+      }
+    }
+    return result;
   };
 
   let body: ReactNode;
@@ -67,7 +134,14 @@ export default function App() {
       />
     ) : null;
   } else if (view.name === "review") {
-    body = <ReviewLessonView progress={progress} onProgress={updateProgress} onHome={() => setView({ name: "home" })} />;
+    body = (
+      <ReviewLessonView
+        progress={progress}
+        onProgress={updateProgress}
+        onSettlement={handleSettlement}
+        onHome={() => setView({ name: "home" })}
+      />
+    );
   } else if (view.name === "lesson") {
     const ch = CHAPTERS.find((c) => c.id === view.chapterId);
     const lesson = ch
@@ -81,6 +155,7 @@ export default function App() {
           lesson={lesson}
           progress={progress}
           onProgress={updateProgress}
+          onSettlement={handleSettlement}
           onExit={() => setView({ name: "home" })}
           onNextLesson={() => {
             const all = [...ch.lessons, ...ch.challenges];
@@ -100,9 +175,16 @@ export default function App() {
       );
     }
   } else if (view.name === "stats") {
-    body = <StatsView progress={progress} />;
+    body = <StatsView progress={progress} onShare={shareStats} />;
   } else {
-    body = <SettingsView progress={progress} onChange={updateProgress} />;
+    body = (
+      <SettingsView
+        progress={progress}
+        onChange={updateProgress}
+        themeChoice={themeChoice}
+        onThemeChange={changeTheme}
+      />
+    );
   }
 
   const isPractice = view.name === "home" || view.name === "lesson" || view.name === "review";
@@ -134,6 +216,14 @@ export default function App() {
           设置
         </button>
       </nav>
+      {goalDialogProgress && (
+        <GoalReachedDialog
+          progress={goalDialogProgress}
+          onShare={shareStats}
+          onClose={() => setGoalDialogProgress(null)}
+          returnFocusTo={findSettlementAction}
+        />
+      )}
     </div>
   );
 }
@@ -142,10 +232,12 @@ export default function App() {
 function ReviewLessonView({
   progress,
   onProgress,
+  onSettlement,
   onHome,
 }: {
   progress: Progress;
   onProgress: (p: Progress) => void;
+  onSettlement?: (progress: Progress) => void;
   onHome: () => void;
 }) {
   const [lesson] = useState(() => buildReviewLesson(progress));
@@ -165,6 +257,7 @@ function ReviewLessonView({
       lesson={lesson}
       progress={progress}
       onProgress={onProgress}
+      onSettlement={onSettlement}
       onExit={onHome}
       onNextLesson={onHome}
       onFinish={() => {}}

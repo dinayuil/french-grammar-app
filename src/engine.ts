@@ -144,6 +144,14 @@ export function applyLessonComplete(
   };
 }
 
+/** 标记当天已提示过达标分享(达标弹窗/统计页手动分享);immutable,保留当天已有记录。 */
+export function markSharePrompted(progress: Progress, date: string): Progress {
+  const prev = progress.days[date];
+  if (prev?.sharePrompted) return progress;
+  const day: DayRecord = { ...(prev ?? emptyDay()), sharePrompted: true };
+  return { ...progress, days: { ...progress.days, [date]: day } };
+}
+
 /** 星级:会话全对(含重做补救)→ 3 星;首次正确率 ≥ 80% → 2 星;完成 → 1 星。 */
 export function starsFor(correct: number, total: number, allFixed: boolean): number {
   if (allFixed || (total > 0 && correct === total)) return 3;
@@ -232,6 +240,7 @@ export function streakFor(
   goal: number,
   today: string
 ): number {
+  if (goal <= 0) return 0;
   const met = (d: string) => (days[d]?.xp ?? 0) >= goal;
   let cursor = met(today) ? today : dayBefore(today);
   let count = 0;

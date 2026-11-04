@@ -1,10 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Chapter, Progress } from "../types";
 import { today } from "../storage";
 import { streakFor } from "../engine";
 import { GoalRing } from "../components/GoalRing";
 import { StreakFlame } from "../components/StreakFlame";
 import { LevelBar } from "../components/LevelBar";
+
+/** 减少动效偏好;缺少 matchMedia 或查询异常时按不减少处理。 */
+function prefersReducedMotion(): boolean {
+  try {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return false;
+    }
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+}
 
 interface Props {
   chapters: Chapter[];
@@ -24,10 +36,45 @@ export function HomeView({
   onOpenReview,
 }: Props) {
   const [openChapter, setOpenChapter] = useState<string | null>(openChapterId ?? null);
+  const chapterRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const toggleRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const handledOpenChapter = useRef<string | null>(null);
 
   useEffect(() => {
-    setOpenChapter(openChapterId ?? null);
-  }, [openChapterId]);
+    if (openChapterId === undefined) {
+      setOpenChapter(null);
+      return;
+    }
+    if (!chapters.some((ch) => ch.id === openChapterId)) {
+      setOpenChapter(null);
+      window.scrollTo({ top: 0, left: 0 });
+      return;
+    }
+    setOpenChapter(openChapterId);
+  }, [openChapterId, chapters]);
+
+  // 只对本次 openChapterId 执行一次滚动/聚焦;用户手动折叠后再展开不会重复拉回。
+  useEffect(() => {
+    if (!openChapterId || openChapter !== openChapterId) return;
+    if (handledOpenChapter.current === openChapterId) return;
+    handledOpenChapter.current = openChapterId;
+
+    const card = chapterRefs.current[openChapterId];
+    card?.scrollIntoView?.({
+      block: "start",
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+    });
+
+    const toggle = toggleRefs.current[openChapterId];
+    if (toggle) {
+      try {
+        toggle.focus({ preventScroll: true });
+      } catch {
+        toggle.focus();
+      }
+    }
+  }, [openChapterId, openChapter]);
+
   const t = today();
   const todayXp = progress.days[t]?.xp ?? 0;
   const streak = streakFor(progress.days, progress.dailyGoal, t);
@@ -76,9 +123,21 @@ export function HomeView({
             const all = [...ch.lessons, ...ch.challenges];
             const doneCount = all.filter((l) => (progress.lessons[l.id]?.stars ?? 0) > 0).length;
             return (
-              <div key={ch.id} className="chapter-card">
+              <div
+                key={ch.id}
+                className="chapter-card"
+                ref={(el) => {
+                  chapterRefs.current[ch.id] = el;
+                }}
+              >
                 <div className="chapter-head">
-                  <button className="chapter-toggle" onClick={() => setOpenChapter(open ? null : ch.id)}>
+                  <button
+                    className="chapter-toggle"
+                    ref={(el) => {
+                      toggleRefs.current[ch.id] = el;
+                    }}
+                    onClick={() => setOpenChapter(open ? null : ch.id)}
+                  >
                     <div>
                       <div className="chapter-title">
                         <span className="chapter-number">第{index + 1}章</span>{" "}

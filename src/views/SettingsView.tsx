@@ -1,18 +1,48 @@
 import { useState } from "react";
 import type { Progress } from "../types";
+import type { ThemeChoice } from "../theme";
 import { GOAL_PRESETS, STORAGE_KEY } from "../config";
 import { DEFAULT_PROGRESS } from "../storage";
 
 interface Props {
   progress: Progress;
   onChange: (p: Progress) => void;
+  themeChoice?: ThemeChoice;
+  onThemeChange?: (choice: ThemeChoice) => void;
 }
 
-export function SettingsView({ progress, onChange }: Props) {
+const THEME_OPTIONS: ReadonlyArray<{ value: ThemeChoice; label: string }> = [
+  { value: "light", label: "浅色" },
+  { value: "system", label: "跟随系统" },
+  { value: "dark", label: "深色" },
+];
+
+export function SettingsView({
+  progress,
+  onChange,
+  themeChoice = "system",
+  onThemeChange,
+}: Props) {
   const [confirming, setConfirming] = useState(false);
 
   return (
     <div className="settings">
+      <div className="settings-title">外观</div>
+      <div className="goal-presets" role="radiogroup" aria-label="外观">
+        {THEME_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={themeChoice === option.value}
+            className={`theme-option ${themeChoice === option.value ? "selected" : ""}`}
+            onClick={() => onThemeChange?.(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
       <div className="settings-title">每日目标</div>
       <div className="goal-presets">
         {GOAL_PRESETS.map((g) => (

@@ -30,6 +30,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    css: true,
     // scripts/**/*.test.mjs belongs to Node's test runner (node:test), not
     // Vitest. run-mode.mjs runs those as a separate full-suite stage.
     exclude: [...configDefaults.exclude, "scripts/**/*.test.mjs"],

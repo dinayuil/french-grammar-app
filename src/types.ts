@@ -66,6 +66,8 @@ export interface DayRecord {
   earnedQids: string[];
   /** 当日已领过关/全对奖励的关卡 id("id" 过关、"id:perfect" 全对) */
   bonusIds: string[];
+  /** 当天是否已提示过达标分享弹窗(旧数据缺省视为未提示) */
+  sharePrompted?: boolean;
 }
 
 export interface LessonRecord {
