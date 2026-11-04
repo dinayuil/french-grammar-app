@@ -136,7 +136,9 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # Pages backend deployments can take well over 10 minutes; a short timeout
+    # cancels a deployment that actually succeeded and reports it as failed.
+    timeout-minutes: 30
     permissions:
       pages: write
       id-token: write
@@ -174,7 +176,7 @@ jobs:
           trap 'rm -f "$PAGE_FILE" "$ASSET_FILE"' EXIT
 
           echo "Fetching deployed page: ${PAGE_URL}"
-          if ! PAGE_STATUS="$(curl -sSL --proto '=https' --max-time 30 --retry 3 --retry-delay 2 "${PAGE_HEADERS[@]}" -o "$PAGE_FILE" -w '%{http_code}' "$PAGE_URL")"; then
+          if ! PAGE_STATUS="$(curl -sSL --proto '=https' --connect-timeout 10 --max-time 30 --retry 3 --retry-delay 2 --retry-max-time 90 "${PAGE_HEADERS[@]}" -o "$PAGE_FILE" -w '%{http_code}' "$PAGE_URL")"; then
             echo "::error::Failed to fetch deployed page at ${PAGE_URL}"
             exit 1
           fi
@@ -210,7 +212,7 @@ jobs:
           esac
 
           echo "Fetching deployed JS asset: ${ASSET_URL}"
-          if ! ASSET_STATUS="$(curl -sSL --proto '=https' --max-time 30 --retry 3 --retry-delay 2 "${ASSET_HEADERS[@]}" -o "$ASSET_FILE" -w '%{http_code}' "$ASSET_URL")"; then
+          if ! ASSET_STATUS="$(curl -sSL --proto '=https' --connect-timeout 10 --max-time 30 --retry 3 --retry-delay 2 --retry-max-time 90 "${ASSET_HEADERS[@]}" -o "$ASSET_FILE" -w '%{http_code}' "$ASSET_URL")"; then
             echo "::error::Failed to fetch deployed JS asset at ${ASSET_URL}"
             exit 1
           fi
