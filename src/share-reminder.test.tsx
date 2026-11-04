@@ -20,8 +20,8 @@ import {
   XP_PERFECT_BONUS,
   XP_PER_CORRECT,
 } from "./config";
-import { DEFAULT_PROGRESS, today } from "./storage";
-import { shareStatsCard } from "./share/shareStats";
+import { DEFAULT_PROGRESS, shiftDate, today } from "./storage";
+import { shareStatsCard, type ShareResult } from "./share/shareStats";
 import type { Lesson, Progress, Question } from "./types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -93,6 +93,19 @@ function playLesson(lesson: Lesson) {
   }
 }
 
+/** 首题故意答错(letters 题只点一个字母必然不等于完整答案),其余题答对,进入首次结算。 */
+function playLessonFirstWrong(lesson: Lesson) {
+  click($$(".tile").filter((t) => !t.className.includes("accent"))[0]);
+  click($$(".btn-wide")[0]); // 检查
+  click($$(".btn-wide")[0]); // 继续
+
+  for (let i = 1; i < lesson.questions.length; i++) {
+    answerCorrectly(lesson.questions[i]);
+    click($$(".btn-wide")[0]); // 检查
+    click($$(".btn-wide")[0]); // 继续
+  }
+}
+
 function seed(partial: Record<string, unknown>) {
   localStorage.setItem(
     STORAGE_KEY,
@@ -115,6 +128,20 @@ function openFirstLesson() {
 
 function navTo(label: string) {
   click($$(".bottom-nav button").find((b) => b.textContent === label));
+}
+
+/** 在统计页点一次分享,等待 onShare 的异步状态落定。 */
+async function shareFromStats(result: ShareResult) {
+  vi.mocked(shareStatsCard).mockResolvedValueOnce(result);
+  renderApp();
+  navTo("统计");
+  expect($$(".stats-share-btn").length).toBe(1);
+  click($$(".stats-share-btn")[0]);
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(shareStatsCard).toHaveBeenCalledTimes(1);
 }
 
 test("结算达标:弹出提醒并写入当天 sharePrompted", () => {
@@ -166,6 +193,53 @@ test("未达标不弹提醒", () => {
   expect(savedProgress().days[today()].sharePrompted).toBeUndefined();
 });
 
+test("今日 XP 恰好等于目标时也触发提醒(>= 边界)", () => {
+  // 合成练习一全对结算:3 题 × 2 XP + 过关奖 5 + 全对奖 5 = 16 XP
+  const settledXp =
+    firstLesson.questions.length * XP_PER_CORRECT +
+    XP_LESSON_BONUS +
+    XP_PERFECT_BONUS;
+  seed({ dailyGoal: settledXp });
+  renderApp();
+  openFirstLesson();
+  playLesson(firstLesson);
+
+  const day = savedProgress().days[today()];
+  expect(day.xp).toBe(settledXp);
+  expect($$(".goal-dialog").length).toBe(1);
+  expect(day.sharePrompted).toBe(true);
+});
+
+test("dailyGoal 为 0 时不弹提醒也不写标记", () => {
+  seed({ dailyGoal: 0 });
+  renderApp();
+  openFirstLesson();
+  playLesson(firstLesson);
+
+  expect(container.textContent).toContain("练习完成");
+  expect($$(".goal-dialog").length).toBe(0);
+  expect(savedProgress().days[today()].sharePrompted).toBeUndefined();
+});
+
+test("昨天已提示不压制今天:跨天重新提醒", () => {
+  const t = today();
+  const yesterday = shiftDate(t, -1);
+  seed({
+    dailyGoal: 2,
+    days: {
+      [yesterday]: { xp: 2, earnedQids: [], bonusIds: [], sharePrompted: true },
+    },
+  });
+  renderApp();
+  openFirstLesson();
+  playLesson(firstLesson);
+
+  const saved = savedProgress();
+  expect($$(".goal-dialog").length).toBe(1);
+  expect(saved.days[t].sharePrompted).toBe(true);
+  expect(saved.days[yesterday].sharePrompted).toBe(true);
+});
+
 test("复习关结算也能触发提醒", () => {
   const mistakeId = firstLesson.questions[0].id;
   seed({
@@ -183,6 +257,33 @@ test("复习关结算也能触发提醒", () => {
   expect(container.textContent).toContain("练习完成");
   expect($$(".goal-dialog").length).toBe(1);
   expect(savedProgress().days[today()].sharePrompted).toBe(true);
+});
+
+test("重做补救结算跨过目标时提醒,首次结算不提醒", () => {
+  seed({ dailyGoal: 10 });
+  renderApp();
+  openFirstLesson();
+  playLessonFirstWrong(firstLesson);
+
+  // 首次结算:答对 2 题 4 XP + 过关奖 5 = 9 XP,低于目标 10,不提醒
+  expect(container.textContent).toContain("练习完成");
+  expect(savedProgress().days[today()].xp).toBe(9);
+  expect($$(".goal-dialog").length).toBe(0);
+
+  click(
+    $$(".settlement-actions .btn-secondary").find((b) =>
+      b.textContent?.includes("重做")
+    )
+  );
+  answerCorrectly(firstLesson.questions[0]);
+  click($$(".btn-wide")[0]); // 检查
+  click($$(".btn-wide")[0]); // 继续 → 重做结算
+
+  // 重做答对 +1、补发全对奖 +5,当天共 15 XP ≥ 10,提醒出现
+  const day = savedProgress().days[today()];
+  expect(day.xp).toBe(15);
+  expect($$(".goal-dialog").length).toBe(1);
+  expect(day.sharePrompted).toBe(true);
 });
 
 test("统计页手动分享成功后写入当天标记,之后结算不再弹提醒", async () => {
@@ -207,6 +308,32 @@ test("统计页手动分享成功后写入当天标记,之后结算不再弹提�
   openFirstLesson();
   playLesson(firstLesson);
   expect($$(".goal-dialog").length).toBe(0);
+});
+
+test("手动分享 downloaded 也写入当天 sharePrompted(0 XP 允许)", async () => {
+  seed({ dailyGoal: 30 });
+  await shareFromStats({
+    status: "downloaded",
+    filename: "fge-stats-2026-11-04.png",
+  });
+
+  const day = savedProgress().days[today()];
+  expect(day.xp).toBe(0);
+  expect(day.sharePrompted).toBe(true);
+});
+
+test("手动分享 cancelled 不写当天标记", async () => {
+  seed({ dailyGoal: 30 });
+  await shareFromStats({ status: "cancelled" });
+
+  expect(savedProgress().days[today()]?.sharePrompted).toBeUndefined();
+});
+
+test("手动分享 error 不写当天标记", async () => {
+  seed({ dailyGoal: 30 });
+  await shareFromStats({ status: "error", message: "分享失败" });
+
+  expect(savedProgress().days[today()]?.sharePrompted).toBeUndefined();
 });
 
 test("onSettlement 收到结算后的 Progress(含奖励 XP),且在 onProgress 之后", () => {
