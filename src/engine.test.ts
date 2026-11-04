@@ -403,6 +403,14 @@ describe("streakFor", () => {
   test("只有今天达标 → 1", () => {
     expect(streakFor({ "2026-10-27": met() }, goal, T)).toBe(1);
   });
+
+  test("目标为 0 → 0(无目标不构成连击)", () => {
+    expect(streakFor({}, 0, T)).toBe(0);
+  });
+
+  test("目标为负数 → 0(不得无限循环)", () => {
+    expect(streakFor({}, -5, T)).toBe(0);
+  });
 });
 
 describe("levelFor", () => {

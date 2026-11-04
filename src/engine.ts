@@ -232,6 +232,7 @@ export function streakFor(
   goal: number,
   today: string
 ): number {
+  if (goal <= 0) return 0;
   const met = (d: string) => (days[d]?.xp ?? 0) >= goal;
   let cursor = met(today) ? today : dayBefore(today);
   let count = 0;
