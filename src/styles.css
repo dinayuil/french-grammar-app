@@ -811,11 +811,11 @@ body {
   margin-top: 12px;
 }
 
-.stats-share-btn {
+.btn.stats-share-btn {
   min-height: 44px;
   min-width: 44px;
-  padding: 10px 18px;
-  font-size: 14px;
+  padding: 6px 14px;
+  font-size: 13px;
 }
 
 .stats-share-status {
@@ -826,7 +826,7 @@ body {
 }
 
 .stats-share-status.is-error {
-  color: var(--danger-action);
+  color: var(--red-ink);
 }
 
 /* ---- 设置页 ---- */

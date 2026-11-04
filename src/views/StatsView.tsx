@@ -101,12 +101,13 @@ export function StatsView({
       {onShare && (
         <div className="stats-share">
           <button
-            className="btn btn-primary stats-share-btn"
+            className="btn btn-small btn-primary stats-share-btn"
             aria-label="分享今日打卡图片"
             aria-busy={busy}
             disabled={busy}
             onClick={handleShare}
           >
+            <span aria-hidden="true">⬆</span>{" "}
             {busy ? "生成中…" : status === "error" ? "分享失败，点击重试" : "分享今日打卡"}
           </button>
           {message && (

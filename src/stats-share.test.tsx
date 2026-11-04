@@ -65,7 +65,9 @@ describe("StatsView 分享入口", () => {
     renderStats(onShare);
 
     const button = shareButton();
-    expect(button.textContent).toBe("分享今日打卡");
+    expect(button.textContent).toContain("分享今日打卡");
+    expect(button.classList.contains("btn-small")).toBe(true);
+    expect(button.querySelector('[aria-hidden="true"]')?.textContent).toBe("⬆");
     expect(button.getAttribute("aria-label")).toBe("分享今日打卡图片");
     expect(button.disabled).toBe(false);
 
@@ -87,7 +89,7 @@ describe("StatsView 分享入口", () => {
     const button = shareButton();
     expect(button.disabled).toBe(true);
     expect(button.getAttribute("aria-busy")).toBe("true");
-    expect(button.textContent).toBe("生成中…");
+    expect(button.textContent).toContain("生成中…");
 
     await resolveShare(resolve, { status: "shared" });
     expect(shareButton().disabled).toBe(false);
@@ -100,7 +102,7 @@ describe("StatsView 分享入口", () => {
     clickShare();
     await resolveShare(resolve, { status: "shared" });
 
-    expect(shareButton().textContent).toBe("分享今日打卡");
+    expect(shareButton().textContent).toContain("分享今日打卡");
     expect(shareButton().disabled).toBe(false);
     expect($(".stats-share-status")?.textContent).toContain("已打开分享");
   });
@@ -114,7 +116,7 @@ describe("StatsView 分享入口", () => {
       filename: "fge-stats-2026-11-04.png",
     });
 
-    expect(shareButton().textContent).toBe("分享今日打卡");
+    expect(shareButton().textContent).toContain("分享今日打卡");
     expect($(".stats-share-status")?.textContent).toContain("图片已保存到本地");
   });
 
@@ -124,7 +126,7 @@ describe("StatsView 分享入口", () => {
     clickShare();
     await resolveShare(resolve, { status: "cancelled" });
 
-    expect(shareButton().textContent).toBe("分享今日打卡");
+    expect(shareButton().textContent).toContain("分享今日打卡");
     expect($(".stats-share-status")?.textContent).toContain("已取消");
   });
 
