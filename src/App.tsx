@@ -1,5 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { loadProgress, saveProgress } from "./storage";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { loadProgress, saveProgress, today } from "./storage";
+import { markSharePrompted } from "./engine";
 import { CHAPTERS } from "./content";
 import { buildReviewLesson } from "./content/review";
 import { HomeView } from "./views/HomeView";
@@ -8,6 +9,8 @@ import { ReaderView } from "./views/ReaderView";
 import { LibraryView } from "./views/LibraryView";
 import { StatsView } from "./views/StatsView";
 import { SettingsView } from "./views/SettingsView";
+import { GoalReachedDialog } from "./components/GoalReachedDialog";
+import { shareStatsCard, type ShareResult } from "./share/shareStats";
 import type { Chapter, Progress } from "./types";
 import {
   applyTheme,
@@ -31,7 +34,9 @@ type View =
 export default function App() {
   const [view, setView] = useState<View>({ name: "home" });
   const [progress, setProgress] = useState<Progress>(() => loadProgress());
+  const progressRef = useRef(progress);
   const [libraryQuery, setLibraryQuery] = useState("");
+  const [goalDialogProgress, setGoalDialogProgress] = useState<Progress | null>(null);
 
   const [themeChoice, setThemeChoice] = useState<ThemeChoice>(() => loadThemeChoice());
   const [systemDark, setSystemDark] = useState(() => getSystemPrefersDark());
@@ -49,8 +54,31 @@ export default function App() {
   };
 
   const updateProgress = (p: Progress) => {
+    progressRef.current = p;
     setProgress(p);
     saveProgress(p);
+  };
+
+  const handleSettlement = (np: Progress) => {
+    const date = today();
+    const day = np.days[date];
+    if (np.dailyGoal > 0 && (day?.xp ?? 0) >= np.dailyGoal && !day?.sharePrompted) {
+      const marked = markSharePrompted(np, date);
+      updateProgress(marked);
+      setGoalDialogProgress(marked);
+    }
+  };
+
+  const shareStats = async (): Promise<ShareResult> => {
+    const date = today();
+    const result = await shareStatsCard(progressRef.current, date);
+    if (result.status === "shared" || result.status === "downloaded") {
+      const current = progressRef.current;
+      if (!current.days[date]?.sharePrompted) {
+        updateProgress(markSharePrompted(current, date));
+      }
+    }
+    return result;
   };
 
   let body: ReactNode;
@@ -91,7 +119,14 @@ export default function App() {
       />
     ) : null;
   } else if (view.name === "review") {
-    body = <ReviewLessonView progress={progress} onProgress={updateProgress} onHome={() => setView({ name: "home" })} />;
+    body = (
+      <ReviewLessonView
+        progress={progress}
+        onProgress={updateProgress}
+        onSettlement={handleSettlement}
+        onHome={() => setView({ name: "home" })}
+      />
+    );
   } else if (view.name === "lesson") {
     const ch = CHAPTERS.find((c) => c.id === view.chapterId);
     const lesson = ch
@@ -105,6 +140,7 @@ export default function App() {
           lesson={lesson}
           progress={progress}
           onProgress={updateProgress}
+          onSettlement={handleSettlement}
           onExit={() => setView({ name: "home" })}
           onNextLesson={() => {
             const all = [...ch.lessons, ...ch.challenges];
@@ -124,7 +160,7 @@ export default function App() {
       );
     }
   } else if (view.name === "stats") {
-    body = <StatsView progress={progress} />;
+    body = <StatsView progress={progress} onShare={shareStats} />;
   } else {
     body = (
       <SettingsView
@@ -165,6 +201,13 @@ export default function App() {
           设置
         </button>
       </nav>
+      {goalDialogProgress && (
+        <GoalReachedDialog
+          progress={goalDialogProgress}
+          onShare={shareStats}
+          onClose={() => setGoalDialogProgress(null)}
+        />
+      )}
     </div>
   );
 }
@@ -173,10 +216,12 @@ export default function App() {
 function ReviewLessonView({
   progress,
   onProgress,
+  onSettlement,
   onHome,
 }: {
   progress: Progress;
   onProgress: (p: Progress) => void;
+  onSettlement?: (progress: Progress) => void;
   onHome: () => void;
 }) {
   const [lesson] = useState(() => buildReviewLesson(progress));
@@ -196,6 +241,7 @@ function ReviewLessonView({
       lesson={lesson}
       progress={progress}
       onProgress={onProgress}
+      onSettlement={onSettlement}
       onExit={onHome}
       onNextLesson={onHome}
       onFinish={() => {}}
