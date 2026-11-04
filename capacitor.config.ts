@@ -14,12 +14,12 @@ export interface EditionIdentity {
 export const EDITION_IDENTITIES: Record<PackagingEdition, EditionIdentity> = {
   public: {
     appId: 'com.fge.open',
-    appName: '法语语法练习·公开版',
+    appName: '法语语法练习',
     webDir: 'dist/public',
   },
   internal: {
     appId: 'com.fge.app',
-    appName: '法语语法练习',
+    appName: '法语语法练习·内部版',
     webDir: 'dist/internal',
   },
 };

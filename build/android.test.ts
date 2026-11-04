@@ -224,7 +224,7 @@ describe("Capacitor edition identity", () => {
   it("uses the internal identity only when explicitly selected", () => {
     expect(resolveEditionIdentity("internal")).toEqual({
       appId: "com.fge.app",
-      appName: "法语语法练习",
+      appName: "法语语法练习·内部版",
       webDir: "dist/internal",
     });
   });
@@ -329,7 +329,7 @@ try {
     expect(gradle).not.toMatch(/^\s*(?:public|internal)\s*\{/m);
   });
 
-  it("gives only the public flavor the public display name", () => {
+  it("gives the public flavor the base display name", () => {
     const publicStrings = readAppFile(
       "android",
       "app",
@@ -340,11 +340,12 @@ try {
       "strings.xml",
     );
     expect(publicStrings).toContain(
-      '<string name="app_name">法语语法练习·公开版</string>',
+      '<string name="app_name">法语语法练习</string>',
     );
     expect(publicStrings).toContain(
-      '<string name="title_activity_main">法语语法练习·公开版</string>',
+      '<string name="title_activity_main">法语语法练习</string>',
     );
+    expect(publicStrings).not.toContain("内部版");
     expect(publicStrings).toContain(
       '<string name="package_name">com.fge.open</string>',
     );
@@ -362,7 +363,7 @@ try {
     expect(gradle).toMatch(/GradleException/);
   });
 
-  it("keeps the internal display name as the base resource", () => {
+  it("gives the internal flavor the internal display name", () => {
     const strings = readAppFile(
       "android",
       "app",
@@ -372,9 +373,9 @@ try {
       "values",
       "strings.xml",
     );
-    expect(strings).toContain('<string name="app_name">法语语法练习</string>');
+    expect(strings).toContain('<string name="app_name">法语语法练习·内部版</string>');
     expect(strings).toContain(
-      '<string name="title_activity_main">法语语法练习</string>',
+      '<string name="title_activity_main">法语语法练习·内部版</string>',
     );
     expect(strings).toContain('<string name="package_name">com.fge.app</string>');
     expect(strings).not.toContain("公开版");
