@@ -133,7 +133,6 @@ export function HomeView({
                 <div className="chapter-head">
                   <button
                     className="chapter-toggle"
-                    tabIndex={-1}
                     ref={(el) => {
                       toggleRefs.current[ch.id] = el;
                     }}

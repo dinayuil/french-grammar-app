@@ -103,6 +103,14 @@ describe("阅读器「练习本章」滚动定位", () => {
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
+  test("未提供 openChapterId:不触发滚动回顶", () => {
+    renderHome();
+
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect($$(".lesson-list").length).toBe(0);
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
   test("prefers-reduced-motion: reduce 时使用瞬时滚动", () => {
     vi.stubGlobal(
       "matchMedia",
