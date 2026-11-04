@@ -41,6 +41,28 @@ test("全站焦点态与减少动效规则存在", () => {
   expect(css).toContain("prefers-reduced-motion");
 });
 
+test("章节切换按钮使用内嵌焦点环,避免被 chapter-card 的 overflow 裁剪", () => {
+  expect(ruleBody(".chapter-card")).toContain("overflow: hidden");
+  expect(ruleBody(".chapter-toggle:focus-visible")).toContain(
+    "box-shadow: inset var(--focus)"
+  );
+  // 浅色与深色主题都通过 --focus 提供实色焦点环。
+  expect(ruleBody(":root")).toContain("--focus: 0 0 0 3px #2f6b00");
+  expect(ruleBody(':root[data-theme="dark"]')).toContain(
+    "--focus: 0 0 0 3px #86e44a"
+  );
+  // 专项规则必须排在全局规则之后,且特异性更高,确保内嵌环生效。
+  expect(css.indexOf(".chapter-toggle:focus-visible")).toBeGreaterThan(
+    css.indexOf("*:focus-visible")
+  );
+});
+
+test("达标弹窗限制高度并在内容过长时滚动", () => {
+  const dialog = ruleBody(".goal-dialog");
+  expect(dialog).toContain("max-height: calc(100dvh - 32px)");
+  expect(dialog).toContain("overflow-y: auto");
+});
+
 test("按钮规则使用语义 token,不再硬编码白字", () => {
   const primary = ruleBody(".btn-primary");
   expect(primary).toContain("var(--on-green)");

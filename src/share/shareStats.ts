@@ -111,17 +111,25 @@ function canShareFile(file: File): boolean {
 }
 
 function downloadBlob(blob: Blob, filename: string): ShareResult {
+  const link = document.createElement("a");
   let url: string | null = null;
   try {
     url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
     link.href = url;
     link.download = filename;
+    link.style.display = "none";
+    // Firefox / 部分 WebView 会忽略未挂载的 anchor,下载必须在文档内触发。
+    document.body.appendChild(link);
     link.click();
     return { status: "downloaded", filename };
   } catch (error) {
     return { status: "error", message: messageFor(error) };
   } finally {
-    if (url) URL.revokeObjectURL(url);
+    link.remove();
+    if (url) {
+      const objectUrl = url;
+      // 延迟回收:立即 revoke 会让 Firefox/WebView 在下载开始前取消 blob 下载。
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    }
   }
 }

@@ -27,6 +27,7 @@ interface DialogProps {
   progress: Progress;
   onShare: () => Promise<ShareResult>;
   onClose: () => void;
+  returnFocusTo?: () => HTMLElement | null;
 }
 
 const progress: Progress = { ...DEFAULT_PROGRESS, dailyGoal: 50 };
@@ -39,6 +40,7 @@ function renderDialog(overrides: Partial<DialogProps> = {}) {
     progress: overrides.progress ?? progress,
     onShare,
     onClose,
+    returnFocusTo: overrides.returnFocusTo,
   };
   act(() => root.render(<GoalReachedDialog {...props} />));
   return { onShare, onClose };
@@ -128,6 +130,47 @@ describe("GoalReachedDialog", () => {
 
     act(() => root.render(null));
     expect(document.activeElement).toBe(trigger);
+  });
+
+  test("原焦点是 body 时,关闭后焦点回到 returnFocusTo 解析的结算按钮", () => {
+    const settlementAction = document.createElement("button");
+    settlementAction.textContent = "下一关";
+    document.body.appendChild(settlementAction);
+    expect(document.activeElement).toBe(document.body);
+
+    renderDialog({ returnFocusTo: () => settlementAction });
+    expect(document.activeElement).toBe(primaryButton());
+
+    act(() => root.render(null));
+    expect(document.activeElement).toBe(settlementAction);
+  });
+
+  test("已连接的触发按钮优先于 returnFocusTo", () => {
+    const trigger = document.createElement("button");
+    const fallback = document.createElement("button");
+    document.body.append(trigger, fallback);
+    trigger.focus();
+
+    renderDialog({ returnFocusTo: () => fallback });
+    act(() => root.render(null));
+
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  test("卸载后迟到的分享结果不会关闭新打开的弹窗", async () => {
+    const first = deferredShare();
+    renderDialog({ onShare: first.onShare });
+    click(primaryButton());
+
+    act(() => root.render(null));
+    const onClose = vi.fn();
+    renderDialog({ onClose });
+    expect($('[role="dialog"]')).not.toBeNull();
+
+    await resolveShare(first.resolve, { status: "shared" });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect($('[role="dialog"]')).not.toBeNull();
   });
 
   test("点击分享打卡调用 onShare,shared 后关闭", async () => {

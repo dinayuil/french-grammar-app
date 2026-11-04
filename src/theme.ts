@@ -66,7 +66,13 @@ export function watchSystemTheme(onChange: () => void): () => void {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
     return () => {};
   }
-  const query = window.matchMedia("(prefers-color-scheme: dark)");
+  let query: MediaQueryList;
+  try {
+    query = window.matchMedia("(prefers-color-scheme: dark)");
+  } catch {
+    // 某些 WebView/测试桩的 matchMedia 会抛错;监听失败不能阻止 App 挂载。
+    return () => {};
+  }
   const handler = () => onChange();
 
   if (typeof query.addEventListener === "function") {

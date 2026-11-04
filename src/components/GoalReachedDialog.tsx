@@ -6,6 +6,8 @@ interface Props {
   progress: Progress;
   onShare: () => Promise<ShareResult>;
   onClose: () => void;
+  /** 自动弹出时 document.activeElement 是 body;由调用方提供结算页应恢复焦点的操作按钮。 */
+  returnFocusTo?: () => HTMLElement | null;
 }
 
 type ShareStatus = "idle" | "downloaded" | "cancelled" | "error";
@@ -23,18 +25,33 @@ function failureText(detail: string): string {
   return detail.includes("分享失败") ? detail : `分享失败：${detail || "请重试"}`;
 }
 
-export function GoalReachedDialog({ progress, onShare, onClose }: Props) {
+export function GoalReachedDialog({
+  progress,
+  onShare,
+  onClose,
+  returnFocusTo,
+}: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const primaryRef = useRef<HTMLButtonElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
+  const returnFocusToRef = useRef(returnFocusTo);
+  const aliveRef = useRef(true);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<ShareStatus>("idle");
   const [message, setMessage] = useState("");
 
   useEffect(() => {
     onCloseRef.current = onClose;
-  }, [onClose]);
+    returnFocusToRef.current = returnFocusTo;
+  }, [onClose, returnFocusTo]);
+
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     previousFocus.current =
@@ -77,7 +94,18 @@ export function GoalReachedDialog({ progress, onShare, onClose }: Props) {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
       const previous = previousFocus.current;
-      if (previous?.isConnected) previous.focus();
+      // 弹窗在结算页自动打开时原焦点已是 body;此时回到调用方解析出的结算操作按钮。
+      let target: HTMLElement | null = null;
+      if (previous && previous !== document.body && previous.isConnected) {
+        target = previous;
+      } else {
+        try {
+          target = returnFocusToRef.current?.() ?? null;
+        } catch {
+          target = null;
+        }
+      }
+      target?.focus();
     };
   }, []);
 
@@ -89,6 +117,8 @@ export function GoalReachedDialog({ progress, onShare, onClose }: Props) {
 
     try {
       const result = await onShare();
+      // 弹窗已卸载后迟到的结果不能关闭之后重新打开的弹窗。
+      if (!aliveRef.current) return;
       if (result.status === "shared") {
         setBusy(false);
         onClose();
@@ -105,14 +135,20 @@ export function GoalReachedDialog({ progress, onShare, onClose }: Props) {
         setMessage(failureText(result.message));
       }
     } catch (error) {
+      if (!aliveRef.current) return;
       setStatus("error");
       setMessage(failureText(detailFor(error)));
     }
-    setBusy(false);
+    if (aliveRef.current) setBusy(false);
   };
 
   return (
-    <div className="goal-dialog-backdrop" onClick={onClose}>
+    <div
+      className="goal-dialog-backdrop"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onCloseRef.current();
+      }}
+    >
       <div
         ref={dialogRef}
         className="goal-dialog"

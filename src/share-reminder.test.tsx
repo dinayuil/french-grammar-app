@@ -159,6 +159,46 @@ test("结算达标:弹出提醒并写入当天 sharePrompted", () => {
   expect(day.sharePrompted).toBe(true);
 });
 
+test("关闭达标弹窗后焦点回到结算页的「下一关」按钮", () => {
+  seed({ dailyGoal: 2 });
+  renderApp();
+  openFirstLesson();
+  playLesson(firstLesson);
+
+  expect($$(".goal-dialog").length).toBe(1);
+  click($$(".goal-dialog .btn-secondary")[0]);
+  expect($$(".goal-dialog").length).toBe(0);
+
+  const next = container.querySelector<HTMLElement>(
+    ".settlement-actions .btn-primary"
+  );
+  expect(next?.textContent).toContain("下一关");
+  expect(document.activeElement).toBe(next);
+});
+
+test("标记保存失败不阻塞达标弹窗", () => {
+  seed({ dailyGoal: 2 });
+  const originalSetItem = Storage.prototype.setItem;
+  const setItem = vi
+    .spyOn(Storage.prototype, "setItem")
+    .mockImplementation(function (this: Storage, key: string, value: string) {
+      if (value.includes('"sharePrompted":true')) {
+        throw new Error("storage full");
+      }
+      return originalSetItem.call(this, key, value);
+    });
+
+  try {
+    renderApp();
+    openFirstLesson();
+    playLesson(firstLesson);
+
+    expect($$(".goal-dialog").length).toBe(1);
+  } finally {
+    setItem.mockRestore();
+  }
+});
+
 test("同一天再次结算不再弹出提醒", () => {
   seed({ dailyGoal: 2 });
   renderApp();

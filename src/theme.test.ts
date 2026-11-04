@@ -160,6 +160,55 @@ test("watchSystemTheme 响应 change/focus/visibilitychange,清理后不再回�
   expect(onChange).toHaveBeenCalledTimes(3);
 });
 
+test("watchSystemTheme:matchMedia 抛错时返回 no-op cleanup 且不影响挂载", () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => {
+      throw new Error("matchMedia unavailable");
+    })
+  );
+  const onChange = vi.fn();
+
+  let cleanup: (() => void) | undefined;
+  expect(() => {
+    cleanup = watchSystemTheme(onChange);
+  }).not.toThrow();
+  expect(typeof cleanup).toBe("function");
+  expect(() => cleanup?.()).not.toThrow();
+  expect(onChange).not.toHaveBeenCalled();
+});
+
+test("index.html 启动脚本在存储读取失败时仍应用系统主题与 theme-color", () => {
+  const html = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  expect(script).toBeTruthy();
+
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: query.includes("prefers-color-scheme: dark"),
+      media: query,
+    }))
+  );
+  const getItem = vi
+    .spyOn(Storage.prototype, "getItem")
+    .mockImplementation(() => {
+      throw new Error("storage blocked");
+    });
+
+  try {
+    expect(() => new Function(script as string)()).not.toThrow();
+  } finally {
+    getItem.mockRestore();
+  }
+
+  expect(document.documentElement.dataset.theme).toBe("dark");
+  expect(document.documentElement.style.colorScheme).toBe("dark");
+  expect(
+    document.querySelector('meta[name="theme-color"]')!.getAttribute("content")
+  ).toBe("#131f24");
+});
+
 test("index.html 启动脚本与模块使用同一主题键并预设 data-theme", () => {
   const html = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
   expect(html).toContain(THEME_KEY);

@@ -480,6 +480,43 @@ try {
     );
   });
 
+  it("keeps the app bridge layout in sync with the Capacitor package except the WebView background", () => {
+    const appLayout = readAppFile(
+      "android",
+      "app",
+      "src",
+      "main",
+      "res",
+      "layout",
+      "capacitor_bridge_layout_main.xml",
+    ).replace(/\r\n/g, "\n");
+    const packageLayoutPath = appFile(
+      "node_modules",
+      "@capacitor",
+      "android",
+      "capacitor",
+      "src",
+      "main",
+      "res",
+      "layout",
+      "capacitor_bridge_layout_main.xml",
+    );
+    expect(existsSync(packageLayoutPath)).toBe(true);
+    const packageLayout = readFileSync(packageLayoutPath, "utf8").replace(
+      /\r\n/g,
+      "\n",
+    );
+
+    expect(appLayout.match(/android:background="[^"]*"/g)).toEqual([
+      'android:background="?android:attr/colorBackground"',
+    ]);
+    const withoutBackground = appLayout.replace(
+      /\s*android:background="[^"]*"/,
+      "",
+    );
+    expect(withoutBackground).toBe(packageLayout);
+  });
+
   it("leaves MainActivity and manifest labels on the stable namespace", () => {
     const activity = readAppFile(
       "android",

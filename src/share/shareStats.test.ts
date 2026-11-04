@@ -46,6 +46,11 @@ const urlDescriptors = {
 let createObjectURL: ReturnType<typeof vi.fn>;
 let revokeObjectURL: ReturnType<typeof vi.fn>;
 let clickedAnchors: HTMLAnchorElement[];
+let clickedAnchorsConnected: boolean[];
+
+function flushTasks(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 function restoreUrlMethod(
   name: "createObjectURL" | "revokeObjectURL",
@@ -90,9 +95,11 @@ beforeEach(() => {
   sharePluginMock.share.mockResolvedValue({ activityType: "test" });
 
   clickedAnchors = [];
+  clickedAnchorsConnected = [];
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
     function (this: HTMLAnchorElement) {
       clickedAnchors.push(this);
+      clickedAnchorsConnected.push(this.isConnected);
     }
   );
 
@@ -161,6 +168,25 @@ describe("shareStatsCard web", () => {
     expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
     expect(clickedAnchors).toHaveLength(1);
     expect(clickedAnchors[0].download).toBe(FILENAME);
+    await flushTasks();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
+  });
+
+  test("下载链接点击时已挂载到文档,对象 URL 延迟回收", async () => {
+    mockWebShare();
+
+    const result = await shareStatsCard(PROGRESS, DATE);
+
+    expect(result).toEqual({ status: "downloaded", filename: FILENAME });
+    expect(clickedAnchors).toHaveLength(1);
+    expect(clickedAnchorsConnected).toEqual([true]);
+    // 点击后链接立即移除,避免留在页面上。
+    expect(clickedAnchors[0].isConnected).toBe(false);
+    // 回收必须晚于点击,给浏览器启动 blob 下载的机会。
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+
+    await flushTasks();
+    expect(revokeObjectURL).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
   });
 
@@ -176,6 +202,7 @@ describe("shareStatsCard web", () => {
     expect(share).toHaveBeenCalledTimes(1);
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(clickedAnchors[0].download).toBe(FILENAME);
+    await flushTasks();
   });
 
   test("PNG 导出失败 → error", async () => {

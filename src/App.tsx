@@ -31,6 +31,16 @@ type View =
   | { name: "stats" }
   | { name: "settings" };
 
+/** spec 4.2:弹窗关闭后焦点回到结算页的「下一关」;没有下一关时回到「返回」。 */
+function findSettlementAction(): HTMLElement | null {
+  const next = document.querySelector<HTMLElement>(".settlement-actions .btn-primary");
+  if (next) return next;
+  const secondary = document.querySelectorAll<HTMLElement>(
+    ".settlement-actions .btn-secondary"
+  );
+  return secondary[secondary.length - 1] ?? null;
+}
+
 export default function App() {
   const [view, setView] = useState<View>({ name: "home" });
   const [progress, setProgress] = useState<Progress>(() => loadProgress());
@@ -64,8 +74,13 @@ export default function App() {
     const day = np.days[date];
     if (np.dailyGoal > 0 && (day?.xp ?? 0) >= np.dailyGoal && !day?.sharePrompted) {
       const marked = markSharePrompted(np, date);
-      updateProgress(marked);
+      // 先展示弹窗:标记持久化失败不能阻塞达标提醒(spec 4.2)。
       setGoalDialogProgress(marked);
+      try {
+        updateProgress(marked);
+      } catch {
+        // updateProgress 已先更新内存状态;仅本次会话内不再重复提醒。
+      }
     }
   };
 
@@ -206,6 +221,7 @@ export default function App() {
           progress={goalDialogProgress}
           onShare={shareStats}
           onClose={() => setGoalDialogProgress(null)}
+          returnFocusTo={findSettlementAction}
         />
       )}
     </div>
