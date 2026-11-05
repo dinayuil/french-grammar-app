@@ -19,7 +19,7 @@ concurrency:
 
 env:
   CONTENT_PUBLIC_REPOSITORY: dinayuil/french-grammar-content-public
-  CONTENT_PUBLIC_REF: d0af9250ebbda64891933dd384d9dcd0d9f44e0d
+  CONTENT_PUBLIC_REF: 804c414f576ecee9d69f9eb25f53753fda2a3c49
   FGE_PUBLIC_CONTENT_DIR: ../content-public
 
 jobs:
