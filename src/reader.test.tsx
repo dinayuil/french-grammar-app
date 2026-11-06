@@ -124,6 +124,35 @@ describe("ReaderView direct", () => {
     expect(onBack).toHaveBeenCalled();
   });
 
+  test("卡片正文按受限 HTML 渲染，不显示标签或 markdown", () => {
+    const htmlChapter = {
+      ...chapter,
+      cards: [
+        {
+          id: "card-html",
+          title: "标题",
+          body: "<p>第一段</p><ul><li>le</li><li>la</li></ul>",
+        },
+      ],
+    };
+    act(() =>
+      root.render(
+        <ReaderView
+          chapter={htmlChapter}
+          chapterNumber={1}
+          onBack={() => {}}
+          onPracticeChapter={() => {}}
+        />
+      )
+    );
+    const body = container.querySelector(".card-body")!;
+    expect(body.querySelector("ul")).not.toBeNull();
+    expect(body.querySelectorAll("li").length).toBe(2);
+    expect(body.textContent).not.toContain("<p>");
+    expect(body.textContent).not.toContain("<li>");
+    expect(body.textContent).not.toContain("**");
+  });
+
   test("点击「练习本章」调用回调", () => {
     const onPracticeChapter = vi.fn();
     act(() =>

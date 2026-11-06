@@ -1,4 +1,5 @@
 import type { Card, Chapter } from "../types";
+import { cardBodyToText } from "../content/cardHtml";
 
 export interface SearchEntry {
   chapter: Chapter;
@@ -65,20 +66,9 @@ export function normalizeText(value: string): string {
 }
 
 /**
- * 卡片正文是受限 HTML（p / strong / em / ul / ol / li / br）。
- * 搜索索引与摘要需要纯文本版本：去掉标签、还原实体，并保留段落与列表的分行。
+ * 卡片正文的纯文本版本：与渲染共用同一套 token 规则，实现在 content/cardHtml.ts。
  */
-export function cardText(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|li|ul|ol)>/gi, "\n")
-    .replace(/<[^>]*>/g, "")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
-    .replace(/[ \t]+/g, " ")
-    .trim();
-}
+export const cardText = cardBodyToText;
 
 function queryTerms(query: string): string[] {
   return query
@@ -99,7 +89,7 @@ export function buildSearchIndex(chapters: Chapter[]): SearchEntry[] {
         card,
         cardIndex,
         normalizedTitle: normalizeText(card.title),
-        normalizedBody: normalizeText(cardText(card.body)),
+        normalizedBody: normalizeText(cardBodyToText(card.body)),
       });
     });
   });
