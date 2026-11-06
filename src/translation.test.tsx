@@ -69,17 +69,11 @@ afterEach(() => {
   container.remove();
 });
 
-const afterProgress: Progress = { ...DEFAULT_PROGRESS, translationTiming: "after" };
+const afterProgress: Progress = { ...DEFAULT_PROGRESS };
 const beforeProgress: Progress = { ...DEFAULT_PROGRESS, translationTiming: "before" };
 const offProgress: Progress = { ...DEFAULT_PROGRESS, translationEnabled: false };
 
-test("默认答题前:翻译与题目一起显示", () => {
-  act(() => root.render(<LessonHarness initial={DEFAULT_PROGRESS} lesson={choiceLesson} />));
-  expect(container.textContent).toContain(choiceQuestion.translation!);
-  expect(container.textContent).toContain(choiceQuestion.prompt);
-});
-
-test("答题后模式:答题前不显示翻译,判分后显示翻译并补全题干", () => {
+test("默认答题后:答题前不显示翻译,判分后显示翻译并补全题干", () => {
   act(() => root.render(<LessonHarness initial={afterProgress} lesson={choiceLesson} />));
   expect(container.textContent).not.toContain(choiceQuestion.translation!);
   expect(container.textContent).toContain(choiceQuestion.prompt);

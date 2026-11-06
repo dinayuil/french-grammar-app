@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Chapter } from "../types";
 import { cardSummary, groupCardsByUnit } from "../library/search";
+import { sanitizeCardHtml } from "../content/cardHtml";
 
 interface Props {
   chapter: Chapter;
@@ -81,7 +82,10 @@ export function ReaderView({
 
       <div className="reader-body" ref={bodyRef}>
         <div className="card-title">{card.title}</div>
-        <div className="card-body">{card.body}</div>
+        <div
+          className="card-body"
+          dangerouslySetInnerHTML={{ __html: sanitizeCardHtml(card.body) }}
+        />
       </div>
 
       <div className="reader-footer">
