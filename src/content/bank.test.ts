@@ -194,6 +194,15 @@ describe.skipIf(EDITION !== "public")("public: 真实公开题库非空契约", 
     expect(new Set(allIds).size).toBe(allIds.length);
   });
 
+  test("每个练习关/挑战关 1–10 题（长度上限，避免中途退出后重做）", () => {
+    const offenders = CHAPTERS.flatMap((ch) =>
+      [...ch.lessons, ...ch.challenges]
+        .filter((lesson) => lesson.questions.length < 1 || lesson.questions.length > 10)
+        .map((lesson) => `${lesson.id}: ${lesson.questions.length} 题`)
+    );
+    expect(offenders).toEqual([]);
+  });
+
   test("每章通过 schema 且均有卡片/练习/综合挑战,每题翻译与解析非空", () => {
     expect(CHAPTERS.length).toBeGreaterThan(0);
     const schemaErrors = CHAPTERS.flatMap((ch) =>
