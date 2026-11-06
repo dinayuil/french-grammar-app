@@ -370,9 +370,9 @@ test("挑战关可玩:普通关 + 挑战关全部列出,首题判分正确", () 
   expect(container.textContent).toContain("正确");
 });
 
-test("判分后补全题干并显示翻译", () => {
+test("默认随题目显示翻译；判分后补全题干", () => {
   openFirstLesson();
-  expect(container.textContent).not.toContain(firstLesson.questions[0].translation!);
+  expect(container.textContent).toContain(firstLesson.questions[0].translation!);
   answerCorrectly(firstLesson.questions[0]);
   click($$(".btn-wide")[0]!);
   expect(container.textContent).toContain("Le ciel est bleu aujourd'hui.");

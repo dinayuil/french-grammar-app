@@ -77,11 +77,11 @@ describe("loadProgress", () => {
     expect(loadProgress().sound).toBe(true);
   });
 
-  test("旧数据缺翻译设置 → 默认开启 + 答题后显示", () => {
+  test("旧数据缺翻译设置 → 默认开启 + 答题前显示", () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ xp: 5, days: {}, lessons: {}, mistakes: {} }));
     const p = loadProgress();
     expect(p.translationEnabled).toBe(true);
-    expect(p.translationTiming).toBe("after");
+    expect(p.translationTiming).toBe("before");
   });
 
   test("翻译设置 false/before 会被保留", () => {
@@ -101,7 +101,7 @@ describe("loadProgress", () => {
     );
     const p = loadProgress();
     expect(p.translationEnabled).toBe(true);
-    expect(p.translationTiming).toBe("after");
+    expect(p.translationTiming).toBe("before");
   });
 });
 
