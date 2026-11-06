@@ -6,7 +6,7 @@ export const DEFAULT_PROGRESS: Progress = {
   dailyGoal: DEFAULT_GOAL,
   sound: true,
   translationEnabled: true,
-  translationTiming: "after",
+  translationTiming: "before",
   days: {},
   lessons: {},
   mistakes: {},
@@ -53,7 +53,7 @@ function readKey(key: string): Progress | null {
       translationTiming:
         parsed.translationTiming === "before" || parsed.translationTiming === "after"
           ? parsed.translationTiming
-          : "after",
+          : "before",
       days: typeof parsed.days === "object" && parsed.days !== null ? parsed.days : {},
       lessons,
       mistakes,
