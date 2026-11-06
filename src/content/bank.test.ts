@@ -4,6 +4,8 @@ import { basename, resolve } from "node:path";
 import process from "node:process";
 import { CHAPTERS } from "../content";
 import { completedQuestion } from "../answerFill";
+import { cardText } from "../library/search";
+import { sanitizeCardHtml } from "./cardHtml";
 import { validateChapter } from "./validate";
 import type {
   Chapter,
@@ -287,6 +289,29 @@ describe.skipIf(EDITION !== "public")("public: 真实公开题库非空契约", 
       for (const word of words) {
         if (containsStandaloneFrenchWord(translation, word)) {
           problems.push(`${q.id}: translation 直接包含独立词「${word}」`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test("卡片正文是受限 HTML：不含 markdown 标记，且只含白名单标签", () => {
+    const problems: string[] = [];
+    for (const ch of CHAPTERS) {
+      for (const card of ch.cards) {
+        const body = card.body ?? "";
+        if (sanitizeCardHtml(body) !== body) {
+          problems.push(`${card.id}: 含非法标签或属性`);
+        }
+        const text = cardText(body);
+        if (
+          /^\s*[-*]\s+/m.test(text) ||
+          /\*\*[^*\n]+\*\*/.test(text) ||
+          /^#{1,6}\s/m.test(text) ||
+          /`[^`]+`/.test(text) ||
+          /\[[^\]]*\]\([^)]*\)/.test(text)
+        ) {
+          problems.push(`${card.id}: 残留 markdown 标记`);
         }
       }
     }
