@@ -64,6 +64,22 @@ export function normalizeText(value: string): string {
   return normalizeWithMap(value).normalized;
 }
 
+/**
+ * 卡片正文是受限 HTML（p / strong / em / ul / ol / li / br）。
+ * 搜索索引与摘要需要纯文本版本：去掉标签、还原实体，并保留段落与列表的分行。
+ */
+export function cardText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|li|ul|ol)>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+}
+
 function queryTerms(query: string): string[] {
   return query
     .trim()
@@ -83,7 +99,7 @@ export function buildSearchIndex(chapters: Chapter[]): SearchEntry[] {
         card,
         cardIndex,
         normalizedTitle: normalizeText(card.title),
-        normalizedBody: normalizeText(card.body),
+        normalizedBody: normalizeText(cardText(card.body)),
       });
     });
   });
@@ -125,10 +141,11 @@ export function cardSummary(
   query?: string,
   maxLength = 60
 ): string {
+  const text = cardText(body);
   if (query) {
     const terms = queryTerms(query);
     if (terms.length > 0) {
-      const { normalized, map } = normalizeWithMap(body);
+      const { normalized, map } = normalizeWithMap(text);
       let earliest = -1;
 
       for (const term of terms) {
@@ -142,12 +159,12 @@ export function cardSummary(
 
       if (earliest !== -1) {
         if (maxLength <= 0) return "";
-        return body.slice(earliest, earliest + maxLength);
+        return text.slice(earliest, earliest + maxLength);
       }
     }
   }
 
-  return firstLine(body);
+  return firstLine(text);
 }
 
 /**

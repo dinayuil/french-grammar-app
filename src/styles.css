@@ -691,7 +691,28 @@ body {
 .card-body {
   font-size: 15px;
   line-height: 1.8;
-  white-space: pre-wrap;
+}
+
+.card-body p {
+  margin: 0 0 12px;
+}
+
+.card-body p:last-child {
+  margin-bottom: 0;
+}
+
+.card-body ul,
+.card-body ol {
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+
+.card-body li {
+  margin-bottom: 4px;
+}
+
+.card-body li:last-child {
+  margin-bottom: 0;
 }
 
 /* ---- 复习入口 ---- */

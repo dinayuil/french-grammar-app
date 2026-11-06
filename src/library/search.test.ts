@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildSearchIndex,
   cardSummary,
+  cardText,
   groupCardsByUnit,
   highlightParts,
   normalizeText,
@@ -114,9 +115,35 @@ describe("buildSearchIndex / searchEntries", () => {
   });
 });
 
+describe("cardText", () => {
+  it("去掉标签并保留段落与列表分行", () => {
+    expect(
+      cardText("<p>什么是宾语代词？<br>法语里…</p><ul><li>le</li><li>la</li></ul>"),
+    ).toBe("什么是宾语代词？\n法语里…\nle\nla");
+  });
+
+  it("还原实体", () => {
+    expect(cardText("<p>a &lt; b &amp; c</p>")).toBe("a < b & c");
+  });
+
+  it("纯文本原样返回", () => {
+    expect(cardText("第一行。\n第二行。")).toBe("第一行。\n第二行。");
+  });
+});
+
 describe("cardSummary", () => {
   it("returns the first line when there is no query", () => {
     expect(cardSummary("第一行。\n第二行。")).toBe("第一行。");
+  });
+
+  it("HTML 正文：无查询时取第一段", () => {
+    expect(cardSummary("<p>第一段。</p><p>第二段不应出现。</p>")).toBe("第一段。");
+  });
+
+  it("HTML 正文：有查询时从命中处截取", () => {
+    expect(cardSummary("<p>前缀文字 été 后面还有内容。</p>", "ete")).toBe(
+      "été 后面还有内容。",
+    );
   });
 
   it("returns the first line when only the title matches", () => {
