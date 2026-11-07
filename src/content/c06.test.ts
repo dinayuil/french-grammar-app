@@ -5,7 +5,7 @@ import { completedQuestion } from "../answerFill";
 import type { ChoiceQuestion } from "../types";
 
 describe.skipIf(__FGE_EDITION__ !== "public")("public: C06 irregular verbs", () => {
-  test("C06 follows C05 while existing public chapters remain available", () => {
+  test("C06 follows C05 in the public chapter order", () => {
     expect(CHAPTERS.slice(0, 6).map((chapter) => chapter.id)).toEqual([
       "pub-c01-boundaries",
       "pub-c02-noun-phrases",
@@ -14,9 +14,6 @@ describe.skipIf(__FGE_EDITION__ !== "public")("public: C06 irregular verbs", () 
       "pub-c05-present",
       "pub-c06-verbs",
     ]);
-    expect(CHAPTERS.map((chapter) => chapter.id)).toEqual(
-      expect.arrayContaining(["pub-predication", "pub-articles", "pub-agreement"]),
-    );
   });
 
   test("多空位 choice:选项分槽数与空数一致,正确项补全后无占位符或双空格", () => {

@@ -5,7 +5,7 @@ import { completedQuestion } from "../answerFill";
 import type { ChoiceQuestion } from "../types";
 
 describe.skipIf(__FGE_EDITION__ !== "public")("public: C25 integration and review", () => {
-  test("C25 is the last new-curriculum chapter while legacy chapters remain available", () => {
+  test("C25 is the last chapter in the public bank", () => {
     expect(CHAPTERS.slice(0, 25).map((chapter) => chapter.id)).toEqual([
       "pub-c01-boundaries",
       "pub-c02-noun-phrases",
@@ -33,9 +33,6 @@ describe.skipIf(__FGE_EDITION__ !== "public")("public: C25 integration and revie
       "pub-c24-lexical-constructions",
       "pub-c25-integration-review",
     ]);
-    expect(CHAPTERS.map((chapter) => chapter.id)).toEqual(
-      expect.arrayContaining(["pub-predication", "pub-articles", "pub-agreement"]),
-    );
   });
 
   test("每个关卡不超过 10 题", () => {

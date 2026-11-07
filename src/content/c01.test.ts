@@ -4,11 +4,8 @@ import { judge } from "../engine";
 import { completedQuestion } from "../answerFill";
 
 describe.skipIf(__FGE_EDITION__ !== "public")("public: C01 word boundaries", () => {
-  test("the new first chapter is loaded without removing the candidate chapters", () => {
+  test("the new first chapter is loaded first in the public bank", () => {
     expect(CHAPTERS[0]?.id).toBe("pub-c01-boundaries");
-    expect(CHAPTERS.map((chapter) => chapter.id)).toEqual(expect.arrayContaining([
-      "pub-predication", "pub-articles", "pub-agreement",
-    ]));
   });
 
   test.each([

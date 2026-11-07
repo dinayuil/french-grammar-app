@@ -5,7 +5,7 @@ import { completedQuestion } from "../answerFill";
 import type { ChoiceQuestion } from "../types";
 
 describe.skipIf(__FGE_EDITION__ !== "public")("public: C11 pronominal verbs", () => {
-  test("C11 follows C10 while existing public chapters remain available", () => {
+  test("C11 follows C10 in the public chapter order", () => {
     expect(CHAPTERS.slice(0, 11).map((chapter) => chapter.id)).toEqual([
       "pub-c01-boundaries",
       "pub-c02-noun-phrases",
@@ -19,9 +19,6 @@ describe.skipIf(__FGE_EDITION__ !== "public")("public: C11 pronominal verbs", ()
       "pub-c10-object-pronouns",
       "pub-c11-pronominal-verbs",
     ]);
-    expect(CHAPTERS.map((chapter) => chapter.id)).toEqual(
-      expect.arrayContaining(["pub-predication", "pub-articles", "pub-agreement"]),
-    );
   });
 
   test("多空位 choice:选项分槽数与空数一致,正确项补全后无占位符或双空格", () => {

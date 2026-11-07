@@ -5,7 +5,7 @@ import { completedQuestion } from "../answerFill";
 import type { ChoiceQuestion } from "../types";
 
 describe.skipIf(__FGE_EDITION__ !== "public")("public: C12 demonstrative, possessive and indefinite pronouns", () => {
-  test("C12 follows C11 while existing public chapters remain available", () => {
+  test("C12 follows C11 in the public chapter order", () => {
     expect(CHAPTERS.slice(0, 12).map((chapter) => chapter.id)).toEqual([
       "pub-c01-boundaries",
       "pub-c02-noun-phrases",
@@ -20,9 +20,6 @@ describe.skipIf(__FGE_EDITION__ !== "public")("public: C12 demonstrative, posses
       "pub-c11-pronominal-verbs",
       "pub-c12-demonstrative-possessive-indefinite",
     ]);
-    expect(CHAPTERS.map((chapter) => chapter.id)).toEqual(
-      expect.arrayContaining(["pub-predication", "pub-articles", "pub-agreement"]),
-    );
   });
 
   test("多空位 choice:选项分槽数与空数一致,正确项补全后无占位符或双空格", () => {

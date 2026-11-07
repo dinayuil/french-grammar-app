@@ -5,7 +5,7 @@ import { completedQuestion } from "../answerFill";
 import type { ChoiceQuestion } from "../types";
 
 describe.skipIf(__FGE_EDITION__ !== "public")("public: C05 present tense", () => {
-  test("C05 follows C04 while existing public chapters remain available", () => {
+  test("C05 follows C04 in the public chapter order", () => {
     expect(CHAPTERS.slice(0, 5).map((chapter) => chapter.id)).toEqual([
       "pub-c01-boundaries",
       "pub-c02-noun-phrases",
@@ -13,9 +13,6 @@ describe.skipIf(__FGE_EDITION__ !== "public")("public: C05 present tense", () =>
       "pub-c04-determiners",
       "pub-c05-present",
     ]);
-    expect(CHAPTERS.map((chapter) => chapter.id)).toEqual(
-      expect.arrayContaining(["pub-predication", "pub-articles", "pub-agreement"]),
-    );
   });
 
   test("多空位 choice:选项分槽数与空数一致,正确项补全后无占位符或双空格", () => {

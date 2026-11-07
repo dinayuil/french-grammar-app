@@ -5,7 +5,7 @@ import { completedQuestion } from "../answerFill";
 import type { ChoiceQuestion } from "../types";
 
 describe.skipIf(__FGE_EDITION__ !== "public")("public: C21 reported speech", () => {
-  test("C21 follows C20 while existing public chapters remain available", () => {
+  test("C21 follows C20 in the public chapter order", () => {
     expect(CHAPTERS.slice(0, 21).map((chapter) => chapter.id)).toEqual([
       "pub-c01-boundaries",
       "pub-c02-noun-phrases",
@@ -29,9 +29,6 @@ describe.skipIf(__FGE_EDITION__ !== "public")("public: C21 reported speech", () 
       "pub-c20-complex-sentences",
       "pub-c21-reported-speech",
     ]);
-    expect(CHAPTERS.map((chapter) => chapter.id)).toEqual(
-      expect.arrayContaining(["pub-predication", "pub-articles", "pub-agreement"]),
-    );
   });
 
   test("每个关卡不超过 10 题", () => {

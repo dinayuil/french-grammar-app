@@ -5,7 +5,7 @@ import { completedQuestion } from "../answerFill";
 import type { ChoiceQuestion } from "../types";
 
 describe.skipIf(__FGE_EDITION__ !== "public")("public: C14 relative clauses", () => {
-  test("C14 follows C13 while existing public chapters remain available", () => {
+  test("C14 follows C13 in the public chapter order", () => {
     expect(CHAPTERS.slice(0, 14).map((chapter) => chapter.id)).toEqual([
       "pub-c01-boundaries",
       "pub-c02-noun-phrases",
@@ -22,9 +22,6 @@ describe.skipIf(__FGE_EDITION__ !== "public")("public: C14 relative clauses", ()
       "pub-c13-future-conditional",
       "pub-c14-relative-clauses",
     ]);
-    expect(CHAPTERS.map((chapter) => chapter.id)).toEqual(
-      expect.arrayContaining(["pub-predication", "pub-articles", "pub-agreement"]),
-    );
   });
 
   test("多空位 choice:选项分槽数与空数一致,正确项补全后无占位符或双空格", () => {

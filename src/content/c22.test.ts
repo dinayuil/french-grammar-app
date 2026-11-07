@@ -5,7 +5,7 @@ import { completedQuestion } from "../answerFill";
 import type { ChoiceQuestion } from "../types";
 
 describe.skipIf(__FGE_EDITION__ !== "public")("public: C22 tense-aspect and modality", () => {
-  test("C22 follows C21 while existing public chapters remain available", () => {
+  test("C22 follows C21 in the public chapter order", () => {
     expect(CHAPTERS.slice(0, 22).map((chapter) => chapter.id)).toEqual([
       "pub-c01-boundaries",
       "pub-c02-noun-phrases",
@@ -30,9 +30,6 @@ describe.skipIf(__FGE_EDITION__ !== "public")("public: C22 tense-aspect and moda
       "pub-c21-reported-speech",
       "pub-c22-aspect-modality",
     ]);
-    expect(CHAPTERS.map((chapter) => chapter.id)).toEqual(
-      expect.arrayContaining(["pub-predication", "pub-articles", "pub-agreement"]),
-    );
   });
 
   test("每个关卡不超过 10 题", () => {
