@@ -57,6 +57,16 @@ test("章节切换按钮使用内嵌焦点环,避免被 chapter-card 的 overflo
   );
 });
 
+test("关卡按钮使用内嵌焦点环,避免被 chapter-card 的 overflow 裁剪", () => {
+  expect(ruleBody(".chapter-card")).toContain("overflow: hidden");
+  expect(ruleBody(".lesson-item:focus-visible")).toContain(
+    "box-shadow: inset var(--focus)"
+  );
+  expect(css.indexOf(".lesson-item:focus-visible")).toBeGreaterThan(
+    css.indexOf("*:focus-visible")
+  );
+});
+
 test("达标弹窗限制高度并在内容过长时滚动", () => {
   const dialog = ruleBody(".goal-dialog");
   expect(dialog).toContain("max-height: calc(100dvh - 32px)");

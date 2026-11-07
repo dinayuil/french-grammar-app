@@ -288,6 +288,11 @@ body {
   box-shadow: inset var(--focus);
 }
 
+/* 关卡按钮同理:外层焦点环会被 .chapter-card 的 overflow 裁掉。 */
+.lesson-item:focus-visible {
+  box-shadow: inset var(--focus);
+}
+
 .btn-cards {
   margin-right: 12px;
   padding: 6px 10px;
@@ -345,6 +350,7 @@ body {
   font: inherit;
   color: inherit;
   text-align: left;
+  scroll-margin-block: 16px;
 }
 
 .lesson-item:last-child {

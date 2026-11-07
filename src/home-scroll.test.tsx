@@ -15,7 +15,7 @@ import { DEFAULT_PROGRESS } from "./storage";
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 const scrollIntoView = vi.fn();
-const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+const originalScrollIntoView = Element.prototype.scrollIntoView;
 
 let container: HTMLDivElement;
 let root: Root;
@@ -31,13 +31,14 @@ function click(el: Element | null) {
   });
 }
 
-function renderHome(openChapterId?: string) {
+function renderHome(openChapterId?: string, openLessonId?: string) {
   act(() =>
     root.render(
       <HomeView
         chapters={CHAPTERS}
         progress={DEFAULT_PROGRESS}
         openChapterId={openChapterId}
+        openLessonId={openLessonId}
         onOpenLesson={() => {}}
         onOpenCards={() => {}}
         onOpenReview={() => {}}
@@ -49,7 +50,7 @@ function renderHome(openChapterId?: string) {
 beforeEach(() => {
   localStorage.clear();
   scrollIntoView.mockReset();
-  HTMLElement.prototype.scrollIntoView = scrollIntoView;
+  Element.prototype.scrollIntoView = scrollIntoView;
   scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -60,9 +61,9 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   if (originalScrollIntoView) {
-    HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    Element.prototype.scrollIntoView = originalScrollIntoView;
   } else {
-    delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
+    delete (Element.prototype as Partial<Element>).scrollIntoView;
   }
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -150,5 +151,107 @@ describe("阅读器「练习本章」滚动定位", () => {
     expect(firstCard.querySelector(".lesson-list")).not.toBeNull();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("练习结算返回首页定位", () => {
+  test("展开并只滚动、聚焦刚做过的关卡,不滚动章节卡片", () => {
+    renderHome("lib-ch1", "lib-ch1-l1");
+
+    const card = $$(".chapter-card")[0]!;
+    const item = card.querySelector(".lesson-item");
+    expect(item).not.toBeNull();
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView.mock.instances[0]).toBe(item);
+    expect(scrollIntoView.mock.calls[0]![0]).toMatchObject({
+      block: "center",
+      behavior: "smooth",
+    });
+    expect(scrollIntoView.mock.instances).not.toContain(card);
+    expect(document.activeElement).toBe(item);
+    expect(document.activeElement).not.toBe(card.querySelector(".chapter-toggle"));
+  });
+
+  test("App:完成练习点「返回」后展开章节并定位到该关卡", () => {
+    act(() => root.render(<App />));
+
+    click($$(".chapter-toggle")[0]!);
+    click($(".lesson-item"));
+    expect($$(".lesson").length).toBe(1);
+
+    // 合成讲解章只有一道单选题:选正确答案 → 检查 → 继续 → 结算。
+    click($$(".option-btn")[0]!);
+    click($$(".btn-wide")[0]!); // 检查
+    click($$(".btn-wide")[0]!); // 继续
+    expect(container.textContent).toContain("练习完成");
+
+    const back = $$(".settlement-actions .btn-secondary").find((b) =>
+      b.textContent?.includes("返回")
+    );
+    click(back!);
+
+    const returnedCard = $$(".chapter-card")[0]!;
+    const returnedItem = returnedCard.querySelector(".lesson-item");
+    expect(returnedCard.querySelector(".lesson-list")).not.toBeNull();
+    expect(returnedItem).not.toBeNull();
+    expect(returnedItem!.textContent).toContain("★★★");
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView.mock.instances[0]).toBe(returnedItem);
+    expect(scrollIntoView.mock.calls[0]![0]).toMatchObject({
+      block: "center",
+      behavior: "smooth",
+    });
+    expect(document.activeElement).toBe(returnedItem);
+  });
+
+  test("重复渲染与手动折叠再展开不会重复滚动目标关卡", () => {
+    renderHome("lib-ch1", "lib-ch1-l1");
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    // 同一目标重复渲染(例如进度更新)不会再次滚动。
+    renderHome("lib-ch1", "lib-ch1-l1");
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    const toggle = $(".chapter-toggle");
+    click(toggle);
+    expect($$(".lesson-list").length).toBe(0);
+    click(toggle);
+    expect($$(".lesson-list").length).toBe(1);
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  test("目标关卡缺失时回退到章节卡片,之后出现仍可重试", () => {
+    renderHome("lib-ch1", "missing-lesson");
+
+    const card = $$(".chapter-card")[0]!;
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView.mock.instances[0]).toBe(card);
+    expect(scrollIntoView.mock.calls[0]![0]).toMatchObject({ block: "start" });
+    expect(document.activeElement).toBe(card.querySelector(".chapter-toggle"));
+
+    scrollIntoView.mockClear();
+    renderHome("lib-ch1", "lib-ch1-l1");
+    const item = card.querySelector(".lesson-item");
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView.mock.instances[0]).toBe(item);
+    expect(document.activeElement).toBe(item);
+  });
+
+  test("底部「练习」从已展开的首页返回:收起章节并滚动到顶部", () => {
+    act(() => root.render(<App />));
+
+    // 先从讲解页「练习本章」回到已展开章节的首页。
+    click($$(".btn-cards")[0]!);
+    click($(".reader-practice"));
+    expect($$(".lesson-list").length).toBe(1);
+    scrollIntoView.mockClear();
+
+    const practiceNav = $$(".bottom-nav button").find((b) => b.textContent === "练习");
+    click(practiceNav!);
+
+    // 章节收起(原有语义),同时窗口回到顶部,且不会再次滚动章节。
+    expect($$(".lesson-list").length).toBe(0);
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, left: 0 });
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 });

@@ -23,7 +23,7 @@ import {
 } from "./theme";
 
 type View =
-  | { name: "home"; openChapterId?: string }
+  | { name: "home"; openChapterId?: string; openLessonId?: string }
   | { name: "lesson"; chapterId: string; lessonId: string }
   | { name: "reader"; chapterId: string; cardId?: string; from: "library" | "home" }
   | { name: "library" }
@@ -103,6 +103,7 @@ export default function App() {
         chapters={CHAPTERS}
         progress={progress}
         openChapterId={view.openChapterId}
+        openLessonId={view.openLessonId}
         onOpenLesson={(chapterId, lessonId) => setView({ name: "lesson", chapterId, lessonId })}
         onOpenCards={(chapterId) => setView({ name: "reader", chapterId, from: "home" })}
         onOpenReview={() => setView({ name: "review" })}
@@ -156,7 +157,9 @@ export default function App() {
           progress={progress}
           onProgress={updateProgress}
           onSettlement={handleSettlement}
-          onExit={() => setView({ name: "home" })}
+          onExit={() =>
+            setView({ name: "home", openChapterId: ch.id, openLessonId: lesson.id })
+          }
           onNextLesson={() => {
             const all = [...ch.lessons, ...ch.challenges];
             const next = all[all.findIndex((l) => l.id === view.lessonId) + 1];
@@ -196,7 +199,12 @@ export default function App() {
       <nav className="bottom-nav">
         <button
           className={`nav-item ${isPractice ? "active" : ""}`}
-          onClick={() => setView({ name: "home" })}
+          onClick={() => {
+            // 首页仍然挂载时点击「练习」会折叠章节,这里同时把窗口拉回顶部,
+            // 避免列表深处的滚动位置留在原地。
+            setView({ name: "home" });
+            window.scrollTo({ top: 0, left: 0 });
+          }}
         >
           练习
         </button>
