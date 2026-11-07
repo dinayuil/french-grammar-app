@@ -13,7 +13,7 @@ concurrency:
 
 env:
   CONTENT_PUBLIC_REPOSITORY: dinayuil/french-grammar-content-public
-  CONTENT_PUBLIC_REF: 46790deed1629a87b38013ba62b09937df0e1123
+  CONTENT_PUBLIC_REF: b788a27
 
 jobs:
   public-tests:
