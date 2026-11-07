@@ -5,7 +5,7 @@ import { completedQuestion } from "../answerFill";
 import type { ChoiceQuestion } from "../types";
 
 describe.skipIf(__FGE_EDITION__ !== "public")("public: C09 past tenses", () => {
-  test("C09 follows C08 while existing public chapters remain available", () => {
+  test("C09 follows C08 in the public chapter order", () => {
     expect(CHAPTERS.slice(0, 9).map((chapter) => chapter.id)).toEqual([
       "pub-c01-boundaries",
       "pub-c02-noun-phrases",
@@ -17,9 +17,6 @@ describe.skipIf(__FGE_EDITION__ !== "public")("public: C09 past tenses", () => {
       "pub-c08-imperative-emphasis",
       "pub-c09-past-tenses",
     ]);
-    expect(CHAPTERS.map((chapter) => chapter.id)).toEqual(
-      expect.arrayContaining(["pub-predication", "pub-articles", "pub-agreement"]),
-    );
   });
 
   test("多空位 choice:选项分槽数与空数一致,正确项补全后无占位符或双空格", () => {

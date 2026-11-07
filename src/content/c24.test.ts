@@ -5,7 +5,7 @@ import { completedQuestion } from "../answerFill";
 import type { ChoiceQuestion } from "../types";
 
 describe.skipIf(__FGE_EDITION__ !== "public")("public: C24 lexical constructions and style", () => {
-  test("C24 follows C23 while existing public chapters remain available", () => {
+  test("C24 follows C23 in the public chapter order", () => {
     expect(CHAPTERS.slice(0, 24).map((chapter) => chapter.id)).toEqual([
       "pub-c01-boundaries",
       "pub-c02-noun-phrases",
@@ -32,9 +32,6 @@ describe.skipIf(__FGE_EDITION__ !== "public")("public: C24 lexical constructions
       "pub-c23-discourse-markers",
       "pub-c24-lexical-constructions",
     ]);
-    expect(CHAPTERS.map((chapter) => chapter.id)).toEqual(
-      expect.arrayContaining(["pub-predication", "pub-articles", "pub-agreement"]),
-    );
   });
 
   test("每个关卡不超过 10 题", () => {

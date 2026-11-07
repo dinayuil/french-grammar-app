@@ -5,7 +5,7 @@ import { completedQuestion } from "../answerFill";
 import type { ChoiceQuestion } from "../types";
 
 describe.skipIf(__FGE_EDITION__ !== "public")("public: C23 discourse connectors and markers", () => {
-  test("C23 follows C22 while existing public chapters remain available", () => {
+  test("C23 follows C22 in the public chapter order", () => {
     expect(CHAPTERS.slice(0, 23).map((chapter) => chapter.id)).toEqual([
       "pub-c01-boundaries",
       "pub-c02-noun-phrases",
@@ -31,9 +31,6 @@ describe.skipIf(__FGE_EDITION__ !== "public")("public: C23 discourse connectors 
       "pub-c22-aspect-modality",
       "pub-c23-discourse-markers",
     ]);
-    expect(CHAPTERS.map((chapter) => chapter.id)).toEqual(
-      expect.arrayContaining(["pub-predication", "pub-articles", "pub-agreement"]),
-    );
   });
 
   test("每个关卡不超过 10 题", () => {
