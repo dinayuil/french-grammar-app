@@ -22,6 +22,7 @@ interface Props {
   chapters: Chapter[];
   progress: Progress;
   openChapterId?: string;
+  openLessonId?: string;
   onOpenLesson: (chapterId: string, lessonId: string) => void;
   onOpenCards: (chapterId: string) => void;
   onOpenReview: () => void;
@@ -31,6 +32,7 @@ export function HomeView({
   chapters,
   progress,
   openChapterId,
+  openLessonId,
   onOpenLesson,
   onOpenCards,
   onOpenReview,
@@ -38,7 +40,9 @@ export function HomeView({
   const [openChapter, setOpenChapter] = useState<string | null>(openChapterId ?? null);
   const chapterRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const toggleRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const lessonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const handledOpenChapter = useRef<string | null>(null);
+  const handledOpenLesson = useRef<string | null>(null);
 
   useEffect(() => {
     if (openChapterId === undefined) {
@@ -53,17 +57,34 @@ export function HomeView({
     setOpenChapter(openChapterId);
   }, [openChapterId, chapters]);
 
-  // 只对本次 openChapterId 执行一次滚动/聚焦;用户手动折叠后再展开不会重复拉回。
+  // 返回主页后只定位一次:优先刚做过的关卡,没有可用关卡时回退到章节卡片。
+  // 用户手动折叠后再展开、或同一目标重复渲染,都不会再次拉动页面。
   useEffect(() => {
     if (!openChapterId || openChapter !== openChapterId) return;
-    if (handledOpenChapter.current === openChapterId) return;
-    handledOpenChapter.current = openChapterId;
+    const behavior = prefersReducedMotion() ? "auto" : "smooth";
 
+    if (openLessonId && handledOpenLesson.current !== openLessonId) {
+      const item = lessonRefs.current[openLessonId];
+      if (item) {
+        item.scrollIntoView?.({ block: "center", behavior });
+        handledOpenChapter.current = openChapterId;
+        handledOpenLesson.current = openLessonId;
+        // 结算页「返回」卸载后焦点会掉回 <body>;留在刚做过的关卡上。
+        try {
+          item.focus({ preventScroll: true });
+        } catch {
+          item.focus();
+        }
+        return;
+      }
+      // 目标关卡尚未渲染:回退到章节卡片,且不写 handled,后续渲染仍可重试。
+    }
+
+    if (handledOpenChapter.current === openChapterId) return;
     const card = chapterRefs.current[openChapterId];
-    card?.scrollIntoView?.({
-      block: "start",
-      behavior: prefersReducedMotion() ? "auto" : "smooth",
-    });
+    if (!card) return;
+    card.scrollIntoView?.({ block: "start", behavior });
+    handledOpenChapter.current = openChapterId;
 
     const toggle = toggleRefs.current[openChapterId];
     if (toggle) {
@@ -73,7 +94,7 @@ export function HomeView({
         toggle.focus();
       }
     }
-  }, [openChapterId, openChapter]);
+  }, [openChapterId, openChapter, openLessonId]);
 
   const t = today();
   const todayXp = progress.days[t]?.xp ?? 0;
@@ -168,6 +189,9 @@ export function HomeView({
                         <button
                           key={l.id}
                           className={`lesson-item kind-${l.kind}`}
+                          ref={(el) => {
+                            lessonRefs.current[l.id] = el;
+                          }}
                           onClick={() => onOpenLesson(ch.id, l.id)}
                         >
                           <span className="lesson-status">

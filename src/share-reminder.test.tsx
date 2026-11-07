@@ -122,8 +122,11 @@ function renderApp() {
 }
 
 function openFirstLesson() {
-  click($$(".chapter-toggle")[0]);
-  click($$(".lesson-item")[0]);
+  const card = $$(".chapter-card")[0];
+  if (!card) throw new Error("element not found");
+  // 从练习返回主页时该章已自动展开,此时再点切换按钮会把它折叠起来。
+  if (!card.querySelector(".lesson-item")) click(card.querySelector(".chapter-toggle"));
+  click(card.querySelector(".lesson-item"));
 }
 
 function navTo(label: string) {
