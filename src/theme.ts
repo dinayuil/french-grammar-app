@@ -1,3 +1,5 @@
+import { applyNativeTheme } from "./native-theme";
+
 export type ThemeChoice = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
 
@@ -37,13 +39,14 @@ export function resolveTheme(choice: ThemeChoice, prefersDark: boolean): Resolve
   return choice;
 }
 
-/** 把解析后的主题写到 <html>、color-scheme 和 theme-color meta。 */
+/** 把解析后的主题写到 <html>、color-scheme 和 theme-color meta,并同步原生系统栏。 */
 export function applyTheme(theme: ResolvedTheme): void {
   const root = document.documentElement;
   root.dataset.theme = theme;
   root.style.colorScheme = theme;
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", THEME_COLORS[theme]);
+  applyNativeTheme(theme);
 }
 
 /** 系统是否偏好深色;缺少 matchMedia 或查询异常时按浅色处理。 */
