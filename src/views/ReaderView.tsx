@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Chapter } from "../types";
+import type { StudyKind } from "../engine";
+import { useStudyTimer } from "../studyTimer";
 import { cardSummary, groupCardsByUnit } from "../library/search";
 import { sanitizeCardHtml } from "../content/cardHtml";
 
@@ -9,6 +11,7 @@ interface Props {
   initialCardId?: string;
   onBack: () => void;
   onPracticeChapter: () => void;
+  onStudyTick?: (kind: StudyKind, seconds: number) => void;
 }
 
 export function ReaderView({
@@ -17,6 +20,7 @@ export function ReaderView({
   initialCardId,
   onBack,
   onPracticeChapter,
+  onStudyTick,
 }: Props) {
   const initialIndex = Math.max(
     0,
@@ -36,6 +40,8 @@ export function ReaderView({
       bodyRef.current.scrollTop = 0;
     }
   }, [cardIndex]);
+
+  useStudyTimer((s) => onStudyTick?.("read", s));
 
   if (total === 0) {
     return (

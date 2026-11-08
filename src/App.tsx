@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { loadProgress, saveProgress, today } from "./storage";
-import { markSharePrompted } from "./engine";
+import { addStudySeconds, markSharePrompted, type StudyKind } from "./engine";
 import { CHAPTERS } from "./content";
 import { buildReviewLesson } from "./content/review";
 import { HomeView } from "./views/HomeView";
@@ -69,6 +69,15 @@ export default function App() {
     saveProgress(p);
   };
 
+  const handleStudyTick = (kind: StudyKind, seconds: number) => {
+    try {
+      updateProgress(addStudySeconds(progressRef.current, today(), kind, seconds));
+    } catch {
+      // 本地存储写入失败(配额/隐私模式)不能中断计时器结算:updateProgress 已先更新内存进度,
+      // 计时器也已在本轮清空累计值,下一轮不会重复计入。
+    }
+  };
+
   const handleSettlement = (np: Progress) => {
     const date = today();
     const day = np.days[date];
@@ -132,6 +141,7 @@ export default function App() {
           setView(view.from === "library" ? { name: "library" } : { name: "home" })
         }
         onPracticeChapter={() => setView({ name: "home", openChapterId: ch.id })}
+        onStudyTick={handleStudyTick}
       />
     ) : null;
   } else if (view.name === "review") {
@@ -141,6 +151,7 @@ export default function App() {
         onProgress={updateProgress}
         onSettlement={handleSettlement}
         onHome={() => setView({ name: "home" })}
+        onStudyTick={handleStudyTick}
       />
     );
   } else if (view.name === "lesson") {
@@ -166,6 +177,7 @@ export default function App() {
             if (next) setView({ name: "lesson", chapterId: ch.id, lessonId: next.id });
           }}
           onFinish={() => {}}
+          onStudyTick={handleStudyTick}
         />
       );
     } else {
@@ -242,11 +254,13 @@ function ReviewLessonView({
   onProgress,
   onSettlement,
   onHome,
+  onStudyTick,
 }: {
   progress: Progress;
   onProgress: (p: Progress) => void;
   onSettlement?: (progress: Progress) => void;
   onHome: () => void;
+  onStudyTick?: (kind: StudyKind, seconds: number) => void;
 }) {
   const [lesson] = useState(() => buildReviewLesson(progress));
   const chapter: Chapter = {
@@ -269,6 +283,7 @@ function ReviewLessonView({
       onExit={onHome}
       onNextLesson={onHome}
       onFinish={() => {}}
+      onStudyTick={onStudyTick}
     />
   );
 }

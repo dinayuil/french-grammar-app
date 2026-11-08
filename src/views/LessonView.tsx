@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { Chapter, Lesson, Progress, Question } from "../types";
 import { judge, applyAnswer, applyLessonComplete, starsFor, streakFor, levelFor } from "../engine";
+import type { StudyKind } from "../engine";
+import { useStudyTimer } from "../studyTimer";
 import { today } from "../storage";
 import { XP_PERFECT_BONUS, XP_LESSON_BONUS, XP_CHALLENGE_BONUS } from "../config";
 import { playSound } from "../sound";
@@ -24,6 +26,7 @@ interface Props {
   onExit: () => void;
   onNextLesson: () => void;
   onFinish: (wrongQids: string[]) => void;
+  onStudyTick?: (kind: StudyKind, seconds: number) => void;
 }
 
 export function LessonView({
@@ -35,6 +38,7 @@ export function LessonView({
   onExit,
   onNextLesson,
   onFinish,
+  onStudyTick,
 }: Props) {
   const [phase, setPhase] = useState<Phase>("quiz");
   const [qIndex, setQIndex] = useState(0);
@@ -51,6 +55,8 @@ export function LessonView({
   const [redoResponses, setRedoResponses] = useState<Record<string, Response>>({});
   const [redoResults, setRedoResults] = useState<Record<string, boolean>>({});
   const [redoGains, setRedoGains] = useState<Record<string, number>>({});
+
+  useStudyTimer((s) => onStudyTick?.("practice", s));
 
   const allLessons = [...chapter.lessons, ...chapter.challenges];
   const hasNext = allLessons[allLessons.findIndex((l) => l.id === lesson.id) + 1] !== undefined;

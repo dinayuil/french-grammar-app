@@ -264,7 +264,7 @@ test("设置页:改每日目标并持久化;统计页渲染 7 根柱子", () => 
   click($$(".option-btn")[1]!); // 60 XP 档
   expect(savedProgress().dailyGoal).toBe(60);
   click($$(".bottom-nav button").filter((b) => b.textContent === "统计")[0]!);
-  expect($$(".bar-col").length).toBe(7);
+  expect($$(".bars:not(.study-bars) .bar-col").length).toBe(7);
 });
 
 test("设置页:清空进度走二次确认,确认后回默认", () => {

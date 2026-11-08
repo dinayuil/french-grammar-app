@@ -168,4 +168,24 @@ describe("ReaderView direct", () => {
     click($$(".reader-practice")[0]!);
     expect(onPracticeChapter).toHaveBeenCalled();
   });
+
+  test("挂载期间按 5 秒回调 onStudyTick('read', ...)", () => {
+    vi.useFakeTimers();
+    const onStudyTick = vi.fn();
+    act(() =>
+      root.render(
+        <ReaderView
+          chapter={chapter}
+          chapterNumber={1}
+          onBack={() => {}}
+          onPracticeChapter={() => {}}
+          onStudyTick={onStudyTick}
+        />
+      )
+    );
+    act(() => vi.advanceTimersByTime(5000));
+    expect(onStudyTick).toHaveBeenCalledWith("read", 5);
+    act(() => root.unmount());
+    vi.useRealTimers();
+  });
 });

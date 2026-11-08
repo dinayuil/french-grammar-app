@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Progress } from "../types";
 import { shiftDate, today } from "../storage";
-import { levelFor, streakFor } from "../engine";
+import { levelFor, streakFor, studyTotals } from "../engine";
 import type { ShareResult } from "../share/shareStats";
 
 type ShareStatus = "idle" | ShareResult["status"];
@@ -27,6 +27,14 @@ function statusText(result: ShareResult): string {
     case "error":
       return failureText(result.message);
   }
+}
+
+function formatDuration(seconds: number): string {
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} 分`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h} 小时 ${m} 分` : `${h} 小时`;
 }
 
 export function StatsView({
@@ -60,6 +68,14 @@ export function StatsView({
   const t = today();
   const last7 = Array.from({ length: 7 }, (_, i) => shiftDate(t, -(6 - i)));
   const max = Math.max(...last7.map((d) => progress.days[d]?.xp ?? 0), 1);
+  const study7 = last7.map((d) => {
+    const day = progress.days[d];
+    const read = typeof day?.readSeconds === "number" ? day.readSeconds : 0;
+    const practice = typeof day?.practiceSeconds === "number" ? day.practiceSeconds : 0;
+    return { read, practice, total: read + practice };
+  });
+  const maxStudy = Math.max(...study7.map((s) => s.total), 1);
+  const totals = studyTotals(progress.days);
 
   return (
     <div className="stats">
@@ -92,10 +108,55 @@ export function StatsView({
                   style={{ height: `${(xp / max) * 100}%` }}
                 />
               </div>
-              <div className="bar-label">{d.slice(5)}</div>
+              <div className={`bar-label ${isToday ? "bar-label-today" : ""}`}>
+                {d.slice(5)}
+              </div>
             </div>
           );
         })}
+      </div>
+
+      <div className="stats-title">最近 7 天学习时长（分钟）</div>
+      <div className="bars study-bars">
+        {last7.map((d, i) => {
+          const { read, practice, total } = study7[i];
+          const isToday = d === t;
+          const minutes = Math.round(total / 60);
+          return (
+            <div key={d} className="bar-col">
+              <div className="bar-num">{minutes > 0 ? minutes : ""}</div>
+              <div className="bar-track">
+                <div
+                  className="study-seg study-practice"
+                  style={{ height: `${(practice / maxStudy) * 100}%` }}
+                />
+                <div
+                  className="study-seg study-read"
+                  style={{ height: `${(read / maxStudy) * 100}%` }}
+                />
+              </div>
+              <div className={`bar-label ${isToday ? "bar-label-today" : ""}`}>
+                {d.slice(5)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="study-legend">
+        <span className="study-legend-item">
+          <span className="study-dot study-read" />
+          看讲解
+        </span>
+        <span className="study-legend-item">
+          <span className="study-dot study-practice" />
+          做练习
+        </span>
+      </div>
+
+      <div className="study-total">
+        累计学习时长 {formatDuration(totals.total)}（看讲解 {formatDuration(totals.read)} /
+        做练习 {formatDuration(totals.practice)}）
       </div>
 
       {onShare && (
