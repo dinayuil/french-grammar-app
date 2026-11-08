@@ -9,6 +9,9 @@ import {
   saveThemeChoice,
   watchSystemTheme,
 } from "./theme";
+import { applyNativeTheme } from "./native-theme";
+
+vi.mock("./native-theme", () => ({ applyNativeTheme: vi.fn() }));
 
 type ChangeListener = (event: MediaQueryListEvent) => void;
 
@@ -117,6 +120,7 @@ test("applyTheme dark 设置 data-theme、color-scheme 与 theme-color", () => {
   expect(document.querySelector('meta[name="theme-color"]')!.getAttribute("content")).toBe(
     "#131f24"
   );
+  expect(applyNativeTheme).toHaveBeenCalledWith("dark");
 });
 
 test("applyTheme light 设置 data-theme、color-scheme 与 theme-color", () => {
@@ -126,6 +130,7 @@ test("applyTheme light 设置 data-theme、color-scheme 与 theme-color", () => 
   expect(document.querySelector('meta[name="theme-color"]')!.getAttribute("content")).toBe(
     "#ffffff"
   );
+  expect(applyNativeTheme).toHaveBeenCalledWith("light");
 });
 
 test("matchMedia 不存在时 getSystemPrefersDark 返回 false", () => {
