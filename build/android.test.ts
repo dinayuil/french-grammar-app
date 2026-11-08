@@ -543,6 +543,60 @@ try {
   });
 });
 
+describe("AppTheme plugin", () => {
+  it("registers AppThemePlugin in MainActivity", () => {
+    const activity = readAppFile(
+      "android",
+      "app",
+      "src",
+      "main",
+      "java",
+      "com",
+      "fge",
+      "app",
+      "MainActivity.java",
+    );
+    expect(activity).toContain("registerPlugin(AppThemePlugin.class)");
+    expect(activity).toContain("super.onCreate(savedInstanceState)");
+  });
+
+  it("declares the AppTheme plugin with an apply method", () => {
+    const plugin = readAppFile(
+      "android",
+      "app",
+      "src",
+      "main",
+      "java",
+      "com",
+      "fge",
+      "app",
+      "AppThemePlugin.java",
+    );
+    expect(plugin).toContain('@CapacitorPlugin(name = "AppTheme")');
+    expect(plugin).toContain("@PluginMethod");
+    expect(plugin).toContain("apply");
+    expect(plugin).toContain("setStatusBarColor");
+    expect(plugin).toContain("setNavigationBarColor");
+    expect(plugin).toContain("#FFFFFF");
+    expect(plugin).toContain("#131F24");
+  });
+
+  it("不重建 Activity,避免 WebView 重载", () => {
+    const plugin = readAppFile(
+      "android",
+      "app",
+      "src",
+      "main",
+      "java",
+      "com",
+      "fge",
+      "app",
+      "AppThemePlugin.java",
+    );
+    expect(plugin).not.toContain("recreate()");
+  });
+});
+
 describe("packaging wrapper", () => {
   it("only delegates to the Node packaging script and propagates errors", () => {
     const batch = readAppFile("build-apk.bat");
