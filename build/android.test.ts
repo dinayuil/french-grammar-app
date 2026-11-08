@@ -595,6 +595,47 @@ describe("AppTheme plugin", () => {
     );
     expect(plugin).not.toContain("recreate()");
   });
+
+  it("re-applies the forced theme after configuration changes", () => {
+    const plugin = readAppFile(
+      "android",
+      "app",
+      "src",
+      "main",
+      "java",
+      "com",
+      "fge",
+      "app",
+      "AppThemePlugin.java",
+    );
+    expect(plugin).toMatch(
+      /protected\s+void\s+handleOnConfigurationChanged\s*\(\s*Configuration\s+newConfig\s*\)/,
+    );
+    expect(plugin).toContain("super.handleOnConfigurationChanged(newConfig)");
+    expect(plugin).toContain("executeOnMainThread");
+  });
+
+  it("keeps the forced bar colors in sync with theme.ts", () => {
+    const plugin = readAppFile(
+      "android",
+      "app",
+      "src",
+      "main",
+      "java",
+      "com",
+      "fge",
+      "app",
+      "AppThemePlugin.java",
+    );
+    const theme = readAppFile("src", "theme.ts").toLowerCase();
+    const colors = [
+      ...plugin.matchAll(/Color\.parseColor\("(#[0-9A-Fa-f]{6})"\)/g),
+    ].map((match) => match[1].toLowerCase());
+    expect(colors).toHaveLength(2);
+    for (const color of colors) {
+      expect(theme).toContain(color);
+    }
+  });
 });
 
 describe("packaging wrapper", () => {
