@@ -128,6 +128,10 @@ export function SettingsView({
           清空进度
         </button>
       )}
+
+      <div className="settings-note">
+        内容说明：本应用内容由 AI 参与编写与复核，未经过人工法语审校。
+      </div>
     </div>
   );
 }
