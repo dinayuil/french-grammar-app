@@ -175,9 +175,12 @@ export function studyTotals(
 ): { read: number; practice: number; total: number } {
   let read = 0;
   let practice = 0;
-  for (const d of Object.values(days)) {
-    read += typeof d.readSeconds === "number" ? d.readSeconds : 0;
-    practice += typeof d.practiceSeconds === "number" ? d.practiceSeconds : 0;
+  for (const d of Object.values(days) as unknown[]) {
+    // 存档可能损坏(如 {"days":{"2026-11-08":null}}),非对象记录按 0 处理,不能让统计页崩溃。
+    if (typeof d !== "object" || d === null) continue;
+    const day = d as Partial<DayRecord>;
+    read += typeof day.readSeconds === "number" ? day.readSeconds : 0;
+    practice += typeof day.practiceSeconds === "number" ? day.practiceSeconds : 0;
   }
   return { read, practice, total: read + practice };
 }

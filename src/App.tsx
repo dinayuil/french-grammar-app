@@ -70,7 +70,12 @@ export default function App() {
   };
 
   const handleStudyTick = (kind: StudyKind, seconds: number) => {
-    updateProgress(addStudySeconds(progressRef.current, today(), kind, seconds));
+    try {
+      updateProgress(addStudySeconds(progressRef.current, today(), kind, seconds));
+    } catch {
+      // 本地存储写入失败(配额/隐私模式)不能中断计时器结算:updateProgress 已先更新内存进度,
+      // 计时器也已在本轮清空累计值,下一轮不会重复计入。
+    }
   };
 
   const handleSettlement = (np: Progress) => {

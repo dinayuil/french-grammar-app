@@ -15,34 +15,48 @@ export function useStudyTimer(onFlush: (seconds: number) => void): void {
   useEffect(() => {
     let acc = 0;
     let last = Date.now();
+    // 只有可见期间才累计;隐藏后重复的 visibilitychange 不能把后台时间算进来。
+    let counting = !document.hidden;
 
+    /** 结算自上次结算以来的可见秒数;只在 counting 为真(页面可见)时调用。 */
     const settle = () => {
       const now = Date.now();
-      const elapsed = document.hidden
-        ? 0
-        : Math.min(MAX_SETTLE_SECONDS, Math.max(0, Math.floor((now - last) / 1000)));
+      const elapsed = Math.min(
+        MAX_SETTLE_SECONDS,
+        Math.max(0, Math.floor((now - last) / 1000))
+      );
       acc += elapsed;
       last = now;
       if (acc > 0) {
-        onFlushRef.current(acc);
+        const seconds = acc;
+        // 先清空再回调:即使回调抛错,下一次结算也不会重复累计同一批秒数。
         acc = 0;
+        onFlushRef.current(seconds);
       }
     };
 
     const onVisibilityChange = () => {
       if (document.hidden) {
-        settle();
+        // 进入隐藏时 document.hidden 已经为 true,必须显式结算刚过去的可见时间。
+        if (counting) settle();
+        counting = false;
       } else {
         last = Date.now();
+        counting = true;
       }
     };
-    const onPageHide = () => settle();
+    const onPageHide = () => {
+      // pagehide 可能在 visibilitychange 之前(直接关页)或之后(先切后台再关);只结算可见时间。
+      if (counting) settle();
+    };
     const onFocus = () => {
-      settle();
+      if (counting) settle();
       last = Date.now();
     };
 
-    const interval = setInterval(settle, FLUSH_INTERVAL_MS);
+    const interval = setInterval(() => {
+      if (counting) settle();
+    }, FLUSH_INTERVAL_MS);
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("pagehide", onPageHide);
     window.addEventListener("focus", onFocus);
@@ -52,7 +66,8 @@ export function useStudyTimer(onFlush: (seconds: number) => void): void {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("focus", onFocus);
-      settle();
+      if (counting) settle();
+      counting = false;
     };
   }, []);
 }

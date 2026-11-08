@@ -497,4 +497,13 @@ describe("studyTotals", () => {
     const days = { "2026-11-08": { xp: 0, earnedQids: [], bonusIds: [], readSeconds: 10, practiceSeconds: "x" as unknown as number } };
     expect(studyTotals(days)).toEqual({ read: 10, practice: 0, total: 10 });
   });
+  test("损坏的 null / 非对象记录按 0 处理且不抛出", () => {
+    const days = {
+      "2026-11-07": { xp: 0, earnedQids: [], bonusIds: [], readSeconds: 30, practiceSeconds: 10 },
+      "2026-11-08": null,
+      "2026-11-09": "corrupt",
+    } as unknown as Record<string, DayRecord>;
+    expect(() => studyTotals(days)).not.toThrow();
+    expect(studyTotals(days)).toEqual({ read: 30, practice: 10, total: 40 });
+  });
 });

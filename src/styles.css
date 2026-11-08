@@ -797,6 +797,10 @@ body {
   padding: 12px;
 }
 
+.bars + .stats-title {
+  margin-top: 18px;
+}
+
 .bar-col {
   flex: 1;
   display: flex;

@@ -71,6 +71,7 @@ describe("useStudyTimer", () => {
     // 模拟睡眠:系统时间前进 1 小时,但睡眠期间定时器没有运行
     act(() => vi.setSystemTime(Date.now() + 3600000));
     act(() => vi.advanceTimersByTime(5000));
+    expect(onFlush).toHaveBeenCalledTimes(1);
     expect(onFlush).toHaveBeenCalledWith(10);
   });
 
@@ -84,5 +85,59 @@ describe("useStudyTimer", () => {
     setHidden(false);
     act(() => vi.advanceTimersByTime(5000));
     expect(onFlush).toHaveBeenLastCalledWith(5);
+  });
+
+  test("隐藏时结算最后一段不足 5 秒的可见时间", () => {
+    const onFlush = vi.fn();
+    renderHarness(onFlush);
+    act(() => vi.advanceTimersByTime(3000));
+    setHidden(true);
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    expect(onFlush).toHaveBeenCalledWith(3);
+  });
+
+  test("重复的隐藏事件不累计后台时间", () => {
+    const onFlush = vi.fn();
+    renderHarness(onFlush);
+    act(() => vi.advanceTimersByTime(3000));
+    setHidden(true);
+    act(() => vi.advanceTimersByTime(6000));
+    setHidden(true); // 重复 hidden
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    setHidden(false);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(onFlush).toHaveBeenCalledTimes(2);
+    expect(onFlush).toHaveBeenLastCalledWith(1);
+  });
+
+  test("pagehide 时结算可见时间", () => {
+    const onFlush = vi.fn();
+    renderHarness(onFlush);
+    act(() => vi.advanceTimersByTime(2500));
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+    expect(onFlush).toHaveBeenCalledWith(2);
+  });
+
+  test("focus 时结算可见时间", () => {
+    const onFlush = vi.fn();
+    renderHarness(onFlush);
+    act(() => vi.advanceTimersByTime(3000));
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(onFlush).toHaveBeenCalledWith(3);
+  });
+
+  test("隐藏期间卸载不结算后台时间", () => {
+    const onFlush = vi.fn();
+    renderHarness(onFlush);
+    act(() => vi.advanceTimersByTime(2000));
+    setHidden(true);
+    act(() => vi.advanceTimersByTime(60000));
+    unmountHarness();
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    expect(onFlush).toHaveBeenCalledWith(2);
   });
 });
