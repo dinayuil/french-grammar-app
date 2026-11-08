@@ -164,7 +164,8 @@ export function addStudySeconds(
   if (seconds <= 0) return progress;
   const prev = progress.days[date] ?? emptyDay();
   const field = kind === "read" ? "readSeconds" : "practiceSeconds";
-  const day: DayRecord = { ...prev, [field]: (prev[field] ?? 0) + Math.round(seconds) };
+  const prevSeconds = typeof prev[field] === "number" ? prev[field] : 0;
+  const day: DayRecord = { ...prev, [field]: prevSeconds + Math.round(seconds) };
   return { ...progress, days: { ...progress.days, [date]: day } };
 }
 

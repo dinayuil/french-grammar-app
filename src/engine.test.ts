@@ -479,6 +479,10 @@ describe("addStudySeconds", () => {
     const p = P({ days: { "2026-11-08": { xp: 0, earnedQids: [], bonusIds: [] } } });
     expect(addStudySeconds(p, "2026-11-08", "read", 30).days["2026-11-08"]?.readSeconds).toBe(30);
   });
+  test("旧值是非数字时按 0 开始累加", () => {
+    const p = P({ days: { "2026-11-08": { xp: 0, earnedQids: [], bonusIds: [], readSeconds: "x" as unknown as number } } });
+    expect(addStudySeconds(p, "2026-11-08", "read", 30).days["2026-11-08"]?.readSeconds).toBe(30);
+  });
 });
 
 describe("studyTotals", () => {
