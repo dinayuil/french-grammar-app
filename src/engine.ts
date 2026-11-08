@@ -152,6 +152,35 @@ export function markSharePrompted(progress: Progress, date: string): Progress {
   return { ...progress, days: { ...progress.days, [date]: day } };
 }
 
+export type StudyKind = "read" | "practice";
+
+/** 累加当天学习时长(秒);seconds <= 0 不记录,原样返回。immutable,保留当天其他字段。 */
+export function addStudySeconds(
+  progress: Progress,
+  date: string,
+  kind: StudyKind,
+  seconds: number
+): Progress {
+  if (seconds <= 0) return progress;
+  const prev = progress.days[date] ?? emptyDay();
+  const field = kind === "read" ? "readSeconds" : "practiceSeconds";
+  const day: DayRecord = { ...prev, [field]: (prev[field] ?? 0) + Math.round(seconds) };
+  return { ...progress, days: { ...progress.days, [date]: day } };
+}
+
+/** 汇总所有天数的学习时长(秒);缺字段或非数字按 0 处理。 */
+export function studyTotals(
+  days: Record<string, DayRecord>
+): { read: number; practice: number; total: number } {
+  let read = 0;
+  let practice = 0;
+  for (const d of Object.values(days)) {
+    read += typeof d.readSeconds === "number" ? d.readSeconds : 0;
+    practice += typeof d.practiceSeconds === "number" ? d.practiceSeconds : 0;
+  }
+  return { read, practice, total: read + practice };
+}
+
 /** 星级:会话全对(含重做补救)→ 3 星;首次正确率 ≥ 80% → 2 星;完成 → 1 星。 */
 export function starsFor(correct: number, total: number, allFixed: boolean): number {
   if (allFixed || (total > 0 && correct === total)) return 3;

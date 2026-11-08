@@ -68,6 +68,10 @@ export interface DayRecord {
   bonusIds: string[];
   /** 当天是否已提示过达标分享弹窗(旧数据缺省视为未提示) */
   sharePrompted?: boolean;
+  /** 当天阅读学习时长(秒,旧数据缺省 0) */
+  readSeconds?: number;
+  /** 当天练习学习时长(秒,旧数据缺省 0) */
+  practiceSeconds?: number;
 }
 
 export interface LessonRecord {

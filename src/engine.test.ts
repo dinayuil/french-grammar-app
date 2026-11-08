@@ -13,6 +13,8 @@ import {
   tilesBank,
   streakFor,
   levelFor,
+  addStudySeconds,
+  studyTotals,
 } from "./engine";
 import type {
   ChoiceQuestion,
@@ -460,5 +462,35 @@ describe("levelFor", () => {
     expect(levelFor(99)).toBe(1);
     expect(levelFor(100)).toBe(2);
     expect(levelFor(250)).toBe(3);
+  });
+});
+
+describe("addStudySeconds", () => {
+  test("read 与 practice 分别累加，保留当天其他字段", () => {
+    const p = P({ days: { "2026-11-08": { xp: 5, earnedQids: ["q1"], bonusIds: [], sharePrompted: true } } });
+    const np = addStudySeconds(addStudySeconds(p, "2026-11-08", "read", 120), "2026-11-08", "practice", 60);
+    expect(np.days["2026-11-08"]).toMatchObject({ xp: 5, readSeconds: 120, practiceSeconds: 60, sharePrompted: true });
+  });
+  test("seconds <= 0 返回原对象", () => {
+    const p = P();
+    expect(addStudySeconds(p, "2026-11-08", "read", 0)).toBe(p);
+  });
+  test("旧数据没有字段时从 0 开始", () => {
+    const p = P({ days: { "2026-11-08": { xp: 0, earnedQids: [], bonusIds: [] } } });
+    expect(addStudySeconds(p, "2026-11-08", "read", 30).days["2026-11-08"]?.readSeconds).toBe(30);
+  });
+});
+
+describe("studyTotals", () => {
+  test("跨天求和并拆分", () => {
+    const days = {
+      "2026-11-07": { xp: 0, earnedQids: [], bonusIds: [], readSeconds: 100, practiceSeconds: 50 },
+      "2026-11-08": { xp: 0, earnedQids: [], bonusIds: [], readSeconds: 20, practiceSeconds: 40 },
+    };
+    expect(studyTotals(days)).toEqual({ read: 120, practice: 90, total: 210 });
+  });
+  test("缺字段与非数字按 0 处理", () => {
+    const days = { "2026-11-08": { xp: 0, earnedQids: [], bonusIds: [], readSeconds: 10, practiceSeconds: "x" as unknown as number } };
+    expect(studyTotals(days)).toEqual({ read: 10, practice: 0, total: 10 });
   });
 });
