@@ -86,6 +86,10 @@ const ANDROID_EXACT_DIRS = new Set([
 ]);
 
 const PUBLIC_ROOT_FILES = new Set([".gitattributes", ".gitignore", "README.md", "manifest.json"]);
+// The public bank needs exactly one operational workflow to notify the app of
+// content updates. Keep this an exact allowlist: every other .github path is
+// still rejected by the public scanner.
+const PUBLIC_OPERATIONAL_FILES = new Set([".github/workflows/notify-app.yml"]);
 
 // Exact generated locations only. Arbitrary gitignored or dot directories are
 // not skipped: an unknown file/directory is a hard failure.
@@ -178,7 +182,7 @@ export const RULES = Object.freeze([
   "App code allowlist: src/**/*.{ts,tsx,css}, build/**/*.{ts,mjs,mts}, scripts/**/*.{mjs,mts}.",
   "GitHub Actions workflow allowlist: exactly .github/workflows/deploy-pages.yml, .github/workflows/ci.yml, and .github/workflows/build-public-apk.yml; other workflow files, nested workflow directories, .yaml duplicates, hidden files, and other .github files are rejected.",
   "Android template allowlist: the checked-in Gradle wrapper/config files, Java under android/app/src/main/java/**, XML/images under android/app/src/main/res/** or android/app/src/{public,internal}/res/**, and only the exact Gradle wrapper JAR under android/gradle/wrapper/.",
-  "Public bank allowlist: root manifest.json, README.md, .gitignore, .gitattributes, plus exactly the chapter JSON paths declared by manifest.json. No other public file is allowed.",
+  "Public bank allowlist: root manifest.json, README.md, .gitignore, .gitattributes, exactly .github/workflows/notify-app.yml, plus exactly the chapter JSON paths declared by manifest.json. No other public file is allowed.",
   "Named app JSON allowlist: package.json, package-lock.json, tsconfig.json, tsconfig.tools.json only; any other app JSON is treated as real content and rejected.",
   "Forbidden everywhere: PDFs, key/keystore/signing material, secrets, internal/private manifests, private content directories, source maps, APK/AAB/internal build artifacts, symlinks/junctions, and unknown files.",
   "Skipped exact generated locations (not audited by this guard): .git, node_modules, dist, coverage, .fge-build, android/.gradle, android/build, android/app/build, android/app/src/main/assets/public, android/capacitor-cordova-android-plugins, and known Capacitor-generated files. A top-level .git ordinary file is skipped only when it is a single-line safe submodule gitdir pointer into ../.git/modules/<name> (LF/CRLF, at most 1024 bytes); its target Git directory is never followed or inventoried.",
@@ -888,7 +892,7 @@ async function inspectPublicFile(rel, abs, size, declared, chapterValues, errors
     return;
   }
 
-  if (PUBLIC_ROOT_FILES.has(rel)) {
+  if (PUBLIC_ROOT_FILES.has(rel) || PUBLIC_OPERATIONAL_FILES.has(rel)) {
     const text = await readUtf8File(abs, rel, size, label, errors);
     if (text !== null) scanTextSecrets(text, rel, label, errors);
     return;
@@ -918,7 +922,7 @@ async function inspectPublicFile(rel, abs, size, declared, chapterValues, errors
 
   addError(
     errors,
-    `${label}: ${rel}: non-allowlisted public file (only root metadata and declared chapter JSON are allowed)`
+    `${label}: ${rel}: non-allowlisted public file (only root metadata, the allowlisted public workflow, and declared chapter JSON are allowed)`
   );
 }
 
@@ -958,6 +962,12 @@ async function scanPublic(publicRoot, manifest) {
 
   const allowedDirs = new Set([""]);
   for (const rel of manifest.chapters) {
+    const parts = rel.split("/");
+    for (let index = 1; index < parts.length; index += 1) {
+      allowedDirs.add(parts.slice(0, index).join("/"));
+    }
+  }
+  for (const rel of PUBLIC_OPERATIONAL_FILES) {
     const parts = rel.split("/");
     for (let index = 1; index < parts.length; index += 1) {
       allowedDirs.add(parts.slice(0, index).join("/"));
@@ -1015,7 +1025,7 @@ async function scanPublic(publicRoot, manifest) {
         if (!allowedDirs.has(rel)) {
           addError(
             errors,
-            `public: ${rel}: unexpected directory (only manifest-declared chapter directories and root metadata are allowed)`
+            `public: ${rel}: unexpected directory (only manifest-declared chapter directories, root metadata, and the allowlisted public workflow are allowed)`
           );
         }
         await visit(rel);

@@ -156,6 +156,7 @@ test("exported rules document the allowlists and the guard's limits", () => {
   assert.match(text, /package\.json/);
   assert.match(text, /src\/\*\*/);
   assert.match(text, /\.github\/workflows/);
+  assert.match(text, /notify-app\.yml/);
   assert.match(text, /manifest\.json/);
   assert.match(text, /skipped/i);
   assert.match(text, /not proof/i);
@@ -230,6 +231,45 @@ test("allowed workflow bytes are still scanned for secrets", async (t) => {
   await writeAt(appRoot, ".github/workflows/ci.yml", `name: ci\n# ${PRIVATE_KEY_HEADER}\n`);
 
   assertFails(await checkPublic({ appRoot, publicRoot }), /private key|secret/i, "workflow secret");
+});
+
+test("public bank allows only the exact notify workflow under .github", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await writeAt(
+    publicRoot,
+    ".github/workflows/notify-app.yml",
+    "name: notify\non: push\npermissions:\n  contents: read\njobs: {}\n"
+  );
+
+  const allowed = await checkPublic({ appRoot, publicRoot });
+  assert.equal(allowed.ok, true, errorsOf(allowed));
+  assert.ok(allowed.inventory.public.includes(".github/workflows/notify-app.yml"));
+
+  await writeAt(publicRoot, ".github/workflows/other.yml", "name: other\n");
+  const other = await checkPublic({ appRoot, publicRoot });
+  assertFails(other, /non-allowlisted public file|unexpected directory/i, "other public workflow");
+
+  await rm(path.join(publicRoot, ".github/workflows/other.yml"), { force: true });
+  await writeAt(publicRoot, ".github/notes.txt", "not a workflow\n");
+  const notes = await checkPublic({ appRoot, publicRoot });
+  assertFails(notes, /non-allowlisted public file|unexpected directory/i, "public github notes");
+});
+
+test("allowed public workflow bytes are scanned for secrets", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await writeAt(
+    publicRoot,
+    ".github/workflows/notify-app.yml",
+    `name: notify\n# ${PRIVATE_KEY_HEADER}\n`
+  );
+
+  assertFails(
+    await checkPublic({ appRoot, publicRoot }),
+    /private key|secret/i,
+    "public workflow secret"
+  );
 });
 
 test("non-workflow .github files stay rejected", async (t) => {
