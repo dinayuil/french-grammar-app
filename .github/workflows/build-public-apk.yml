@@ -4,6 +4,14 @@ name: Build public debug APK
 # every branch push; workflow_dispatch is also available.
 on:
   workflow_dispatch:
+    inputs:
+      content_ref:
+        description: content-public commit SHA, branch, or tag
+        required: false
+        default: main
+        type: string
+  repository_dispatch:
+    types: [content-updated]
   push:
     branches:
       - "main"
@@ -19,7 +27,7 @@ concurrency:
 
 env:
   CONTENT_PUBLIC_REPOSITORY: dinayuil/french-grammar-content-public
-  CONTENT_PUBLIC_REF: 585536970575d522b2d7a8c394aca79a0ecdb26c
+  CONTENT_PUBLIC_REF: ${{ inputs.content_ref || github.event.client_payload.sha || 'main' }}
   FGE_PUBLIC_CONTENT_DIR: ../content-public
 
 jobs:
@@ -57,6 +65,9 @@ jobs:
           ref: ${{ env.CONTENT_PUBLIC_REF }}
           path: content-public
           persist-credentials: false
+
+      - name: Show content ref
+        run: 'echo "content-public ref: $CONTENT_PUBLIC_REF"'
 
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
