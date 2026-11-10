@@ -3,6 +3,12 @@ name: CI
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      content_ref:
+        description: content-public commit SHA, branch, or tag
+        required: false
+        default: main
+        type: string
 
 permissions:
   contents: read
@@ -13,7 +19,7 @@ concurrency:
 
 env:
   CONTENT_PUBLIC_REPOSITORY: dinayuil/french-grammar-content-public
-  CONTENT_PUBLIC_REF: 585536970575d522b2d7a8c394aca79a0ecdb26c
+  CONTENT_PUBLIC_REF: ${{ inputs.content_ref || 'main' }}
 
 jobs:
   public-tests:
