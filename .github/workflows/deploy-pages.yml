@@ -39,6 +39,16 @@ jobs:
           path: app
           persist-credentials: false
 
+      - name: Validate dispatched content SHA
+        if: github.event_name == 'repository_dispatch'
+        env:
+          CONTENT_SHA: ${{ github.event.client_payload.sha }}
+        run: |
+          if ! printf '%s' "$CONTENT_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::Invalid content-updated payload sha: $CONTENT_SHA"
+            exit 1
+          fi
+
       - name: Checkout public content
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
