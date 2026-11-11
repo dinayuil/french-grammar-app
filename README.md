@@ -28,15 +28,15 @@ npm ci
 
 ## GitHub Pages
 
-公开网页版由`.github/workflows/deploy-pages.yml`在`main`推送或`main`上手动触发时部署。工作流检出`content-public`的 `main` 或 `repository_dispatch` 携带的提交，运行完整公开测试和`check:public`后构建`dist/public`；构建基路径由`actions/configure-pages`的`base_path`决定。上传前会本地校验构建产物：`index.html` 非空且含 `id="root"`，引用的 JS 资源存在、非空并与基路径匹配。部署后的外部冒烟检查为尽力而为：自定义域名的边缘可能以 403/429 拦截 GitHub Actions，此时只告警并跳过；404/500 或空资源仍会导致检查失败。
+公开网页版由`.github/workflows/deploy-pages.yml`在`main`推送、`repository_dispatch` 或`main`上手动触发时部署。工作流检出`content-public`的 `main` 或 `repository_dispatch` 携带的提交，运行完整公开测试和`check:public`后构建`dist/public`；构建基路径由`actions/configure-pages`的`base_path`决定。上传前会本地校验构建产物：`index.html` 非空且含 `id="root"`，引用的 JS 资源存在、非空并与基路径匹配。部署后的外部冒烟检查为尽力而为：自定义域名的边缘可能以 403/429 拦截 GitHub Actions，此时只告警并跳过；404/500 或空资源仍会导致检查失败。
 
-账号用户站启用自定义域名时，`https://dinayuil.github.io/french-grammar-app/`会跳转到上面的自定义域名。公开题库更新时，`content-public` 的 `main` 推送会通过 `repository_dispatch` 触发本工作流；无需再修改本仓库的 `CONTENT_PUBLIC_REF`。手动重试或回滚时，用 `workflow_dispatch` 的 `content_ref` 输入指定 SHA、分支或标签。
+账号用户站启用自定义域名时，`https://dinayuil.github.io/french-grammar-app/`会跳转到上面的自定义域名。公开题库更新时，`content-public` 的 `main` 推送会通过 `repository_dispatch` 触发本工作流；无需再修改本仓库的 `CONTENT_PUBLIC_REF`。手动重试或回滚时，用 `workflow_dispatch` 的 `content_ref` 输入指定 SHA、分支或标签。CI 如需固定内容版本，设置仓库变量 `CONTENT_PUBLIC_REF`；未设置时跟随 `main`。
 
 仓库Pages的Source为GitHub Actions；项目站继承`dinayuil.github.io`用户站的自定义域名；`github-pages`环境只允许`main`。新建仓库或迁移时，需在Settings → Pages选择GitHub Actions作为Source。
 
 ## Public APK
 
-公开版 APK 由 `Build public debug APK` 工作流构建，在 `main` 推送、`v*` 标签或手动触发时运行。手动触发或标签构建必须指向 `main` 上的提交；未合并的功能分支引用会被工作流拒绝。工作流使用固定的公开题库提交，只构建公开版 debug APK，不上架应用商店，也不进行发布签名。构建产物以 `app-public-debug` 为 artifact 名称上传，保留 14 天。
+公开版 APK 由 `Build public debug APK` 工作流构建，在 `main` 推送、`v*` 标签或手动触发时运行。手动触发或标签构建必须指向 `main` 上的提交；未合并的功能分支引用会被工作流拒绝。工作流使用 `content-public` 的 `main`、dispatch 携带的提交或 `content_ref` 输入，只构建公开版 debug APK，不上架应用商店，也不进行发布签名。构建产物以 `app-public-debug` 为 artifact 名称上传，保留 14 天。
 
 ## 内容模式
 

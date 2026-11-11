@@ -19,7 +19,7 @@ concurrency:
 
 env:
   CONTENT_PUBLIC_REPOSITORY: dinayuil/french-grammar-content-public
-  CONTENT_PUBLIC_REF: ${{ inputs.content_ref || 'main' }}
+  CONTENT_PUBLIC_REF: ${{ inputs.content_ref || vars.CONTENT_PUBLIC_REF || 'main' }}
 
 jobs:
   public-tests:
