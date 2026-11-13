@@ -36,7 +36,33 @@ npm ci
 
 ## Public APK
 
-公开版 APK 由 `Build public debug APK` 工作流构建，在 `main` 推送、`v*` 标签或手动触发时运行。手动触发或标签构建必须指向 `main` 上的提交；未合并的功能分支引用会被工作流拒绝。工作流使用 `content-public` 的 `main`、dispatch 携带的提交或 `content_ref` 输入，只构建公开版 debug APK，不上架应用商店，也不进行发布签名。构建产物以 `app-public-debug` 为 artifact 名称上传，保留 14 天。
+公开测试版 APK 的固定下载入口是 GitHub Releases 的滚动预发布：<https://github.com/dinayuil/french-grammar-app/releases/tag/apk-latest>。发布资产只有 `app-public-debug.apk` 和 `app-public-debug.apk.sha256`（可用 `sha256sum -c` 或等价工具校验）。在签名 Secrets 配置完成并成功自动构建前，该入口可能尚不存在。
+
+`Build public debug APK` 工作流在 `main` 推送和 `content-public` 的 `content-updated` dispatch 成功构建后自动更新这个预发布。versionCode 使用 Actions run number（`1..2100000000`），versionName 为 `1.0-test.<run_number>`。手动触发和 `v*` 标签只构建 Actions artifact（名称 `app-public-debug`，保留 14 天），不刷新滚动入口；它们同样必须是 `main` 历史中的提交。发布前会核对应用 commit 和实际检出的 content-public commit 是否仍是各自 `main` 的 HEAD；过期构建、失败构建和已发布的相同或更高 versionCode 都不会覆盖当前下载入口。
+
+自动测试包使用 Actions Secrets 中的固定测试签名。工作流只在从 `main` 可达的可信构建中使用这些 secrets（PR 不运行该工作流），缺失或不完整时构建失败，不会回退到随机 debug 证书，也不输出密码或把 keystore 写入仓库。keystore 只恢复到 runner 临时目录，并在构建结束时清理。
+
+后续测试包可直接覆盖安装。首次从旧的临时 debug 签名迁移时，Android 可能要求先卸载旧版；卸载会清除本地 WebView 存储，本地学习进度不会随安装包迁移，请先记录需要保留的进度。
+
+在 fork 或新仓库启用自动发布时，需要配置以下 5 个 Actions Secrets：
+
+1. `FGE_PUBLIC_KEYSTORE_BASE64`：测试签名 keystore 的 base64 内容。
+2. `FGE_PUBLIC_KEYSTORE_PASSWORD`：keystore 密码。
+3. `FGE_PUBLIC_KEY_ALIAS`：签名 key 别名。
+4. `FGE_PUBLIC_KEY_PASSWORD`：签名 key 密码。
+5. `FGE_PUBLIC_CERT_SHA256`：证书 SHA-256 指纹（`apksigner verify --print-certs` 输出，可带冒号）。
+
+配置后从 `main` 触发一次构建；工作流会验证包名 `com.fge.open`、versionCode/versionName 和实际签名指纹后再发布。不要把 keystore、密码、证书文件或本机路径提交到公开仓库。
+
+### 运维前提与信任边界
+
+- 发布 job 硬性校验当前仓库为 `dinayuil/french-grammar-app`；复制到其他仓库不会自动发布，启用前需明确修改仓库常量。
+- `workflow_dispatch` 的 `content_ref` 和 dispatch 实际 content commit 必须来自 `content-public` 的 `main` 历史；未合并的分支/tag 内容会在 `npm ci`/签名前被拒绝，`main` 祖先的手工回滚允许构建但自动发布 freshness 会跳过。
+- `apk-latest` 必须是可变的滚动标签：tag ruleset、immutable releases 或分支保护不得阻止工作流对它做 force 更新（`v*` 标签不在本机制内，也不会被修改）。
+- 保持本 workflow 的文件身份和触发连续性。删除/重建 workflow 会使 Actions run_number 重新计数；若重建或重置版本基线，先把新构建的 versionCode 设置为高于已发布值，禁止倒退，否则发布 job 会按版本检查跳过。
+- Release notes 中的 `- versionCode: \`N\`` 与匹配的 `- versionName: \`1.0-test.N\`` 是发布状态标记。手工修改、删除或使二者不一致后，发布 job 会失败关闭；恢复时将标记改回最后一次已发布版本（或删除/修复该 Release）后重跑，不要添加第三个 metadata 资产。若历史/手工操作造成 published marker 已写入但资产缺失，同版本会按策略跳过；用下一次更高 run_number 的自动构建，或手动修复/删除该 Release 后重跑。
+- 发布中断可重跑恢复：已发布 Release 只在资产上传/校验和滚动 tag 更新后才写 notes 版本标记，未写入前重跑会重新上传并完成；新 Release 先以 draft 存在，资产失败时重跑会复用 draft、重新上传校验后再发布，不会被 published version 检查锁死。
+- 签名 5 个 Secret 目前是仓库级 Actions Secrets。任何能修改公开仓库 workflow 的写权限协作者都能引用这些 secrets，因此这是“可信维护者”信任模型，不是硬隔离。若需更强控制，应把 5 项放入有 ref/环境保护和 required reviewers 的 GitHub Environment，并把 release/build job 绑定到该 environment；当前实现未配置 environment，不要声称已完成该隔离。
 
 ## 内容模式
 
@@ -84,7 +110,7 @@ npm run apk
 
 Windows也可使用`build-apk.bat public`。打包按网页构建→Capacitor同步→Gradle顺序执行；若意外中断留下`android/.fge-apk.lock`，先确认相关打包和Gradle进程已经停止，再清理这个锁文件。
 
-公开版名称为“法语语法练习”。debug APK仅供本地测试，不用于商店发布。
+公开版名称为“法语语法练习”。debug 构建仅用于本地和测试分发，不用于商店发布；自动发布的公开测试包使用独立测试签名，详见上一节。
 
 ## 隐私边界
 

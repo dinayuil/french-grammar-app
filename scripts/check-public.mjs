@@ -62,6 +62,7 @@ const ANDROID_TEXT_FILES = new Set([
   "android/.gitignore",
   "android/app/.gitignore",
   "android/app/build.gradle",
+  "android/app/fge-public-config.gradle",
   "android/app/proguard-rules.pro",
   "android/app/src/main/AndroidManifest.xml",
   "android/build.gradle",
