@@ -27,6 +27,11 @@ interface Props {
   onNextLesson: () => void;
   onFinish: (wrongQids: string[]) => void;
   onStudyTick?: (kind: StudyKind, seconds: number) => void;
+  /**
+   * 由调用方提供的小章内下一关。null 表示小章/综合区已到末尾；不传则退回
+   * 组件原有的整个 chapter 顺序，兼容直接使用 LessonView 的场景。
+   */
+  nextLessonId?: string | null;
 }
 
 export function LessonView({
@@ -39,6 +44,7 @@ export function LessonView({
   onNextLesson,
   onFinish,
   onStudyTick,
+  nextLessonId,
 }: Props) {
   const [phase, setPhase] = useState<Phase>("quiz");
   const [qIndex, setQIndex] = useState(0);
@@ -59,7 +65,10 @@ export function LessonView({
   useStudyTimer((s) => onStudyTick?.("practice", s));
 
   const allLessons = [...chapter.lessons, ...chapter.challenges];
-  const hasNext = allLessons[allLessons.findIndex((l) => l.id === lesson.id) + 1] !== undefined;
+  const hasNext =
+    nextLessonId === undefined
+      ? allLessons[allLessons.findIndex((l) => l.id === lesson.id) + 1] !== undefined
+      : nextLessonId !== null;
 
   const settle = (mistakesThisRun: number, stars: number, bd: Breakdown) => {
     const beforeLevel = levelFor(progress.xp);

@@ -210,8 +210,9 @@ describe("有题模式下功能不被禁用", () => {
     renderHomeView({ chapters: [syntheticChapter], progress: DEFAULT_PROGRESS, onOpenLesson });
     expect($$(".chapter-card").length).toBe(1);
     expect(container.textContent).toContain("合成章节");
-    expect($(".chapter-title")?.textContent).toContain("第1章");
-    expect($(".chapter-title")?.textContent).toBe("第1章 合成章节");
+    expect($(".chapter-title")?.textContent).toBe("合成章节");
+    expect($(".chapter-index")?.textContent).toContain("01");
+    expect($(".chapter-toggle")?.getAttribute("aria-label")).toContain("第1章");
 
     click($(".chapter-toggle"));
     const lessonBtn = $(".lesson-item");
@@ -222,15 +223,15 @@ describe("有题模式下功能不被禁用", () => {
     expect(onOpenLesson).toHaveBeenCalledWith("ch-synthetic", "les-synthetic-1");
   });
 
-  test("多章编号按顺序精确显示且与标题之间有空格", () => {
+  test("多章编号按顺序显示，标题不再带第N章前缀", () => {
     renderHomeView({
       chapters: [syntheticChapter, secondSyntheticChapter],
       progress: DEFAULT_PROGRESS,
     });
-    expect($$(".chapter-number").map((el) => el.textContent)).toEqual(["第1章", "第2章"]);
+    expect($$(".chapter-index b").map((el) => el.textContent)).toEqual(["01", "02"]);
     expect($$(".chapter-title").map((el) => el.textContent)).toEqual([
-      "第1章 合成章节",
-      "第2章 合成章节二",
+      "合成章节",
+      "合成章节二",
     ]);
   });
 

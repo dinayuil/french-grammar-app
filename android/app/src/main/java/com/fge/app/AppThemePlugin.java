@@ -19,8 +19,8 @@ public class AppThemePlugin extends Plugin {
     private static final String TAG = "AppTheme";
 
     // Keep in sync with THEME_COLORS in src/theme.ts and the theme-color meta in index.html.
-    private static final int LIGHT = Color.parseColor("#FFFFFF");
-    private static final int DARK = Color.parseColor("#131F24");
+    private static final int LIGHT = Color.parseColor("#F6F4EF");
+    private static final int DARK = Color.parseColor("#0E1420");
 
     /** Last color/mode applied by JS; 0 means no theme has been applied yet. */
     private volatile int lastColor = 0;

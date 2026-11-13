@@ -56,7 +56,7 @@ beforeEach(() => {
   document.querySelector('meta[name="theme-color"]')?.remove();
   const meta = document.createElement("meta");
   meta.setAttribute("name", "theme-color");
-  meta.setAttribute("content", "#ffffff");
+  meta.setAttribute("content", "#f6f4ef");
   document.head.appendChild(meta);
 });
 
@@ -118,7 +118,7 @@ test("applyTheme dark 设置 data-theme、color-scheme 与 theme-color", () => {
   expect(document.documentElement.dataset.theme).toBe("dark");
   expect(document.documentElement.style.colorScheme).toBe("dark");
   expect(document.querySelector('meta[name="theme-color"]')!.getAttribute("content")).toBe(
-    "#131f24"
+    "#0e1420"
   );
   expect(applyNativeTheme).toHaveBeenCalledWith("dark");
 });
@@ -128,7 +128,7 @@ test("applyTheme light 设置 data-theme、color-scheme 与 theme-color", () => 
   expect(document.documentElement.dataset.theme).toBe("light");
   expect(document.documentElement.style.colorScheme).toBe("light");
   expect(document.querySelector('meta[name="theme-color"]')!.getAttribute("content")).toBe(
-    "#ffffff"
+    "#f6f4ef"
   );
   expect(applyNativeTheme).toHaveBeenCalledWith("light");
 });
@@ -211,7 +211,7 @@ test("index.html 启动脚本在存储读取失败时仍应用系统主题与 th
   expect(document.documentElement.style.colorScheme).toBe("dark");
   expect(
     document.querySelector('meta[name="theme-color"]')!.getAttribute("content")
-  ).toBe("#131f24");
+  ).toBe("#0e1420");
 });
 
 test("index.html 启动脚本与模块使用同一主题键并预设 data-theme", () => {
