@@ -7,8 +7,8 @@ export const THEME_KEY = "fge.theme.v1";
 
 const VALID_CHOICES: readonly ThemeChoice[] = ["light", "dark", "system"];
 const THEME_COLORS: Record<ResolvedTheme, string> = {
-  light: "#ffffff",
-  dark: "#131f24",
+  light: "#f6f4ef",
+  dark: "#0e1420",
 };
 
 function isThemeChoice(value: unknown): value is ThemeChoice {

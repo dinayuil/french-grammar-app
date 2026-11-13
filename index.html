@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#ffffff" />
+    <meta name="theme-color" content="#f6f4ef" />
     <script>
       // 在 React/CSS 绘制前应用主题，避免启动闪烁。键必须与 src/theme.ts 一致。
       (function () {
@@ -38,7 +38,7 @@
           root.style.colorScheme = theme;
           var meta = document.querySelector('meta[name="theme-color"]');
           if (meta) {
-            meta.setAttribute("content", theme === "dark" ? "#131f24" : "#ffffff");
+            meta.setAttribute("content", theme === "dark" ? "#0e1420" : "#f6f4ef");
           }
         } catch (error) {
           // 存储/媒体查询不可用：交给 CSS 的 prefers-color-scheme 兜底。

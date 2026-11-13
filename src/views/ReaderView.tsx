@@ -1,39 +1,55 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Chapter } from "../types";
 import type { StudyKind } from "../engine";
 import { useStudyTimer } from "../studyTimer";
 import { cardSummary, groupCardsByUnit } from "../library/search";
 import { sanitizeCardHtml } from "../content/cardHtml";
+import type { LearningSection } from "../learning/sections";
 
 interface Props {
   chapter: Chapter;
   chapterNumber: number;
+  /** 指定后阅读范围仅限该小章；不传则保持整章（内部题库/未配置章节）。 */
+  section?: LearningSection | null;
   initialCardId?: string;
   onBack: () => void;
-  onPracticeChapter: () => void;
+  onPracticeChapter: (sectionId?: string) => void;
   onStudyTick?: (kind: StudyKind, seconds: number) => void;
 }
 
 export function ReaderView({
   chapter,
   chapterNumber,
+  section,
   initialCardId,
   onBack,
   onPracticeChapter,
   onStudyTick,
 }: Props) {
+  const cards = section ? section.cards : chapter.cards;
   const initialIndex = Math.max(
     0,
-    initialCardId ? chapter.cards.findIndex((c) => c.id === initialCardId) : 0
+    initialCardId ? cards.findIndex((c) => c.id === initialCardId) : 0
   );
   const [cardIndex, setCardIndex] = useState(
-    chapter.cards.length === 0 ? 0 : initialIndex
+    cards.length === 0 ? 0 : initialIndex
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
 
-  const total = chapter.cards.length;
-  const card = chapter.cards[cardIndex];
+  const total = cards.length;
+  const card = cards[cardIndex];
+
+  useLayoutEffect(() => {
+    // 阅读器是独立的整页范围：从首页/讲解库继承的页面滚动会让标题落在
+    // 视口之外，进入或更换阅读范围时统一回到顶部。
+    // 直接归零 documentElement/body，避免依赖平滑滚动或 jsdom 未实现的
+    // window.scrollTo；同时清空阅读器自身的正文滚动。
+    const root = document.scrollingElement ?? document.documentElement;
+    root.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+    if (bodyRef.current) bodyRef.current.scrollTop = 0;
+  }, [chapter.id, section?.id]);
 
   useEffect(() => {
     if (bodyRef.current) {
@@ -51,13 +67,15 @@ export function ReaderView({
             ←
           </button>
         </div>
-        <div className="reader-empty">本章暂无讲解</div>
+        <div className="reader-empty">
+          {section ? "本小节暂无讲解" : "本章暂无讲解"}
+        </div>
       </div>
     );
   }
 
   const progress = ((cardIndex + 1) / Math.max(total, 1)) * 100;
-  const units = groupCardsByUnit(chapter.cards);
+  const units = groupCardsByUnit(cards);
 
   return (
     <div className="reader">
@@ -66,9 +84,28 @@ export function ReaderView({
           ←
         </button>
         <div className="reader-chapter">
-          第{chapterNumber}章 · {chapter.title}
+          <span className="reader-chapter-title">
+            第{chapterNumber}章 · {chapter.title}
+          </span>
+          {section && <span className="reader-section-name">{section.title}</span>}
         </div>
-        <div className="reader-progress-track">
+        <button
+          className="reader-toc-toggle"
+          aria-label="目录"
+          onClick={() => setDrawerOpen(true)}
+        >
+          ☰
+        </button>
+      </div>
+      <div className="reader-progress-row">
+        <div
+          className="reader-progress-track"
+          role="progressbar"
+          aria-valuemin={1}
+          aria-valuemax={total}
+          aria-valuenow={cardIndex + 1}
+          aria-label="阅读进度"
+        >
           <div
             className="reader-progress-fill"
             style={{ width: `${progress}%` }}
@@ -77,13 +114,6 @@ export function ReaderView({
         <span className="reader-counter">
           {cardIndex + 1}/{total}
         </span>
-        <button
-          className="reader-toc-toggle"
-          aria-label="目录"
-          onClick={() => setDrawerOpen(true)}
-        >
-          ☰
-        </button>
       </div>
 
       <div className="reader-body" ref={bodyRef}>
@@ -109,8 +139,13 @@ export function ReaderView({
         >
           下一张
         </button>
-        <button className="reader-practice" onClick={onPracticeChapter}>
-          练习本章
+        <button
+          className="reader-practice"
+          onClick={() =>
+            section ? onPracticeChapter(section.id) : onPracticeChapter()
+          }
+        >
+          {section ? "练习本节" : "练习本章"}
         </button>
       </div>
 
@@ -122,7 +157,14 @@ export function ReaderView({
           />
           <div className="reader-drawer-panel">
             <div className="reader-drawer-head">
-              <div className="reader-drawer-title">目录</div>
+              <div>
+                <div className="reader-drawer-title">目录</div>
+                {section && (
+                  <div className="reader-drawer-scope">
+                    {section.title} · {total} 张
+                  </div>
+                )}
+              </div>
               <button
                 className="reader-drawer-close"
                 aria-label="关闭目录"

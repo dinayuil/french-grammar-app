@@ -423,9 +423,9 @@ try {
       "values",
       "colors.xml",
     );
-    expect(light).toContain('<color name="colorPrimary">#ffffff</color>');
-    expect(light).toContain('<color name="colorPrimaryDark">#ffffff</color>');
-    expect(light).toContain('<color name="colorAccent">#58cc02</color>');
+    expect(light).toContain('<color name="colorPrimary">#f6f4ef</color>');
+    expect(light).toContain('<color name="colorPrimaryDark">#f6f4ef</color>');
+    expect(light).toContain('<color name="colorAccent">#21409a</color>');
 
     const night = readAppFile(
       "android",
@@ -436,9 +436,9 @@ try {
       "values-night",
       "colors.xml",
     );
-    expect(night).toContain('<color name="colorPrimary">#131f24</color>');
-    expect(night).toContain('<color name="colorPrimaryDark">#131f24</color>');
-    expect(night).toContain('<color name="colorAccent">#6ad923</color>');
+    expect(night).toContain('<color name="colorPrimary">#0e1420</color>');
+    expect(night).toContain('<color name="colorPrimaryDark">#0e1420</color>');
+    expect(night).toContain('<color name="colorAccent">#4560d2</color>');
 
     const layout = readAppFile(
       "android",
@@ -577,8 +577,8 @@ describe("AppTheme plugin", () => {
     expect(plugin).toContain("apply");
     expect(plugin).toContain("setStatusBarColor");
     expect(plugin).toContain("setNavigationBarColor");
-    expect(plugin).toContain("#FFFFFF");
-    expect(plugin).toContain("#131F24");
+    expect(plugin).toContain("#F6F4EF");
+    expect(plugin).toContain("#0E1420");
   });
 
   it("不重建 Activity,避免 WebView 重载", () => {

@@ -10,7 +10,17 @@ import { LibraryView } from "./views/LibraryView";
 import { StatsView } from "./views/StatsView";
 import { SettingsView } from "./views/SettingsView";
 import { GoalReachedDialog } from "./components/GoalReachedDialog";
+import { NavIcon } from "./components/icons";
 import { shareStatsCard, type ShareResult } from "./share/shareStats";
+import {
+  SECTION_MAP,
+  findSectionByCard,
+  findSectionById,
+  findSectionByLesson,
+  getLearningSections,
+  lessonSequenceFor,
+  type SectionMap,
+} from "./learning/sections";
 import type { Chapter, Progress } from "./types";
 import {
   applyTheme,
@@ -23,9 +33,20 @@ import {
 } from "./theme";
 
 type View =
-  | { name: "home"; openChapterId?: string; openLessonId?: string }
-  | { name: "lesson"; chapterId: string; lessonId: string }
-  | { name: "reader"; chapterId: string; cardId?: string; from: "library" | "home" }
+  | {
+      name: "home";
+      openChapterId?: string;
+      openSectionId?: string;
+      openLessonId?: string;
+    }
+  | { name: "lesson"; chapterId: string; lessonId: string; sectionId?: string }
+  | {
+      name: "reader";
+      chapterId: string;
+      sectionId?: string;
+      cardId?: string;
+      from: "library" | "home";
+    }
   | { name: "library" }
   | { name: "review" }
   | { name: "stats" }
@@ -41,7 +62,7 @@ function findSettlementAction(): HTMLElement | null {
   return secondary[secondary.length - 1] ?? null;
 }
 
-export default function App() {
+export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: SectionMap } = {}) {
   const [view, setView] = useState<View>({ name: "home" });
   const [progress, setProgress] = useState<Progress>(() => loadProgress());
   const progressRef = useRef(progress);
@@ -112,9 +133,15 @@ export default function App() {
         chapters={CHAPTERS}
         progress={progress}
         openChapterId={view.openChapterId}
+        openSectionId={view.openSectionId}
         openLessonId={view.openLessonId}
-        onOpenLesson={(chapterId, lessonId) => setView({ name: "lesson", chapterId, lessonId })}
-        onOpenCards={(chapterId) => setView({ name: "reader", chapterId, from: "home" })}
+        sectionMap={sectionMap}
+        onOpenLesson={(chapterId, lessonId, sectionId) =>
+          setView({ name: "lesson", chapterId, lessonId, sectionId })
+        }
+        onOpenCards={(chapterId, sectionId) =>
+          setView({ name: "reader", chapterId, sectionId, from: "home" })
+        }
         onOpenReview={() => setView({ name: "review" })}
       />
     );
@@ -123,24 +150,50 @@ export default function App() {
       <LibraryView
         chapters={CHAPTERS}
         query={libraryQuery}
+        sectionMap={sectionMap}
         onQueryChange={setLibraryQuery}
-        onOpenCard={(chapterId, cardId) =>
-          setView({ name: "reader", chapterId, cardId, from: "library" })
+        onOpenCard={(chapterId, cardId, sectionId) =>
+          setView({ name: "reader", chapterId, sectionId, cardId, from: "library" })
         }
       />
     );
   } else if (view.name === "reader") {
     const chapterIndex = CHAPTERS.findIndex((c) => c.id === view.chapterId);
     const ch = CHAPTERS[chapterIndex];
+    const sections = ch ? getLearningSections(ch, sectionMap) : null;
+    // 卡片 ID 是搜索/清单进入阅读器时最可靠的归属依据；只有不带卡片时才用
+    // sectionId 从专题开读。
+    const section = sections
+      ? (view.cardId ? findSectionByCard(sections, view.cardId) : null) ??
+        (view.sectionId ? findSectionById(sections, view.sectionId) : null)
+      : null;
     body = ch ? (
       <ReaderView
+        key={`${ch.id}:${section?.id ?? "chapter"}`}
         chapter={ch}
         chapterNumber={chapterIndex + 1}
+        section={section}
         initialCardId={view.cardId}
-        onBack={() =>
-          setView(view.from === "library" ? { name: "library" } : { name: "home" })
+        onBack={() => {
+          if (view.from === "library") {
+            setView({ name: "library" });
+          } else if (section) {
+            setView({
+              name: "home",
+              openChapterId: ch.id,
+              openSectionId: section.id,
+            });
+          } else {
+            setView({ name: "home" });
+          }
+        }}
+        onPracticeChapter={(sectionId) =>
+          setView({
+            name: "home",
+            openChapterId: ch.id,
+            openSectionId: sectionId,
+          })
         }
-        onPracticeChapter={() => setView({ name: "home", openChapterId: ch.id })}
         onStudyTick={handleStudyTick}
       />
     ) : null;
@@ -160,6 +213,17 @@ export default function App() {
       ? [...ch.lessons, ...ch.challenges].find((l) => l.id === view.lessonId)
       : undefined;
     if (ch && lesson) {
+      const sections = getLearningSections(ch, sectionMap);
+      // 归属一律由关卡 ID 重新解析，不信任路由里可能过期的 sectionId。
+      const section = sections
+        ? findSectionByLesson(sections, lesson.id) ??
+          (view.sectionId ? findSectionById(sections, view.sectionId) : null)
+        : null;
+      const sequence = sections
+        ? lessonSequenceFor(sections, lesson.id)
+        : [...ch.lessons, ...ch.challenges];
+      const index = sequence.findIndex((item) => item.id === lesson.id);
+      const next = index >= 0 ? sequence[index + 1] : undefined;
       body = (
         <LessonView
           key={lesson.id}
@@ -168,13 +232,23 @@ export default function App() {
           progress={progress}
           onProgress={updateProgress}
           onSettlement={handleSettlement}
+          nextLessonId={next?.id ?? null}
           onExit={() =>
-            setView({ name: "home", openChapterId: ch.id, openLessonId: lesson.id })
+            setView({
+              name: "home",
+              openChapterId: ch.id,
+              openSectionId: section?.id,
+              openLessonId: lesson.id,
+            })
           }
           onNextLesson={() => {
-            const all = [...ch.lessons, ...ch.challenges];
-            const next = all[all.findIndex((l) => l.id === view.lessonId) + 1];
-            if (next) setView({ name: "lesson", chapterId: ch.id, lessonId: next.id });
+            if (!next) return;
+            setView({
+              name: "lesson",
+              chapterId: ch.id,
+              lessonId: next.id,
+              sectionId: section?.id,
+            });
           }}
           onFinish={() => {}}
           onStudyTick={handleStudyTick}
@@ -211,6 +285,8 @@ export default function App() {
       <nav className="bottom-nav">
         <button
           className={`nav-item ${isPractice ? "active" : ""}`}
+          type="button"
+          aria-current={isPractice ? "page" : undefined}
           onClick={() => {
             // 首页仍然挂载时点击「练习」会折叠章节,这里同时把窗口拉回顶部,
             // 避免列表深处的滚动位置留在原地。
@@ -218,22 +294,35 @@ export default function App() {
             window.scrollTo({ top: 0, left: 0 });
           }}
         >
-          练习
+          <NavIcon name="practice" />
+          <span>练习</span>
         </button>
         <button
           className={`nav-item ${isLibrary ? "active" : ""}`}
+          type="button"
+          aria-current={isLibrary ? "page" : undefined}
           onClick={() => setView({ name: "library" })}
         >
-          讲解
+          <NavIcon name="library" />
+          <span>讲解</span>
         </button>
-        <button className={`nav-item ${view.name === "stats" ? "active" : ""}`} onClick={() => setView({ name: "stats" })}>
-          统计
+        <button
+          className={`nav-item ${view.name === "stats" ? "active" : ""}`}
+          type="button"
+          aria-current={view.name === "stats" ? "page" : undefined}
+          onClick={() => setView({ name: "stats" })}
+        >
+          <NavIcon name="stats" />
+          <span>统计</span>
         </button>
         <button
           className={`nav-item ${view.name === "settings" ? "active" : ""}`}
+          type="button"
+          aria-current={view.name === "settings" ? "page" : undefined}
           onClick={() => setView({ name: "settings" })}
         >
-          设置
+          <NavIcon name="settings" />
+          <span>设置</span>
         </button>
       </nav>
       {goalDialogProgress && (
