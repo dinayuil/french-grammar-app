@@ -1,0 +1,211 @@
+/* 学习进度备份:只使用现有主题变量,不改全局样式。 */
+.backup-panel {
+  margin-top: 18px;
+}
+
+/* section 里的标题是 first-child,沿用设置页标题字号而不是 h2 默认大字号。 */
+.backup-panel .backup-title {
+  margin-top: 0;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.backup-intro {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.backup-actions .btn {
+  flex: 1 1 140px;
+}
+
+.backup-export {
+  min-height: 44px;
+}
+
+.backup-file-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.backup-file-btn.is-disabled,
+.backup-file-btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.backup-file-btn:focus-within {
+  box-shadow: var(--focus);
+}
+
+.backup-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.backup-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.backup-recovery-btn {
+  min-height: 44px;
+  margin-top: 4px;
+  padding: 10px 0;
+  border: none;
+  background: none;
+  color: var(--primary-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.backup-recovery-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.backup-status {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.backup-error {
+  color: var(--red-ink);
+}
+
+.backup-preview {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--primary-border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  animation: backup-preview-in 0.18s ease;
+}
+
+.backup-preview.is-recovery {
+  border-color: var(--border-strong);
+}
+
+@keyframes backup-preview-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.backup-preview-title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.backup-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+
+.backup-summary > div {
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.backup-summary dt {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--text-secondary);
+}
+
+.backup-summary dd {
+  margin: 2px 0 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.backup-warning {
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border-left: 3px solid var(--gold);
+  border-radius: 0 8px 8px 0;
+  background: var(--gold-soft);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.backup-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.backup-preview-actions .btn {
+  flex: 1 1 130px;
+}
+
+@media (max-width: 379px) {
+  .backup-summary {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .backup-summary > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .backup-summary dd {
+    margin: 0;
+    font-size: 15px;
+    text-align: right;
+  }
+
+  .backup-actions .btn {
+    flex: 1 1 100%;
+  }
+}

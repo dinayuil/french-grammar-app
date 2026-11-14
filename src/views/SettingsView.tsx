@@ -3,6 +3,7 @@ import type { Progress } from "../types";
 import type { ThemeChoice } from "../theme";
 import { GOAL_PRESETS, STORAGE_KEY } from "../config";
 import { DEFAULT_PROGRESS } from "../storage";
+import { ProgressBackup } from "./ProgressBackup";
 
 interface Props {
   progress: Progress;
@@ -104,6 +105,8 @@ export function SettingsView({
           </button>
         ))}
       </div>
+
+      <ProgressBackup progress={progress} onChange={onChange} />
 
       <div className="settings-title">危险操作</div>
       {confirming ? (
