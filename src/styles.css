@@ -190,122 +190,263 @@ body {
 }
 
 .home-hero {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 16px;
+  display: grid;
+  gap: 11px;
   margin-bottom: 12px;
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 18px;
-  background: var(--surface);
+  background:
+    radial-gradient(140% 160% at 100% 0%, var(--primary-soft) 0%, transparent 52%),
+    var(--surface);
   box-shadow: var(--shadow-card);
+}
+
+/* 第一行:连击在左,今日目标占满剩余宽度。 */
+.hero-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
 }
 
 .streak-flame {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  min-width: 52px;
+  gap: 8px;
+  min-width: 0;
+  padding-right: 12px;
+  border-right: 1px solid var(--border);
 }
 
-.streak-icon {
-  width: 26px;
-  height: 26px;
+.streak-badge {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: var(--error-bg);
   color: var(--red);
 }
 
-.streak-flame-zero .streak-icon {
-  opacity: 0.45;
+.streak-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.streak-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .streak-count {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 20px;
-  line-height: 1.1;
+  font-size: 23px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .streak-label {
-  font-size: 11px;
+  margin-top: 2px;
+  font-size: 10.5px;
+  line-height: 1.1;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.streak-flame-zero .streak-badge {
+  background: var(--surface-muted);
   color: var(--text-secondary);
 }
 
-.goal-ring {
-  flex-shrink: 0;
-  width: 72px;
-  height: 72px;
+.streak-flame-zero .streak-icon {
+  opacity: 0.55;
 }
 
-.goal-ring-track {
-  fill: none;
-  stroke: var(--surface-sunken);
-  stroke-width: 8;
+.hero-goal {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
 }
 
-.goal-ring-fill {
-  fill: none;
-  stroke: var(--primary);
-  stroke-width: 8;
-  stroke-linecap: round;
-  transition: stroke-dashoffset 0.4s ease;
+.hero-goal-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
 }
 
-.goal-ring-done {
-  stroke: var(--gold);
+.hero-goal-label {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
-.goal-ring-xp {
+.hero-goal-rule {
+  flex: 1 1 10px;
+  min-width: 8px;
+  align-self: center;
+  border-top: 1px dashed var(--border-strong);
+  opacity: 0.7;
+}
+
+.hero-goal-value {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 1px;
+  min-width: 0;
   font-family: var(--font-display);
-  font-size: 20px;
   font-weight: 600;
-  fill: var(--text);
+  font-size: 18px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 
-.goal-ring-goal {
+.hero-goal-total {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.hero-goal-unit {
+  margin-left: 2px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.hero-goal-track {
+  height: 7px;
+  border-radius: 99px;
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+
+.hero-goal-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width 0.4s ease;
+}
+
+.hero-goal.is-done .hero-goal-fill {
+  background: var(--gold);
+}
+
+.hero-goal-note {
   font-size: 11px;
-  fill: var(--text-secondary);
+  line-height: 1.25;
+  color: var(--text-secondary);
 }
 
+.hero-goal.is-done .hero-goal-note {
+  color: var(--gold-ink);
+  font-weight: 600;
+}
+
+.hero-goal.is-done .hero-goal-note::before {
+  content: "✓";
+  margin-right: 4px;
+}
+
+/* 第二行:等级经验是一条安静的细进度,与今日目标区分。 */
 .level-bar {
-  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
   padding-top: 10px;
   border-top: 1px solid var(--border);
 }
 
-.level-text {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-
 .level-num {
+  flex: none;
   font-family: var(--font-display);
   font-size: 13px;
   font-weight: 600;
   font-style: italic;
   color: var(--primary-ink);
+  white-space: nowrap;
 }
 
 .level-xp {
-  font-size: 11px;
+  flex: none;
+  font-size: 10.5px;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.level-xp-label {
+  margin-right: 3px;
+  opacity: 0.8;
 }
 
 .level-track {
-  height: 6px;
+  flex: 1 1 auto;
+  min-width: 32px;
+  height: 5px;
   background: var(--surface-sunken);
   border-radius: 99px;
   overflow: hidden;
 }
 
 .level-fill {
+  display: block;
   height: 100%;
   background: linear-gradient(90deg, var(--primary), var(--primary-hover));
   border-radius: 99px;
   transition: width 0.4s ease;
+}
+
+@media (max-width: 379px) {
+  .home-hero {
+    padding: 12px;
+  }
+
+  .hero-top {
+    gap: 10px;
+  }
+
+  .streak-flame {
+    gap: 7px;
+    padding-right: 10px;
+  }
+
+  .streak-badge {
+    width: 32px;
+    height: 32px;
+  }
+
+  .streak-count {
+    font-size: 21px;
+  }
+
+  .hero-goal-value {
+    font-size: 17px;
+  }
+
+  .level-bar {
+    gap: 8px;
+  }
+
+  .level-xp {
+    font-size: 10px;
+  }
 }
 
 /* ---- 空题库状态 ---- */
