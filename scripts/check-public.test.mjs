@@ -155,6 +155,8 @@ test("exported rules document the allowlists and the guard's limits", () => {
   const text = RULES.join("\n");
   assert.match(text, /package\.json/);
   assert.match(text, /src\/\*\*/);
+  assert.match(text, /docs\/development\.md/);
+  assert.match(text, /docs\/releases\.md/);
   assert.match(text, /\.github\/workflows/);
   assert.match(text, /notify-app\.yml/);
   assert.match(text, /manifest\.json/);
@@ -270,6 +272,37 @@ test("allowed public workflow bytes are scanned for secrets", async (t) => {
     /private key|secret/i,
     "public workflow secret"
   );
+});
+
+test("the two owned application maintenance documents are allowed", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await writeAt(appRoot, "docs/development.md", "# Development\n");
+  await writeAt(appRoot, "docs/releases.md", "# Releases\n");
+
+  const result = await checkPublic({ appRoot, publicRoot });
+
+  assert.equal(result.ok, true, errorsOf(result));
+  assert.ok(result.inventory.app.includes("docs/development.md"));
+  assert.ok(result.inventory.app.includes("docs/releases.md"));
+});
+
+test("unowned documents and nested documentation directories stay rejected", async (t) => {
+  for (const rel of ["docs/notes.md", "docs/nested/development.md"]) {
+    const { appRoot, publicRoot } = await sandbox(t);
+    await setupPublic(publicRoot);
+    await writeAt(appRoot, rel, "# Unowned document\n");
+
+    assertFails(await checkPublic({ appRoot, publicRoot }), /non-allowlisted|unexpected/i, rel);
+  }
+});
+
+test("allowed maintenance documents are still scanned for signing secrets", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await writeAt(appRoot, "docs/releases.md", `# Releases\n${PRIVATE_KEY_HEADER}\n`);
+
+  assertFails(await checkPublic({ appRoot, publicRoot }), /private key|secret/i, "document secret");
 });
 
 test("non-workflow .github files stay rejected", async (t) => {
