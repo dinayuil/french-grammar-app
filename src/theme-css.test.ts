@@ -38,7 +38,10 @@ test("主操作与成功色分离", () => {
   expect(ruleBody(".option-btn.correct")).toContain("border-color: var(--green)");
   expect(ruleBody(".feedback.good")).toContain("background: var(--success-bg)");
   expect(ruleBody(".settlement-sub.good")).toContain("color: var(--green-ink)");
-  expect(ruleBody(".goal-ring-fill")).toContain("stroke: var(--primary)");
+  expect(ruleBody(".hero-goal-fill")).toContain("background: var(--primary)");
+  expect(ruleBody(".hero-goal.is-done .hero-goal-fill")).toContain(
+    "background: var(--gold)"
+  );
   expect(ruleBody(".lesson-progress-fill")).toContain("background: var(--primary)");
   expect(ruleBody(".reader-progress-fill")).toContain("background: var(--primary)");
   expect(ruleBody(".bar-fill")).toContain("background: var(--primary)");

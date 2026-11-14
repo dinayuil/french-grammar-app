@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Chapter, Lesson, Progress } from "../types";
 import { today } from "../storage";
 import { streakFor } from "../engine";
-import { GoalRing } from "../components/GoalRing";
 import { StreakFlame } from "../components/StreakFlame";
 import { LevelBar } from "../components/LevelBar";
 import {
@@ -175,7 +174,18 @@ export function HomeView({
 
   const t = today();
   const todayXp = progress.days[t]?.xp ?? 0;
-  const streak = streakFor(progress.days, progress.dailyGoal, t);
+  const dailyGoal = progress.dailyGoal;
+  const streak = streakFor(progress.days, dailyGoal, t);
+  const goalMet = dailyGoal > 0 && todayXp >= dailyGoal;
+  const goalPct = dailyGoal > 0 ? Math.min((todayXp / dailyGoal) * 100, 100) : 0;
+  const goalNote =
+    dailyGoal <= 0
+      ? "尚未设置每日目标"
+      : goalMet
+        ? todayXp > dailyGoal
+          ? `已达成 · 超出 ${todayXp - dailyGoal} XP`
+          : "今日目标已达成"
+        : `还差 ${dailyGoal - todayXp} XP`;
 
   // 只统计当前题库中实际存在的可玩题目;空题库或仅有旧错题时禁用练习/复习
   const playableQuestionIds = new Set<string>();
@@ -317,8 +327,35 @@ export function HomeView({
       </h1>
 
       <div className="home-hero">
-        <StreakFlame count={streak} />
-        <GoalRing done={todayXp} goal={progress.dailyGoal} />
+        <div className="hero-top">
+          <StreakFlame count={streak} />
+          <div
+            className={`hero-goal${goalMet ? " is-done" : ""}${
+              dailyGoal <= 0 ? " is-unset" : ""
+            }`}
+          >
+            <div className="hero-goal-head">
+              <span className="hero-goal-label">
+                {dailyGoal > 0 ? "今日目标" : "今日获得"}
+              </span>
+              <span className="hero-goal-rule" aria-hidden="true" />
+              <span className="hero-goal-value">
+                <b>{todayXp}</b>
+                {dailyGoal > 0 && (
+                  <span className="hero-goal-total"> / {dailyGoal}</span>
+                )}
+                <span className="hero-goal-unit"> XP</span>
+              </span>
+            </div>
+            <div className="hero-goal-track" aria-hidden="true">
+              <div
+                className="hero-goal-fill"
+                style={{ width: `${goalPct}%` }}
+              />
+            </div>
+            <span className="hero-goal-note">{goalNote}</span>
+          </div>
+        </div>
         <LevelBar xp={progress.xp} />
       </div>
 
