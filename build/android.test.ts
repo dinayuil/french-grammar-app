@@ -73,6 +73,186 @@ function findGroovyJar(): string | undefined {
 }
 
 const GROOVY_JAR = findGroovyJar();
+const CI_REQUIRES_GROOVY =
+  process.env.CI === "true" || process.env.CI === "1";
+
+const JAVA_BIN = process.env.JAVA_HOME
+  ? path.join(
+      process.env.JAVA_HOME,
+      "bin",
+      process.platform === "win32" ? "java.exe" : "java",
+    )
+  : "java";
+
+function groovyString(value: string): string {
+  return JSON.stringify(value);
+}
+
+function groovyEnv(env: Record<string, string>): string {
+  const entries = Object.entries(env);
+  if (entries.length === 0) return "[:]";
+  return `[${entries
+    .map(([key, value]) => `${groovyString(key)}: ${groovyString(value)}`)
+    .join(", ")}]`;
+}
+
+interface PublicConfigCase {
+  label: string;
+  env: Record<string, string>;
+}
+
+interface GroovyRun {
+  stdout: string;
+  stderr: string;
+  status: number | null;
+}
+
+function runGroovy(script: string, args: string[]): GroovyRun {
+  if (!GROOVY_JAR) throw new Error("Gradle Groovy jar is unavailable");
+  const scriptDir = mkdtempSync(path.join(tmpdir(), "fge-groovy-run-"));
+  tempRoots.push(scriptDir);
+  const scriptPath = path.join(scriptDir, "driver.groovy");
+  writeFileSync(scriptPath, script, "utf8");
+  const result = spawnSync(
+    JAVA_BIN,
+    ["-cp", GROOVY_JAR, "groovy.ui.GroovyMain", scriptPath, ...args],
+    { encoding: "utf8", timeout: 90_000 },
+  );
+  const stdout = result.stdout ?? "";
+  const stderr = result.stderr ?? "";
+  if (result.status !== 0) {
+    throw new Error(
+      `Groovy driver failed (status=${String(result.status)}):\n${[
+        stdout,
+        stderr,
+        result.error?.message,
+      ]
+        .filter(Boolean)
+        .join("\n")}`,
+    );
+  }
+  return { stdout, stderr, status: result.status };
+}
+
+interface PublicConfigResult {
+  version: Record<
+    string,
+    { status: string; versionCode?: string; versionName?: string; error?: string }
+  >;
+  signing: Record<
+    string,
+    {
+      status: string;
+      storeFile?: string;
+      storePassword?: string;
+      keyAlias?: string;
+      keyPassword?: string;
+      error?: string;
+    }
+  >;
+}
+
+/**
+ * Execute android/app/fge-public-config.gradle with Gradle's own Groovy runtime.
+ * Strings are generated as Groovy literals so this exercises the real helper
+ * instead of mirroring its validation in TypeScript.
+ */
+function runPublicConfigHelper(
+  versionCases: PublicConfigCase[],
+  signingCases: PublicConfigCase[],
+): PublicConfigResult {
+  if (!GROOVY_JAR) throw new Error("Gradle Groovy jar is unavailable");
+  const scriptDir = mkdtempSync(path.join(tmpdir(), "fge-public-config-"));
+  tempRoots.push(scriptDir);
+  const keystore = path.join(scriptDir, "fixture.keystore");
+  writeFileSync(keystore, "fixture keystore bytes", "utf8");
+  const missingKeystore = path.join(scriptDir, "missing.keystore");
+  const withKeystore = (env: Record<string, string>) => {
+    if (!Object.hasOwn(env, "FGE_PUBLIC_KEYSTORE_PATH")) return env;
+    if (env.FGE_PUBLIC_KEYSTORE_PATH === "<fixture>") {
+      return { ...env, FGE_PUBLIC_KEYSTORE_PATH: keystore };
+    }
+    if (env.FGE_PUBLIC_KEYSTORE_PATH === "<missing>") {
+      return { ...env, FGE_PUBLIC_KEYSTORE_PATH: missingKeystore };
+    }
+    return env;
+  };
+
+  const literalCases = (cases: PublicConfigCase[]) =>
+    `[${cases
+      .map(
+        (entry) =>
+          `[label: ${groovyString(entry.label)}, env: ${groovyEnv(withKeystore(entry.env))}]`,
+      )
+      .join(", ")}]`;
+
+  const driver = `
+def loader = new GroovyClassLoader()
+loader.parseClass(new File(args[0]))
+def cls = loader.loadClass('FgePublicConfig')
+def projectDir = new File(args[1])
+
+def versionCases = ${literalCases(versionCases)}
+versionCases.each { c ->
+    try {
+        def result = cls.resolveVersion(c.env)
+        println 'VERSION|' + c.label + '|OK|' + (result.versionCode == null ? 'null' : result.versionCode) + '|' + (result.versionName == null ? 'null' : result.versionName)
+    } catch (IllegalArgumentException error) {
+        println 'VERSION|' + c.label + '|ERR|' + error.message
+    }
+}
+
+def signingCases = ${literalCases(signingCases)}
+signingCases.each { c ->
+    try {
+        def result = cls.resolveSigning(c.env, projectDir)
+        def config = result.config
+        if (config == null) {
+            println 'SIGNING|' + c.label + '|NONE|' + (result.error == null ? '' : result.error)
+        } else {
+            println 'SIGNING|' + c.label + '|OK|' + config.storeFile.canonicalPath + '|' + config.storePassword + '|' + config.keyAlias + '|' + config.keyPassword + '|' + (result.error == null ? '' : result.error)
+        }
+    } catch (IllegalArgumentException error) {
+        println 'SIGNING|' + c.label + '|ERR|' + error.message
+    }
+}
+`;
+
+  const run = runGroovy(driver, [
+    appFile("android", "app", "fge-public-config.gradle"),
+    appFile("android", "app"),
+  ]);
+  const version: PublicConfigResult["version"] = {};
+  const signing: PublicConfigResult["signing"] = {};
+  for (const line of run.stdout.split(/\r?\n/)) {
+    if (line.startsWith("VERSION|")) {
+      const parts = line.split("|");
+      const [, label, status, third, fourth] = parts;
+      version[label] =
+        status === "OK"
+          ? { status, versionCode: third, versionName: fourth }
+          : { status, error: third };
+      continue;
+    }
+    if (line.startsWith("SIGNING|")) {
+      const parts = line.split("|");
+      const [, label, status] = parts;
+      if (status === "OK") {
+        signing[label] = {
+          status,
+          storeFile: parts[3],
+          storePassword: parts[4],
+          keyAlias: parts[5],
+          keyPassword: parts[6],
+          error: parts[7] || undefined,
+        };
+      } else {
+        signing[label] = { status, error: parts[3] };
+      }
+    }
+  }
+  return { version, signing };
+}
 
 function createProject(): string {
   const root = mkdtempSync(path.join(tmpdir(), "fge-apk-test-"));
@@ -255,7 +435,16 @@ describe("Capacitor edition identity", () => {
 });
 
 describe("Android template resources and flavors", () => {
-  it.skipIf(!GROOVY_JAR)(
+  it("requires the Gradle Groovy runtime in CI", () => {
+    if (CI_REQUIRES_GROOVY) {
+      expect(
+        GROOVY_JAR,
+        "CI must run `bash ./gradlew --version` before `npm test`; the Groovy helper tests must not silently skip.",
+      ).toBeTruthy();
+    }
+  });
+
+  it.skipIf(!GROOVY_JAR && !CI_REQUIRES_GROOVY)(
     "passes the installed Gradle Groovy syntax parser",
     () => {
       const scriptDir = mkdtempSync(path.join(tmpdir(), "fge-groovy-parse-"));
@@ -267,35 +456,31 @@ describe("Android template resources and flavors", () => {
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.Phases
 
-def file = new File(args[0])
-try {
-    def unit = new CompilationUnit()
-    unit.addSource(file.name, file.getText("UTF-8"))
-    unit.compile(Phases.CONVERSION)
-    println "SYNTAX_OK " + file.name
-} catch (Throwable error) {
-    System.err.println("SYNTAX_FAIL " + error.message)
-    System.exit(1)
+args.each { name ->
+    def file = new File(name)
+    try {
+        def unit = new CompilationUnit()
+        unit.addSource(file.name, file.getText("UTF-8"))
+        unit.compile(Phases.CONVERSION)
+        println "SYNTAX_OK " + file.name
+    } catch (Throwable error) {
+        System.err.println("SYNTAX_FAIL " + error.message)
+        System.exit(1)
+    }
 }
 `,
         "utf8",
       );
 
-      const java = process.env.JAVA_HOME
-        ? path.join(
-            process.env.JAVA_HOME,
-            "bin",
-            process.platform === "win32" ? "java.exe" : "java",
-          )
-        : "java";
       const result = spawnSync(
-        java,
+        JAVA_BIN,
         [
           "-cp",
           GROOVY_JAR,
           "groovy.ui.GroovyMain",
           scriptPath,
           appFile("android", "app", "build.gradle"),
+          appFile("android", "app", "fge-public-config.gradle"),
         ],
         { encoding: "utf8", timeout: 60_000 },
       );
@@ -540,6 +725,208 @@ try {
     );
     expect(manifest).toContain('android:label="@string/app_name"');
     expect(manifest).toContain('android:label="@string/title_activity_main"');
+  });
+});
+
+describe("public APK version and signing configuration", () => {
+  const versionCases: PublicConfigCase[] = [
+    { label: "defaults", env: {} },
+    {
+      label: "valid",
+      env: {
+        FGE_PUBLIC_VERSION_CODE: "42",
+        FGE_PUBLIC_VERSION_NAME: "1.0-test.42",
+      },
+    },
+    {
+      label: "minimum",
+      env: {
+        FGE_PUBLIC_VERSION_CODE: "1",
+        FGE_PUBLIC_VERSION_NAME: "1.0-test.1",
+      },
+    },
+    {
+      label: "maximum",
+      env: {
+        FGE_PUBLIC_VERSION_CODE: "2100000000",
+        FGE_PUBLIC_VERSION_NAME: "1.0-test.2100000000",
+      },
+    },
+    { label: "zero", env: { FGE_PUBLIC_VERSION_CODE: "0", FGE_PUBLIC_VERSION_NAME: "1.0-test.0" } },
+    { label: "negative", env: { FGE_PUBLIC_VERSION_CODE: "-1", FGE_PUBLIC_VERSION_NAME: "1.0-test.-1" } },
+    {
+      label: "too-large",
+      env: { FGE_PUBLIC_VERSION_CODE: "2100000001", FGE_PUBLIC_VERSION_NAME: "1.0-test.2100000001" },
+    },
+    { label: "leading-zero", env: { FGE_PUBLIC_VERSION_CODE: "042", FGE_PUBLIC_VERSION_NAME: "1.0-test.42" } },
+    { label: "non-numeric", env: { FGE_PUBLIC_VERSION_CODE: "abc", FGE_PUBLIC_VERSION_NAME: "1.0-test.abc" } },
+    { label: "code-only", env: { FGE_PUBLIC_VERSION_CODE: "42" } },
+    { label: "name-only", env: { FGE_PUBLIC_VERSION_NAME: "1.0-test.42" } },
+    { label: "space-name", env: { FGE_PUBLIC_VERSION_CODE: "42", FGE_PUBLIC_VERSION_NAME: "1.0 test 42" } },
+    { label: "slash-name", env: { FGE_PUBLIC_VERSION_CODE: "42", FGE_PUBLIC_VERSION_NAME: "1.0/test" } },
+    { label: "newline-name", env: { FGE_PUBLIC_VERSION_CODE: "42", FGE_PUBLIC_VERSION_NAME: "1.0-test.42\ninjected" } },
+    {
+      label: "too-long-name",
+      env: { FGE_PUBLIC_VERSION_CODE: "42", FGE_PUBLIC_VERSION_NAME: `1.${"a".repeat(64)}` },
+    },
+  ];
+
+  const signingCases: PublicConfigCase[] = [
+    { label: "defaults", env: {} },
+    { label: "required-missing", env: { FGE_REQUIRE_PUBLIC_SIGNING: "1" } },
+    { label: "zero-is-optional", env: { FGE_REQUIRE_PUBLIC_SIGNING: "0" } },
+    { label: "partial-path", env: { FGE_PUBLIC_KEYSTORE_PATH: "<fixture>" } },
+    {
+      label: "partial-password",
+      env: {
+        FGE_PUBLIC_KEYSTORE_PATH: "<fixture>",
+        FGE_PUBLIC_KEYSTORE_PASSWORD: "store-password",
+        FGE_PUBLIC_KEY_ALIAS: "public-test",
+      },
+    },
+    {
+      label: "valid",
+      env: {
+        FGE_PUBLIC_KEYSTORE_PATH: "<fixture>",
+        FGE_PUBLIC_KEYSTORE_PASSWORD: "store-password",
+        FGE_PUBLIC_KEY_ALIAS: "public-test",
+        FGE_PUBLIC_KEY_PASSWORD: "key-password",
+      },
+    },
+    {
+      label: "valid-required",
+      env: {
+        FGE_REQUIRE_PUBLIC_SIGNING: "1",
+        FGE_PUBLIC_KEYSTORE_PATH: "<fixture>",
+        FGE_PUBLIC_KEYSTORE_PASSWORD: "store-password",
+        FGE_PUBLIC_KEY_ALIAS: "public-test",
+        FGE_PUBLIC_KEY_PASSWORD: "key-password",
+      },
+    },
+    {
+      label: "missing-file",
+      env: {
+        FGE_PUBLIC_KEYSTORE_PATH: "<missing>",
+        FGE_PUBLIC_KEYSTORE_PASSWORD: "store-password",
+        FGE_PUBLIC_KEY_ALIAS: "public-test",
+        FGE_PUBLIC_KEY_PASSWORD: "key-password",
+      },
+    },
+    { label: "invalid-required-flag", env: { FGE_REQUIRE_PUBLIC_SIGNING: "true" } },
+  ];
+
+  it.skipIf(!GROOVY_JAR && !CI_REQUIRES_GROOVY)(
+    "validates and returns public version inputs with the real Gradle helper",
+    () => {
+      const { version } = runPublicConfigHelper(versionCases, signingCases);
+      expect(version.defaults).toEqual({
+        status: "OK",
+        versionCode: "null",
+        versionName: "null",
+      });
+      expect(version.valid).toEqual({
+        status: "OK",
+        versionCode: "42",
+        versionName: "1.0-test.42",
+      });
+      expect(version.minimum).toEqual({
+        status: "OK",
+        versionCode: "1",
+        versionName: "1.0-test.1",
+      });
+      expect(version.maximum).toEqual({
+        status: "OK",
+        versionCode: "2100000000",
+        versionName: "1.0-test.2100000000",
+      });
+      for (const label of [
+        "zero",
+        "negative",
+        "too-large",
+        "leading-zero",
+        "non-numeric",
+        "code-only",
+        "name-only",
+        "space-name",
+        "slash-name",
+        "newline-name",
+        "too-long-name",
+      ]) {
+        expect(version[label]?.status, label).toBe("ERR");
+        expect(version[label]?.error, label).toBeTruthy();
+      }
+      expect(version["code-only"]?.error).toMatch(/must be set together/i);
+      expect(version["name-only"]?.error).toMatch(/must be set together/i);
+      expect(version.zero?.error).toMatch(/positive|integer/i);
+      expect(version["too-long-name"]?.error).toMatch(/VERSION_NAME/);
+    },
+    120_000,
+  );
+
+  it.skipIf(!GROOVY_JAR && !CI_REQUIRES_GROOVY)(
+    "requires complete public signing without weakening local defaults",
+    () => {
+      const { signing } = runPublicConfigHelper(versionCases, signingCases);
+      expect(signing.defaults).toEqual({ status: "NONE", error: "" });
+      expect(signing["zero-is-optional"]).toEqual({ status: "NONE", error: "" });
+      expect(signing["required-missing"]?.status).toBe("NONE");
+      expect(signing["required-missing"]?.error).toMatch(/required/i);
+      expect(signing["partial-path"]?.status).toBe("NONE");
+      expect(signing["partial-path"]?.error).toMatch(/incomplete/i);
+      expect(signing["partial-password"]?.status).toBe("NONE");
+      expect(signing["partial-password"]?.error).toMatch(
+        /FGE_PUBLIC_KEY_PASSWORD/,
+      );
+      expect(signing["invalid-required-flag"]?.status).toBe("NONE");
+      expect(signing["invalid-required-flag"]?.error).toMatch(/must be 1 or 0/i);
+      expect(signing["missing-file"]?.status).toBe("NONE");
+      expect(signing["missing-file"]?.error).toMatch(/not a readable file/i);
+
+      expect(signing.valid?.status).toBe("OK");
+      expect(path.basename(signing.valid?.storeFile ?? "")).toBe(
+        "fixture.keystore",
+      );
+      expect(signing.valid?.storePassword).toBe("store-password");
+      expect(signing.valid?.keyAlias).toBe("public-test");
+      expect(signing.valid?.keyPassword).toBe("key-password");
+      expect(signing.valid?.error).toBeUndefined();
+      expect(signing["valid-required"]?.status).toBe("OK");
+    },
+    120_000,
+  );
+
+  it("wires version and signing inputs into only the public debug build", () => {
+    const gradle = readAppFile("android", "app", "build.gradle");
+    expect(gradle).toContain(
+      "apply from: 'fge-public-config.gradle'",
+    );
+    expect(gradle).toContain("fgePublicConfig.resolveVersion(System.getenv())");
+    expect(gradle).toContain(
+      "fgePublicConfig.resolveSigning(System.getenv(), file('.'))",
+    );
+    expect(gradle).toMatch(/versionCode\s+1\b/);
+    expect(gradle).toMatch(/versionName\s+["']1\.0["']/);
+    expect(gradle).toMatch(
+      /create\(\s*["']public["']\s*\)\s*\{[\s\S]*?if\s*\(\s*fgePublicVersion\.versionCode\s*!=\s*null\s*\)[\s\S]*?versionCode\s+fgePublicVersion\.versionCode[\s\S]*?versionName\s+fgePublicVersion\.versionName/,
+    );
+    expect(gradle).toMatch(
+      /onVariants\(\s*selector\(\)\.withBuildType\(\s*["']debug["']\s*\)\.withFlavor\(\s*["']edition["']\s*,\s*["']public["']\s*\)/,
+    );
+    expect(gradle).toMatch(/variant\.signingConfig\.setConfig\(/);
+    expect(gradle).toMatch(
+      /prePublicDebugBuild[\s\S]*?verifyPublicBuildInputs\(\)/,
+    );
+    expect(gradle).not.toMatch(/preInternalDebugBuild[\s\S]{0,200}verifyPublicBuildInputs/);
+    expect(gradle).not.toMatch(/storePassword|keyPassword/);
+  });
+
+  it("keeps the helper free of embedded credentials or machine paths", () => {
+    const helper = readAppFile("android", "app", "fge-public-config.gradle");
+    expect(helper).not.toMatch(/[A-Za-z]:\\Users\\/);
+    expect(helper).not.toMatch(/-----BEGIN/);
+    expect(helper).not.toMatch(
+      /(?:storePassword|keyPassword)\s*=\s*["'][^"']+["']/,
+    );
   });
 });
 

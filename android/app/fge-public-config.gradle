@@ -1,0 +1,156 @@
+import java.util.regex.Pattern
+
+/**
+ * Public APK version and signing input validation.
+ *
+ * This is a standalone, Gradle-independent class so focused tests can execute
+ * the real validation with Gradle's bundled Groovy runtime. The app build
+ * script is the only caller. This file never prints, persists, or fabricates
+ * credentials: the workflow restores the keystore into RUNNER_TEMP and passes
+ * passwords through the process environment only.
+ */
+class FgePublicConfig {
+    static final String VERSION_CODE_ENV = 'FGE_PUBLIC_VERSION_CODE'
+    static final String VERSION_NAME_ENV = 'FGE_PUBLIC_VERSION_NAME'
+    static final String REQUIRE_SIGNING_ENV = 'FGE_REQUIRE_PUBLIC_SIGNING'
+    static final String KEYSTORE_PATH_ENV = 'FGE_PUBLIC_KEYSTORE_PATH'
+    static final String KEYSTORE_PASSWORD_ENV = 'FGE_PUBLIC_KEYSTORE_PASSWORD'
+    static final String KEY_ALIAS_ENV = 'FGE_PUBLIC_KEY_ALIAS'
+    static final String KEY_PASSWORD_ENV = 'FGE_PUBLIC_KEY_PASSWORD'
+
+    static final int VERSION_CODE_MIN = 1
+    static final int VERSION_CODE_MAX = 2100000000
+    static final Pattern VERSION_CODE_PATTERN = Pattern.compile('[1-9][0-9]*')
+    static final Pattern VERSION_NAME_PATTERN = Pattern.compile('[A-Za-z0-9][A-Za-z0-9._+-]{0,63}')
+
+    private static String value(Map env, String name) {
+        if (env == null) return null
+        def raw = env.get(name)
+        if (raw == null) return null
+        String text = raw.toString()
+        return text.length() == 0 ? null : text
+    }
+
+    /**
+     * Resolve the public flavor version. Returning nulls leaves the original
+     * defaultConfig version (1 / 1.0) untouched for local and internal builds.
+     */
+    static Map<String, Object> resolveVersion(Map env) {
+        String code = value(env, VERSION_CODE_ENV)
+        String name = value(env, VERSION_NAME_ENV)
+
+        if (code == null && name == null) {
+            return [versionCode: null, versionName: null]
+        }
+        if (code == null || name == null) {
+            throw new IllegalArgumentException(
+                "${VERSION_CODE_ENV} and ${VERSION_NAME_ENV} must be set together for the public APK."
+            )
+        }
+        if (!VERSION_CODE_PATTERN.matcher(code).matches() || code.length() > 10) {
+            throw new IllegalArgumentException(
+                "${VERSION_CODE_ENV} must be a positive base-10 integer without leading zeros."
+            )
+        }
+
+        long parsed = Long.parseLong(code)
+        if (parsed < VERSION_CODE_MIN || parsed > VERSION_CODE_MAX) {
+            throw new IllegalArgumentException(
+                "${VERSION_CODE_ENV} must be between ${VERSION_CODE_MIN} and ${VERSION_CODE_MAX}."
+            )
+        }
+        if (!VERSION_NAME_PATTERN.matcher(name).matches()) {
+            throw new IllegalArgumentException(
+                "${VERSION_NAME_ENV} must be 1-64 characters of A-Z, a-z, 0-9, dot, underscore, plus or hyphen, starting with a letter or digit."
+            )
+        }
+
+        return [versionCode: (int) parsed, versionName: name]
+    }
+
+    /**
+     * Resolve the optional dedicated public signing configuration.
+     *
+     * All four key material values must be present together. A missing,
+     * incomplete, or unreadable configuration is returned as an error for the
+     * public build task to raise; resolving itself never falls back to the
+     * random Android debug key and never affects internal builds.
+     */
+    static Map<String, Object> resolveSigning(Map env, File projectDir) {
+        String requiredValue = value(env, REQUIRE_SIGNING_ENV)
+        boolean required = false
+        String requirementError = null
+        if (requiredValue == '1') {
+            required = true
+        } else if (requiredValue == '0') {
+            required = false
+        } else if (requiredValue != null) {
+            requirementError = "${REQUIRE_SIGNING_ENV} must be 1 or 0 when set."
+        }
+
+        Map<String, String> values = [
+            (KEYSTORE_PATH_ENV): value(env, KEYSTORE_PATH_ENV),
+            (KEYSTORE_PASSWORD_ENV): value(env, KEYSTORE_PASSWORD_ENV),
+            (KEY_ALIAS_ENV): value(env, KEY_ALIAS_ENV),
+            (KEY_PASSWORD_ENV): value(env, KEY_PASSWORD_ENV),
+        ]
+        List<String> present = values.findAll { key, entry -> entry != null }.keySet().toList().sort()
+
+        if (present.isEmpty()) {
+            String error = requirementError
+            if (error == null && required) {
+                error = "Public APK signing is required (${REQUIRE_SIGNING_ENV}=1) but ${KEYSTORE_PATH_ENV}, ${KEYSTORE_PASSWORD_ENV}, ${KEY_ALIAS_ENV}, and ${KEY_PASSWORD_ENV} are not configured."
+            }
+            return [config: null, required: required, error: error]
+        }
+
+        if (present.size() < values.size()) {
+            List<String> missing = values.findAll { key, entry -> entry == null }.keySet().toList().sort()
+            return [
+                config: null,
+                required: required,
+                error: "Incomplete public APK signing configuration; missing: ${missing.join(', ')}. Set all of ${KEYSTORE_PATH_ENV}, ${KEYSTORE_PASSWORD_ENV}, ${KEY_ALIAS_ENV}, and ${KEY_PASSWORD_ENV}, or none.",
+            ]
+        }
+
+        if (requirementError != null) {
+            return [config: null, required: required, error: requirementError]
+        }
+
+        File storeFile = new File(values[KEYSTORE_PATH_ENV])
+        if (!storeFile.isAbsolute()) {
+            storeFile = new File(projectDir, values[KEYSTORE_PATH_ENV])
+        }
+        if (!storeFile.isFile()) {
+            return [
+                config: null,
+                required: required,
+                error: "Public APK keystore is not a readable file: ${storeFile}",
+            ]
+        }
+
+        return [
+            config: [
+                storeFile: storeFile,
+                storePassword: values[KEYSTORE_PASSWORD_ENV],
+                keyAlias: values[KEY_ALIAS_ENV],
+                keyPassword: values[KEY_PASSWORD_ENV],
+            ],
+            required: required,
+            error: null,
+        ]
+    }
+
+    /** Create the dedicated debug signing config from validated values. */
+    static void createSigningConfig(def signingConfigs, Map config) {
+        def signing = signingConfigs.create('fgePublic')
+        signing.storeFile = config.storeFile
+        signing.storePassword = config.storePassword
+        signing.keyAlias = config.keyAlias
+        signing.keyPassword = config.keyPassword
+    }
+}
+
+// Gradle does not import classes declared by an applied script into the
+// applying build script's default namespace; expose one instance explicitly.
+ext.fgePublicConfig = new FgePublicConfig()

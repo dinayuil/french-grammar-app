@@ -1,6 +1,26 @@
 import groovy.json.JsonSlurper
 
 apply plugin: 'com.android.application'
+apply from: 'fge-public-config.gradle'
+
+def fgePublicVersion = [versionCode: null, versionName: null]
+def fgePublicVersionError = null
+try {
+    fgePublicVersion = fgePublicConfig.resolveVersion(System.getenv())
+} catch (IllegalArgumentException error) {
+    fgePublicVersionError = error.message
+}
+
+def fgePublicSigning = fgePublicConfig.resolveSigning(System.getenv(), file('.'))
+
+def verifyPublicBuildInputs = {
+    if (fgePublicVersionError != null) {
+        throw new GradleException("Invalid public APK version configuration: ${fgePublicVersionError}")
+    }
+    if (fgePublicSigning.error != null) {
+        throw new GradleException("Public APK signing configuration failed: ${fgePublicSigning.error}")
+    }
+}
 
 def editionIdentities = [
     public  : [appId: 'com.fge.open', webDir: 'dist/public'],
@@ -38,7 +58,10 @@ def verifySynchronizedEdition = { String edition ->
 
 tasks.configureEach { task ->
     if (task.name == 'prePublicDebugBuild' || task.name == 'prePublicReleaseBuild') {
-        task.doFirst { verifySynchronizedEdition('public') }
+        task.doFirst {
+            verifyPublicBuildInputs()
+            verifySynchronizedEdition('public')
+        }
     }
     if (task.name == 'preInternalDebugBuild' || task.name == 'preInternalReleaseBuild') {
         task.doFirst { verifySynchronizedEdition('internal') }
@@ -60,11 +83,20 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (fgePublicSigning.config != null) {
+            fgePublicConfig.createSigningConfig(delegate, fgePublicSigning.config)
+        }
+    }
     flavorDimensions "edition"
     productFlavors {
         create("public") {
             dimension "edition"
             applicationId "com.fge.open"
+            if (fgePublicVersion.versionCode != null) {
+                versionCode fgePublicVersion.versionCode
+                versionName fgePublicVersion.versionName
+            }
         }
         create("internal") {
             dimension "edition"
@@ -77,6 +109,15 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType('debug').withFlavor('edition', 'public'), { variant ->
+        def signing = android.signingConfigs.findByName('fgePublic')
+        if (signing != null) {
+            variant.signingConfig.setConfig(signing)
+        }
+    })
 }
 
 repositories {
