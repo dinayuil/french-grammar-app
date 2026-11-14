@@ -34,3 +34,9 @@
 讲解和习题由 **AI 参与编写与复核，尚未经过人工法语审校**。遇到可疑答案或表述，请结合其他学习资料核对。
 
 公开内容见[原创题库仓库](https://github.com/dinayuil/french-grammar-content-public)。发现题目、讲解或应用问题，可以在 [Issues](https://github.com/dinayuil/french-grammar-app/issues) 中反馈，附上题目或讲解名称及复现步骤。
+
+## 许可
+
+本仓库的应用代码与文档采用 [MIT License](LICENSE)，允许在保留版权与许可声明的条件下使用、修改、分发和商业使用。
+
+题库内容独立授权，不适用应用代码的 MIT 许可。公开题库采用 [CC BY-NC-SA 4.0](https://github.com/dinayuil/french-grammar-content-public/blob/main/LICENSE)；打包或分发应用时，也需要遵守所使用内容的授权条件。第三方依赖仍适用各自的许可证。
