@@ -179,6 +179,17 @@ test("a legitimate empty public bank passes with normal generic templates", asyn
   assert.deepEqual(result.inventory.public.sort(), [".gitignore", "README.md", "manifest.json"]);
 });
 
+test("root license notices are allowed without allowing arbitrary license paths", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await writeAt(appRoot, "LICENSE", "MIT License\n");
+  await writeAt(publicRoot, "LICENSE", "CC BY-NC-SA 4.0\n");
+  const result = await checkPublic({ appRoot, publicRoot });
+  assert.equal(result.ok, true, errorsOf(result));
+  await writeAt(publicRoot, "LICENSE.secret", "unknown file\n");
+  assertFails(await checkPublic({ appRoot, publicRoot }), /non-allowlisted public file/i);
+});
+
 test("GitHub Actions workflow YAML is allowlisted", async (t) => {
   const { appRoot, publicRoot } = await sandbox(t);
   await setupPublic(publicRoot);

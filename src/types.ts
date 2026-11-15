@@ -86,6 +86,9 @@ export interface MistakeInfo {
   count: number;
 }
 
+/** 分享卡展示内容:经验、学习时间或两者都有 */
+export type ShareCardContent = "xp" | "time" | "both";
+
 export interface Progress {
   xp: number;
   dailyGoal: number;
@@ -95,6 +98,8 @@ export interface Progress {
   translationEnabled: boolean;
   /** 翻译显示时机 */
   translationTiming: "before" | "after";
+  /** 分享卡展示内容,缺省 both */
+  shareCardContent: ShareCardContent;
   days: Record<string, DayRecord>;
   lessons: Record<string, LessonRecord>;
   /** 当前错题(答对即移出) */

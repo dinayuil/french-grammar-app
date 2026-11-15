@@ -63,7 +63,7 @@ function openSettings() {
 }
 
 function themeRadios() {
-  return $$('[role="radio"]') as HTMLButtonElement[];
+  return $$('[role="radiogroup"][aria-label="外观"] [role="radio"]') as HTMLButtonElement[];
 }
 
 function radioByText(text: string) {

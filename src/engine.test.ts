@@ -159,6 +159,7 @@ const P = (over: Partial<Progress> = {}): Progress => ({
   sound: true,
   translationEnabled: true,
   translationTiming: "after",
+  shareCardContent: "both",
   days: {},
   lessons: {},
   mistakes: {},

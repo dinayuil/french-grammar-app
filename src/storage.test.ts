@@ -103,6 +103,36 @@ describe("loadProgress", () => {
     expect(p.translationEnabled).toBe(true);
     expect(p.translationTiming).toBe("after");
   });
+
+  test("默认分享卡内容为 both", () => {
+    expect(DEFAULT_PROGRESS.shareCardContent).toBe("both");
+    expect(loadProgress().shareCardContent).toBe("both");
+  });
+
+  test("分享卡内容三种合法值保存后原样读回", () => {
+    for (const mode of ["xp", "time", "both"] as const) {
+      saveProgress(progressWith({ shareCardContent: mode }));
+      expect(loadProgress().shareCardContent).toBe(mode);
+    }
+  });
+
+  test("旧数据缺 shareCardContent → 默认 both", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ xp: 5, days: {}, lessons: {}, mistakes: {} })
+    );
+    expect(loadProgress().shareCardContent).toBe("both");
+  });
+
+  test("非法 shareCardContent → 回退 both", () => {
+    for (const invalid of ["video", "", null, 1, true]) {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ xp: 5, shareCardContent: invalid, days: {}, lessons: {}, mistakes: {} })
+      );
+      expect(loadProgress().shareCardContent).toBe("both");
+    }
+  });
 });
 
 describe("公钥按模式固定", () => {

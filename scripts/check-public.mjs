@@ -31,6 +31,7 @@ const GITFILE_PREFIX = "gitdir: ";
 const SUBMODULE_GITDIR_PREFIX = "../.git/modules/";
 
 const APP_ROOT_TEXT_FILES = new Set([
+  "LICENSE",
   ".gitattributes",
   ".gitignore",
   "README.md",
@@ -87,7 +88,7 @@ const ANDROID_EXACT_DIRS = new Set([
   "android/gradle/wrapper",
 ]);
 
-const PUBLIC_ROOT_FILES = new Set([".gitattributes", ".gitignore", "README.md", "manifest.json"]);
+const PUBLIC_ROOT_FILES = new Set([".gitattributes", ".gitignore", "LICENSE", "README.md", "manifest.json"]);
 // The public bank needs exactly one operational workflow to notify the app of
 // content updates. Keep this an exact allowlist: every other .github path is
 // still rejected by the public scanner.
@@ -180,12 +181,12 @@ const PRIVATE_EDITION_PATTERN = /^(?:internal|private)$/i;
 const PDF_SIGNATURE = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d]);
 
 export const RULES = Object.freeze([
-  "App root source/config allowlist: .gitattributes, .gitignore, README.md, capacitor.config.ts, index.html, package.json, package-lock.json, start.bat, tsconfig.json, tsconfig.tools.json, vite.config.ts, build-apk.bat.",
+  "App root source/config allowlist: .gitattributes, .gitignore, LICENSE, README.md, capacitor.config.ts, index.html, package.json, package-lock.json, start.bat, tsconfig.json, tsconfig.tools.json, vite.config.ts, build-apk.bat.",
   "App code allowlist: src/**/*.{ts,tsx,css}, build/**/*.{ts,mjs,mts}, scripts/**/*.{mjs,mts}.",
   "App maintenance documentation allowlist: exactly docs/development.md and docs/releases.md; other documents and nested documentation directories are rejected.",
   "GitHub Actions workflow allowlist: exactly .github/workflows/deploy-pages.yml, .github/workflows/ci.yml, and .github/workflows/build-public-apk.yml; other workflow files, nested workflow directories, .yaml duplicates, hidden files, and other .github files are rejected.",
   "Android template allowlist: the checked-in Gradle wrapper/config files, Java under android/app/src/main/java/**, XML/images under android/app/src/main/res/** or android/app/src/{public,internal}/res/**, and only the exact Gradle wrapper JAR under android/gradle/wrapper/.",
-  "Public bank allowlist: root manifest.json, README.md, .gitignore, .gitattributes, exactly .github/workflows/notify-app.yml, plus exactly the chapter JSON paths declared by manifest.json. No other public file is allowed.",
+  "Public bank allowlist: root manifest.json, LICENSE, README.md, .gitignore, .gitattributes, exactly .github/workflows/notify-app.yml, plus exactly the chapter JSON paths declared by manifest.json. No other public file is allowed.",
   "Named app JSON allowlist: package.json, package-lock.json, tsconfig.json, tsconfig.tools.json only; any other app JSON is treated as real content and rejected.",
   "Forbidden everywhere: PDFs, key/keystore/signing material, secrets, internal/private manifests, private content directories, source maps, APK/AAB/internal build artifacts, symlinks/junctions, and unknown files.",
   "Skipped exact generated locations (not audited by this guard): .git, node_modules, dist, coverage, .fge-build, android/.gradle, android/build, android/app/build, android/app/src/main/assets/public, android/capacitor-cordova-android-plugins, and known Capacitor-generated files. A top-level .git ordinary file is skipped only when it is a single-line safe submodule gitdir pointer into ../.git/modules/<name> (LF/CRLF, at most 1024 bytes); its target Git directory is never followed or inventoried.",

@@ -7,6 +7,7 @@ export const DEFAULT_PROGRESS: Progress = {
   sound: true,
   translationEnabled: true,
   translationTiming: "after",
+  shareCardContent: "both",
   days: {},
   lessons: {},
   mistakes: {},
@@ -54,6 +55,12 @@ function readKey(key: string): Progress | null {
         parsed.translationTiming === "before" || parsed.translationTiming === "after"
           ? parsed.translationTiming
           : "after",
+      shareCardContent:
+        parsed.shareCardContent === "xp" ||
+        parsed.shareCardContent === "time" ||
+        parsed.shareCardContent === "both"
+          ? parsed.shareCardContent
+          : "both",
       days: typeof parsed.days === "object" && parsed.days !== null ? parsed.days : {},
       lessons,
       mistakes,
