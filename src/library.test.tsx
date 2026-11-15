@@ -154,3 +154,39 @@ describe("App 搜索词保留", () => {
     expect(container.textContent).toContain("找到 1 条结果");
   });
 });
+
+describe("App 搜索结果返回讲解库目录", () => {
+  test("搜索结果页有「返回讲解库」，点击一次清空搜索并恢复已展开的章节", () => {
+    act(() => root.render(<App />));
+    click($$(".nav-item").find((el) => el.textContent === "讲解")!);
+    click($$(".library-chapter-toggle")[0]!);
+    expect($$(".library-card-item").length).toBe(3);
+    expect($$(".library-results-back").length).toBe(0);
+
+    typeQuery("ete");
+    expect(container.textContent).toContain("找到 1 条结果");
+    const back = $$(".library-results-back")[0];
+    expect(back).toBeDefined();
+    expect(back!.textContent).toContain("返回讲解库");
+
+    click(back);
+    expect(($$(".library-search")[0] as HTMLInputElement).value).toBe("");
+    expect($$(".library-result-item").length).toBe(0);
+    expect($$(".library-results-back").length).toBe(0);
+    expect($$(".library-chapter").length).toBe(2);
+    expect($$(".library-card-item").length).toBe(3);
+    expect($$(".library-chapter")[0]!.classList.contains("is-open")).toBe(true);
+  });
+
+  test("搜索无结果时同样可以返回目录", () => {
+    act(() => root.render(<App />));
+    click($$(".nav-item").find((el) => el.textContent === "讲解")!);
+    typeQuery("zzz");
+    expect(container.textContent).toContain("未找到「zzz」相关讲解");
+
+    click($$(".library-results-back")[0]);
+    expect(($$(".library-search")[0] as HTMLInputElement).value).toBe("");
+    expect($$(".library-chapter").length).toBe(2);
+    expect(container.textContent).not.toContain("未找到");
+  });
+});

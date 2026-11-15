@@ -66,4 +66,89 @@ describe.skipIf(__FGE_EDITION__ !== "public")("public: C02 noun phrases", () => 
     expect(judge(question, good)).toBe(true);
     expect(judge(question, bad)).toBe(false);
   });
+
+  test("chapter title names noun gender/number and noun phrases", () => {
+    const chapter = CHAPTERS.find((item) => item.id === "pub-c02-noun-phrases");
+    expect(chapter?.title).toBe("名词的性数与名词短语");
+    expect(chapter?.titleFr).toBe("Genre, nombre et groupes nominaux");
+  });
+
+  test("cards follow the noun-first mainline and no longer carry the moved article cards", () => {
+    const chapter = CHAPTERS.find((item) => item.id === "pub-c02-noun-phrases");
+    expect(chapter?.cards.map((card) => card.id)).toEqual([
+      "pub-c02-noun-phrases-card-u1-1",
+      "pub-c02-noun-phrases-card-u1-2",
+      "pub-c02-noun-phrases-card-u1-3",
+      "pub-c02-noun-phrases-card-u3-3",
+      "pub-c02-noun-phrases-card-u2-1",
+      "pub-c02-noun-phrases-card-u2-2",
+      "pub-c02-noun-phrases-card-u2-3",
+      "pub-c02-noun-phrases-card-u3-1",
+      "pub-c02-noun-phrases-card-u3-2",
+      "pub-c02-noun-phrases-card-u4-1",
+      "pub-c02-noun-phrases-card-u4-2",
+      "pub-c02-noun-phrases-card-u4-3",
+      "pub-c02-noun-phrases-card-u5-1",
+      "pub-c02-noun-phrases-card-u5-2",
+      "pub-c02-noun-phrases-card-u5-3",
+      "pub-c02-noun-phrases-card-u7-1",
+      "pub-c02-noun-phrases-card-u7-2",
+      "pub-c02-noun-phrases-card-u8-1",
+      "pub-c02-noun-phrases-card-u8-2",
+      "pub-c02-noun-phrases-card-u8-3",
+      "pub-c02-noun-phrases-card-u8-4",
+      "pub-c02-noun-phrases-card-u9-1",
+      "pub-c02-noun-phrases-card-u9-2",
+    ]);
+  });
+
+  test("moved article cards and lessons are absent from C02 while all resources stay accounted for", () => {
+    const chapter = CHAPTERS.find((item) => item.id === "pub-c02-noun-phrases");
+    expect(chapter).toBeDefined();
+    if (!chapter) return;
+    expect(chapter.cards).toHaveLength(23);
+    expect(chapter.lessons).toHaveLength(14);
+    expect(chapter.challenges).toHaveLength(2);
+    expect(
+      [...chapter.lessons, ...chapter.challenges].reduce(
+        (count, lesson) => count + lesson.questions.length,
+        0
+      )
+    ).toBe(124);
+    const ids = [
+      ...chapter.cards.map((card) => card.id),
+      ...chapter.lessons.map((lesson) => lesson.id),
+      ...chapter.challenges.map((item) => item.id),
+      ...chapter.lessons.flatMap((lesson) =>
+        lesson.questions.map((question) => question.id)
+      ),
+      ...chapter.challenges.flatMap((lesson) =>
+        lesson.questions.map((question) => question.id)
+      ),
+    ];
+    expect(ids.filter((id) => id.includes("card-u6-"))).toEqual([]);
+    expect(ids.filter((id) => id.includes("-l6-"))).toEqual([]);
+  });
+
+  test("rewritten cards keep the noun phrase and adjective-controller bridge plus x-to-se recognition", () => {
+    const chapter = CHAPTERS.find((item) => item.id === "pub-c02-noun-phrases");
+    const cards = new Map(chapter?.cards.map((card) => [card.id, card]));
+    const u12 = cards.get("pub-c02-noun-phrases-card-u1-2");
+    expect(u12?.title).toContain("名词短语");
+    expect(u12?.body).toContain("配合对象");
+    expect(u12?.body).toContain("attentifs");
+    const u41 = cards.get("pub-c02-noun-phrases-card-u4-1");
+    expect(u41?.body).toContain("-x");
+    expect(u41?.body).toContain("heureuse");
+    expect(u41?.body).toContain("rousse");
+    expect(u41?.body).toContain("形容词");
+  });
+
+  test("C02 cards use the new first-chapter title and no stale numeric card/unit labels", () => {
+    const chapter = CHAPTERS.find((item) => item.id === "pub-c02-noun-phrases");
+    const bodies = chapter?.cards.map((card) => card.body ?? "").join("\n") ?? "";
+    expect(bodies).not.toContain("冠词形式与词间拼写");
+    expect(bodies).toMatch(/冠词与基本拼写规则/);
+    expect(bodies).not.toMatch(/第\s*\d+\s*(张|单元)/);
+  });
 });
