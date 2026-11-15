@@ -99,6 +99,166 @@ async function makeApp(root) {
   await writeAt(root, "android/app/src/main/res/mipmap-hdpi/ic_launcher.png", PNG_MAGIC);
 }
 
+async function makeHarmonyTemplate(root) {
+  const texts = {
+    "harmony/AppScope/app.json5": `{
+  app: {
+    bundleName: "__FGE_BUNDLE_NAME__",
+    vendor: "fge",
+    versionCode: 1,
+    versionName: "1.0.0",
+    icon: "$media:layered_image",
+    label: "$string:app_name",
+  },
+}
+`,
+    "harmony/build-profile.json5": `{
+  app: {
+    products: [{ name: "default", compileSdkVersion: "5.0.0(12)" }],
+  },
+  modules: [{ name: "entry", srcPath: "./entry" }],
+}
+`,
+    "harmony/oh-package.json5": `{
+  name: "fge",
+  version: "1.0.0",
+  dependencies: {},
+}
+`,
+    "harmony/hvigorfile.ts":
+      "import { appTasks } from '@ohos/hvigor-ohos-plugin';\nexport default { system: appTasks };\n",
+    "harmony/hvigor/hvigor-config.json5": `{
+  modelVersion: "5.0.0",
+  dependencies: {},
+}
+`,
+    "harmony/entry/build-profile.json5": `{
+  apiType: "stageMode",
+  buildOption: {},
+  targets: [{ name: "default" }],
+}
+`,
+    "harmony/entry/oh-package.json5": `{
+  name: "entry",
+  version: "1.0.0",
+  dependencies: {},
+}
+`,
+    "harmony/entry/hvigorfile.ts":
+      "import { hapTasks } from '@ohos/hvigor-ohos-plugin';\nexport default { system: hapTasks };\n",
+    "harmony/entry/src/main/module.json5": `{
+  module: {
+    name: "entry",
+    type: "entry",
+    srcEntry: "./ets/entryability/EntryAbility.ets",
+    pages: "$profile:main_pages",
+    abilities: [
+      { name: "EntryAbility", srcEntry: "./ets/entryability/EntryAbility.ets" },
+    ],
+  },
+}
+`,
+    "harmony/entry/src/main/ets/entryability/EntryAbility.ets":
+      "import { UIAbility } from '@kit.AbilityKit';\nexport default class EntryAbility extends UIAbility {}\n",
+    "harmony/entry/src/main/ets/pages/Index.ets":
+      "@Entry\n@Component\nstruct Index {\n  build() {}\n}\n",
+    "harmony/entry/src/main/ets/bridge/FgeHarmonyBridge.ets":
+      "export class FgeHarmonyBridge { static readonly NAME: string = 'fgeHarmony'; }\n",
+    "harmony/entry/src/main/ets/bridge/FgeSyncManager.ets":
+      "export class FgeSyncManager { static readonly VERSION: number = 1; }\n",
+    "harmony/entry/src/main/resources/base/profile/main_pages.json": JSON.stringify(
+      { src: ["pages/Index"] },
+      null,
+      2
+    ),
+  };
+  for (const [rel, text] of Object.entries(texts)) await writeAt(root, rel, text);
+
+  const resources = {
+    "harmony/AppScope/resources/base/element/string.json": {
+      string: [{ name: "app_name", value: "__FGE_APP_NAME__" }],
+    },
+    "harmony/AppScope/resources/base/media/layered_image.json": {
+      "layered-image": { background: "$media:background", foreground: "$media:foreground" },
+    },
+    "harmony/entry/src/main/resources/base/element/string.json": {
+      string: [{ name: "module_desc", value: "FGE" }],
+    },
+    "harmony/entry/src/main/resources/base/element/color.json": {
+      color: [{ name: "start_window_background", value: "#f6f4ef" }],
+    },
+    "harmony/entry/src/main/resources/dark/element/color.json": {
+      color: [{ name: "start_window_background", value: "#0e1420" }],
+    },
+  };
+  for (const [rel, value] of Object.entries(resources)) {
+    await writeAt(root, rel, JSON.stringify(value, null, 2));
+  }
+
+  for (const rel of [
+    "harmony/AppScope/resources/base/media/background.png",
+    "harmony/AppScope/resources/base/media/foreground.png",
+    "harmony/entry/src/main/resources/base/media/startIcon.png",
+  ]) {
+    await writeAt(root, rel, PNG_MAGIC);
+  }
+}
+
+async function makeWindowsShell(root) {
+  const texts = {
+    "src-tauri/Cargo.toml": "[package]\nname = \"fge-desktop\"\nversion = \"0.1.0\"\n",
+    "src-tauri/Cargo.lock": "version = 4\n",
+    "src-tauri/build.rs": "fn main() { tauri_build::build() }\n",
+    "src-tauri/src/main.rs": "fn main() {}\n",
+    "src-tauri/src/lib.rs": "pub fn run() {}\n",
+    "src-tauri/tauri.conf.json": JSON.stringify(
+      {
+        productName: "法语语法练习",
+        identifier: "com.fge.open",
+        build: { frontendDist: "../.fge-build/windows/public/web" },
+        bundle: { targets: ["nsis"], icon: ["icons/icon.ico"] },
+      },
+      null,
+      2
+    ),
+    "src-tauri/tauri.public.conf.json": JSON.stringify(
+      { identifier: "com.fge.open", build: { frontendDist: "../.fge-build/windows/public/web" } },
+      null,
+      2
+    ),
+    "src-tauri/tauri.internal.conf.json": JSON.stringify(
+      { identifier: "com.fge.app", build: { frontendDist: "../.fge-build/windows/internal/web" } },
+      null,
+      2
+    ),
+    "src-tauri/tauri.installer-standard.conf.json": JSON.stringify(
+      { bundle: { windows: { webviewInstallMode: { type: "downloadBootstrapper" } } } },
+      null,
+      2
+    ),
+    "src-tauri/tauri.installer-offline.conf.json": JSON.stringify(
+      { bundle: { windows: { webviewInstallMode: { type: "offlineInstaller" } } } },
+      null,
+      2
+    ),
+    "src-tauri/capabilities/main.json": JSON.stringify(
+      {
+        identifier: "main",
+        windows: ["main"],
+        permissions: ["core:default", "core:window:allow-set-theme"],
+      },
+      null,
+      2
+    ),
+  };
+  for (const [rel, text] of Object.entries(texts)) await writeAt(root, rel, text);
+  await writeAt(
+    root,
+    "src-tauri/icons/icon.ico",
+    Buffer.from([0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10])
+  );
+}
+
 async function setupPublic(root, { chapters = {}, manifestPatch = {} } = {}) {
   await writeAt(root, "README.md", "# 合成公开题库（测试夹具）\n");
   await writeAt(root, ".gitignore", "*.tmp\n");
@@ -765,4 +925,279 @@ test("CLI defaults to the app and its sibling content-public", async (t) => {
   assert.equal(run.status, 0, run.stderr);
   assert.match(run.stdout, /check-public: OK/);
   assert.match(run.stdout.replaceAll("\\", "/"), /content-public/);
+});
+
+test("a minimal HarmonyOS template is allowed without widening ETS or JSON5", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await makeHarmonyTemplate(appRoot);
+
+  const result = await checkPublic({ appRoot, publicRoot });
+
+  assert.equal(result.ok, true, errorsOf(result));
+  for (const rel of [
+    "harmony/AppScope/app.json5",
+    "harmony/build-profile.json5",
+    "harmony/hvigor/hvigor-config.json5",
+    "harmony/entry/src/main/module.json5",
+    "harmony/entry/src/main/ets/entryability/EntryAbility.ets",
+    "harmony/entry/src/main/ets/pages/Index.ets",
+    "harmony/entry/src/main/ets/bridge/FgeHarmonyBridge.ets",
+    "harmony/entry/src/main/ets/bridge/FgeSyncManager.ets",
+    "harmony/AppScope/resources/base/media/layered_image.json",
+    "harmony/entry/src/main/resources/base/element/string.json",
+    "harmony/entry/src/main/resources/base/profile/main_pages.json",
+    "harmony/entry/src/main/resources/dark/element/color.json",
+    "harmony/entry/src/main/resources/base/media/startIcon.png",
+  ]) {
+    assert.ok(result.inventory.app.includes(rel), `${rel} was not inventoried:\n${errorsOf(result)}`);
+  }
+
+  const rules = RULES.join("\n");
+  assert.match(rules, /HarmonyOS template allowlist/);
+  assert.match(rules, /FgeHarmonyBridge\.ets/);
+  assert.match(rules, /dark/);
+  assert.match(rules, /\.hap/i);
+  assert.match(rules, /p7b/i);
+  assert.match(rules, /signing/i);
+});
+
+test("unknown HarmonyOS ETS, JSON5, and directories stay rejected", async (t) => {
+  const rejected = [
+    ["harmony/entry/src/main/ets/pages/Extra.ets", /ArkTS.*exact|exact.*ArkTS/i, "extra page ETS"],
+    ["harmony/entry/src/main/ets/bridge/Other.ets", /ArkTS.*exact|exact.*ArkTS/i, "extra bridge ETS"],
+    ["src/loose.ets", /ArkTS.*exact|exact.*ArkTS/i, "loose app ETS"],
+    ["harmony/extra.json5", /JSON5.*exact|exact.*JSON5/i, "extra harmony JSON5"],
+    [
+      "harmony/entry/src/main/resources/base/element/copied.json5",
+      /JSON5.*exact|exact.*JSON5/i,
+      "resource JSON5",
+    ],
+    ["harmony/entry/src/main/ets/unknown/Bad.ets", /unexpected directory/i, "unknown ets directory"],
+  ];
+
+  for (const [rel, pattern, label] of rejected) {
+    const { appRoot, publicRoot } = await sandbox(t);
+    await setupPublic(publicRoot);
+    await makeHarmonyTemplate(appRoot);
+    await writeAt(appRoot, rel, "synthetic fixture\n");
+
+    const result = await checkPublic({ appRoot, publicRoot });
+
+    assertFails(result, pattern, label);
+    assert.ok(errorsOf(result).includes(rel), `${label}: error did not name ${rel}:\n${errorsOf(result)}`);
+  }
+});
+
+test("Windows Tauri shell is allowlisted exactly without widening target/gen or icons", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await makeWindowsShell(appRoot);
+  await writeAt(appRoot, "src-tauri/target/debug/build/output.bin", "ignored generated\n");
+  await writeAt(appRoot, "src-tauri/gen/schemas/desktop-schema.json", "{}\n");
+
+  const result = await checkPublic({ appRoot, publicRoot });
+
+  assert.equal(result.ok, true, errorsOf(result));
+  for (const rel of [
+    "src-tauri/Cargo.toml",
+    "src-tauri/Cargo.lock",
+    "src-tauri/build.rs",
+    "src-tauri/src/main.rs",
+    "src-tauri/tauri.conf.json",
+    "src-tauri/tauri.internal.conf.json",
+    "src-tauri/capabilities/main.json",
+    "src-tauri/icons/icon.ico",
+  ]) {
+    assert.ok(result.inventory.app.includes(rel), `${rel} was not inventoried:\n${errorsOf(result)}`);
+  }
+  assert.ok(!result.inventory.app.includes("src-tauri/target/debug/build/output.bin"));
+  assert.ok(!result.inventory.app.includes("src-tauri/gen/schemas/desktop-schema.json"));
+  assert.ok(result.stats.skippedGenerated >= 2);
+
+  const rules = RULES.join("\n");
+  assert.match(rules, /Windows Tauri allowlist/);
+  assert.match(rules, /src-tauri\/src/);
+  assert.match(rules, /icon\.ico/);
+});
+
+test("unknown Windows Tauri JSON, ICO, JSON5 and directories stay rejected", async (t) => {
+  const rejected = [
+    ["src-tauri/extra.json", /non-allowlisted app file|real content JSON/i, "extra Tauri JSON"],
+    ["src-tauri/icons/other.ico", /non-allowlisted app file/i, "extra ICO"],
+    ["src-tauri/tauri.conf.json5", /JSON5.*exact|exact.*JSON5/i, "Tauri JSON5"],
+    ["src-tauri/windows/hooks.nsh", /unexpected directory|non-allowlisted/i, "extra Tauri dir"],
+  ];
+
+  for (const [rel, pattern, label] of rejected) {
+    const { appRoot, publicRoot } = await sandbox(t);
+    await setupPublic(publicRoot);
+    await makeWindowsShell(appRoot);
+    await writeAt(appRoot, rel, "synthetic fixture\n");
+
+    const result = await checkPublic({ appRoot, publicRoot });
+
+    assertFails(result, pattern, label);
+    assert.ok(errorsOf(result).includes(rel), `${label}: error did not name ${rel}:\n${errorsOf(result)}`);
+  }
+
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await makeWindowsShell(appRoot);
+  await writeAt(
+    appRoot,
+    "src-tauri/icons/icon.ico",
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  );
+  assertFails(await checkPublic({ appRoot, publicRoot }), /ICO signature/i, "fake ICO");
+});
+
+test("HarmonyOS resource JSON is metadata only and cannot carry question-bank content", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await makeHarmonyTemplate(appRoot);
+
+  await writeAt(
+    appRoot,
+    "harmony/entry/src/main/resources/base/element/string.json",
+    JSON.stringify(chapter(), null, 2)
+  );
+
+  const rejected = await checkPublic({ appRoot, publicRoot });
+  assertFails(rejected, /metadata only|question-bank|content marker/i, "resource bank");
+  assert.match(errorsOf(rejected), /string\.json/);
+
+  await writeAt(
+    appRoot,
+    "harmony/entry/src/main/resources/base/element/string.json",
+    JSON.stringify({ string: [{ name: "app_name", value: "FGE" }] }, null, 2)
+  );
+
+  const allowed = await checkPublic({ appRoot, publicRoot });
+  assert.equal(allowed.ok, true, errorsOf(allowed));
+});
+
+test("HarmonyOS JSON5 config cannot carry question-bank content", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await makeHarmonyTemplate(appRoot);
+  await writeAt(appRoot, "harmony/build-profile.json5", JSON.stringify(chapter(), null, 2));
+
+  const result = await checkPublic({ appRoot, publicRoot });
+
+  assertFails(result, /question-bank content|not build configuration/i, "json5 bank");
+  assert.match(errorsOf(result), /build-profile\.json5/);
+});
+
+test("HarmonyOS signing configuration, passwords, certificate paths, and machine paths are rejected", async (t) => {
+  const signing = await sandbox(t);
+  await setupPublic(signing.publicRoot);
+  await makeHarmonyTemplate(signing.appRoot);
+  await writeAt(
+    signing.appRoot,
+    "harmony/build-profile.json5",
+    `{
+  app: {
+    signingConfigs: [
+      {
+        name: "default",
+        type: "HarmonyOS",
+        material: {
+          certpath: "C:\\\\Users\\\\fixture\\\\default.cer",
+          storePassword: "password",
+          keyAlias: "debugKey",
+          profile: "C:\\\\Users\\\\fixture\\\\default.p7b",
+        },
+      },
+    ],
+  },
+}
+`
+  );
+
+  const signingResult = await checkPublic({
+    appRoot: signing.appRoot,
+    publicRoot: signing.publicRoot,
+  });
+  assertFails(signingResult, /signing|password|certificate|machine-specific/i, "signing config");
+  assert.match(errorsOf(signingResult), /build-profile\.json5/);
+
+  const machinePath = await sandbox(t);
+  await setupPublic(machinePath.publicRoot);
+  await makeHarmonyTemplate(machinePath.appRoot);
+  await writeAt(
+    machinePath.appRoot,
+    "harmony/oh-package.json5",
+    `{
+  name: "fge",
+  version: "1.0.0",
+  cacheDir: "C:/Users/fixture/.ohpm",
+  dependencies: {},
+}
+`
+  );
+
+  const pathResult = await checkPublic({
+    appRoot: machinePath.appRoot,
+    publicRoot: machinePath.publicRoot,
+  });
+  assertFails(pathResult, /machine-specific|absolute path/i, "machine path");
+  assert.match(errorsOf(pathResult), /oh-package\.json5/);
+
+  const localConfig = await sandbox(t);
+  await setupPublic(localConfig.publicRoot);
+  await makeHarmonyTemplate(localConfig.appRoot);
+  await writeAt(localConfig.appRoot, "harmony/local.properties", "sdk.dir=C:/fixture/sdk\n");
+
+  assertFails(
+    await checkPublic({ appRoot: localConfig.appRoot, publicRoot: localConfig.publicRoot }),
+    /local configuration|credential/i,
+    "local config"
+  );
+});
+
+test("compiled HarmonyOS packages and signing chain material are rejected", async (t) => {
+  const rejected = [
+    ["harmony/entry/src/main/resources/base/media/entry.hap", /HarmonyOS|HAP/i],
+    ["harmony/entry/src/main/resources/base/media/library.har", /HarmonyOS|HAR/i],
+    ["harmony/entry/src/main/resources/base/media/shared.hsp", /HarmonyOS|HSP/i],
+    ["harmony/entry/src/main/resources/base/media/bundle.app", /HarmonyOS|APP/i],
+    ["harmony/entry/src/main/resources/base/media/default.p7b", /signing|profile/i],
+    ["harmony/entry/src/main/resources/base/media/default.p7c", /signing|profile/i],
+    ["harmony/entry/src/main/resources/base/media/default.p7s", /signing|signature/i],
+    ["harmony/entry/src/main/resources/base/media/default.p12", /signing|keystore/i],
+  ];
+
+  for (const [rel, pattern] of rejected) {
+    const { appRoot, publicRoot } = await sandbox(t);
+    await setupPublic(publicRoot);
+    await makeHarmonyTemplate(appRoot);
+    await writeAt(appRoot, rel, "synthetic fixture\n");
+
+    const result = await checkPublic({ appRoot, publicRoot });
+
+    assertFails(result, pattern, rel);
+    assert.ok(errorsOf(result).includes(rel), `${rel}: error did not name the artifact:\n${errorsOf(result)}`);
+  }
+});
+
+test("only exact HarmonyOS IDE and dependency generated locations are skipped", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await makeHarmonyTemplate(appRoot);
+  await writeAt(appRoot, "harmony/.hvigor/cache.bin", Buffer.from([0, 1, 2, 3]));
+  await writeAt(appRoot, "harmony/oh_modules/dep/index.js", "export {};\n");
+  await writeAt(appRoot, "harmony/entry/oh_modules/dep/index.js", "export {};\n");
+
+  const result = await checkPublic({ appRoot, publicRoot });
+
+  assert.equal(result.ok, true, errorsOf(result));
+  assert.ok(result.stats.skippedGenerated >= 3);
+  for (const rel of [
+    "harmony/.hvigor",
+    "harmony/oh_modules",
+    "harmony/entry/oh_modules",
+  ]) {
+    assert.ok(!result.inventory.app.includes(rel), `${rel} unexpectedly entered inventory`);
+  }
 });

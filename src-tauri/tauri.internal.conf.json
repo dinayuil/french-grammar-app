@@ -1,0 +1,7 @@
+{
+  "productName": "法语语法练习·内部版",
+  "identifier": "com.fge.app",
+  "build": {
+    "frontendDist": "../.fge-build/windows/internal/web"
+  }
+}

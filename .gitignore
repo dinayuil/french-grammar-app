@@ -27,6 +27,32 @@ android/app/src/main/res/xml/config.xml
 *.apk
 *.aab
 
+# Windows Tauri build output and generated ACL schemas
+src-tauri/target/
+src-tauri/gen/
+
+# HarmonyOS packages, signing material and local IDE config
+*.hap
+*.har
+*.hsp
+*.app
+*.p12
+*.cer
+*.csr
+*.p7b
+*.p7c
+*.jks
+*.keystore
+harmony/**/oh_modules/
+harmony/**/build/
+harmony/**/.hvigor/
+harmony/**/.idea/
+harmony/**/*.iml
+harmony/**/local.properties
+harmony/**/oh-package-lock.json5
+harmony/**/.clangd
+harmony/**/.cxx/
+
 # Logs and OS noise
 *.log
 .DS_Store

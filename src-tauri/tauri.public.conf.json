@@ -1,0 +1,7 @@
+{
+  "productName": "法语语法练习",
+  "identifier": "com.fge.open",
+  "build": {
+    "frontendDist": "../.fge-build/windows/public/web"
+  }
+}

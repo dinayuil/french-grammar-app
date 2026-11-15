@@ -15,7 +15,10 @@ const backupMocks = vi.hoisted(() => ({
   loadRecoveryBackup: vi.fn(),
 }));
 
-vi.mock("../backup/progressBackup", () => backupMocks);
+vi.mock("../backup/progressBackup", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../backup/progressBackup")>()),
+  ...backupMocks,
+}));
 
 import { ProgressBackup as ProgressBackupPanel } from "./ProgressBackup";
 import { SettingsView } from "./SettingsView";

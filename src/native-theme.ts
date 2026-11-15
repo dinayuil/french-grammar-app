@@ -1,4 +1,6 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
+import { isDesktopPlatform } from "./native/desktop";
+import { applyHarmonyTheme, isHarmonyPlatform } from "./native/platform";
 
 export interface AppThemePlugin {
   apply(options: { mode: "light" | "dark" }): Promise<void>;
@@ -14,6 +16,19 @@ function getAppTheme(): AppThemePlugin {
 
 /** 原生平台把系统栏 / window 背景同步到强制主题;Web 上 no-op。 */
 export function applyNativeTheme(mode: "light" | "dark"): void {
+  // 鸿蒙桥存在即优先走鸿蒙,不注册也不触碰 Capacitor 平台判断。
+  if (isHarmonyPlatform()) {
+    applyHarmonyTheme(mode);
+    return;
+  }
+  if (isDesktopPlatform()) {
+    void import("@tauri-apps/api/window")
+      .then(({ getCurrentWindow }) => getCurrentWindow().setTheme(mode))
+      .catch(() => {
+        // 标题栏主题是 best effort,WebView 内容主题仍然生效。
+      });
+    return;
+  }
   const plugin = getAppTheme();
   if (!Capacitor.isNativePlatform()) return;
   void plugin.apply({ mode }).catch(() => {

@@ -1,4 +1,6 @@
 import { Capacitor } from "@capacitor/core";
+import { isDesktopPlatform, saveDesktopFile } from "../native/desktop";
+import { isHarmonyPlatform, shareHarmonyFile } from "../native/platform";
 import { saveProgress } from "../storage";
 import type { DayRecord, LessonRecord, MistakeInfo, Progress } from "../types";
 
@@ -532,13 +534,47 @@ async function shareNative(json: string, filename: string): Promise<void> {
   }
 }
 
-/** 导出学习进度:Web 用 Blob 下载 JSON,Android 写入缓存后走系统分享。 */
+/** 鸿蒙系统分享 JSON;取消保留 BackupCancelledError,失败不降级到 Web。 */
+async function shareHarmony(json: string, filename: string): Promise<void> {
+  try {
+    const result = await shareHarmonyFile({
+      filename,
+      mimeType: "application/json",
+      encoding: "utf8",
+      data: json,
+    });
+    if (result.status === "cancelled") {
+      throw new BackupCancelledError("已取消导出");
+    }
+  } catch (error) {
+    if (error instanceof BackupError) throw error;
+    fail(`系统分享失败：${errorMessage(error, "请重试")}`);
+  }
+}
+
+/** 导出学习进度:Web 用 Blob 下载 JSON,Android/Harmony 走系统分享。 */
 export async function exportBackup(progress: Progress): Promise<void> {
   const backup = createBackup(progress);
   const json = serializeBackup(backup);
   const filename = backupFilename(backup);
 
   try {
+    if (isHarmonyPlatform()) {
+      await shareHarmony(json, filename);
+      return;
+    }
+    if (isDesktopPlatform()) {
+      const result = await saveDesktopFile({
+        filename,
+        mimeType: "application/json",
+        encoding: "utf8",
+        data: json,
+      });
+      if (result.status === "cancelled") {
+        throw new BackupCancelledError("已取消导出");
+      }
+      return;
+    }
     if (Capacitor.isNativePlatform()) {
       await shareNative(json, filename);
       return;

@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "French grammar exercise ArkWeb entry"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "French grammar exercise"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "__FGE_APP_NAME__"
+    }
+  ]
+}
