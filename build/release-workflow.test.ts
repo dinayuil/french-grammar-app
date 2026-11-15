@@ -120,13 +120,13 @@ describe("public APK release workflow", () => {
       /path: app\/android\/app\/build\/outputs\/apk\/public\/debug\/app-public-debug\.apk/,
     );
     expect(upload).not.toMatch(/\*/);
-    expect(release).toMatch(/gh release upload apk-latest "\$APK_PATH"/);
+    expect(release).toMatch(/gh release upload client-latest "\$APK_PATH"/);
     expect(release).toMatch(/app-public-debug\.apk\.sha256/);
     expect(release).toMatch(
-      /gh release upload apk-latest "\$STANDARD_PATH"/,
+      /gh release upload client-latest "\$STANDARD_PATH"/,
     );
     expect(release).toMatch(
-      /gh release upload apk-latest "\$OFFLINE_PATH"/,
+      /gh release upload client-latest "\$OFFLINE_PATH"/,
     );
     expect(release).toMatch(/fge-windows-public-standard-setup\.exe\.sha256/);
     expect(release).toMatch(/fge-windows-public-offline-setup\.exe\.sha256/);
@@ -227,8 +227,8 @@ describe("public APK release workflow", () => {
     expect(release).toMatch(/"\$CONTENT_SHA" != "\$CONTENT_MAIN_SHA"/);
     expect(release).toMatch(/PUBLISHED_VERSION/);
     expect(release).toMatch(/PUBLISHED_VERSION >= VERSION_CODE/);
-    expect(release).toContain("apk-latest");
-    expect(release).toMatch(/git\/refs\/tags\/apk-latest/);
+    expect(release).toContain("client-latest");
+    expect(release).toMatch(/git\/refs\/tags\/client-latest/);
     expect(release).toContain("force=true");
     expect(release).not.toMatch(/--target/);
     expect(release).not.toMatch(/refs\/tags\/v\*/);
@@ -388,13 +388,13 @@ describe("public APK release workflow", () => {
     expect(release).toMatch(/--draft\b/);
     expect(release).toContain("--draft=false");
     expect(release).toMatch(
-      /gh release upload apk-latest "\$APK_PATH"[\s\S]*?gh release upload apk-latest "\$APK_CHECKSUM_PATH"/,
+      /gh release upload client-latest "\$APK_PATH"[\s\S]*?gh release upload client-latest "\$APK_CHECKSUM_PATH"/,
     );
     expect(release).toMatch(
-      /gh release upload apk-latest "\$OFFLINE_CHECKSUM_PATH"[\s\S]*?ASSET_NAMES/,
+      /gh release upload client-latest "\$OFFLINE_CHECKSUM_PATH"[\s\S]*?ASSET_NAMES/,
     );
     expect(release).toMatch(
-      /ASSET_NAMES[\s\S]*?gh release edit apk-latest/,
+      /ASSET_NAMES[\s\S]*?gh release edit client-latest/,
     );
     expect(release.indexOf("gh release upload")).toBeLessThan(
       release.lastIndexOf("gh release edit"),

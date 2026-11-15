@@ -178,6 +178,13 @@ test("Windows build is unsigned/read-only and uploads exactly two exes", () => {
   assert.equal((upload.match(/fge-windows-public-(?:standard|offline)-setup\.exe/g) ?? []).length, 2);
 });
 
+test("active rolling release uses client-latest and the client title, never apk-latest", () => {
+  const publisher = jobBlock("publish-public-release");
+  assert.match(publisher, /client-latest/);
+  assert.match(publisher, /客户端公开测试版（滚动更新）/);
+  assert.doesNotMatch(WORKFLOW, /apk-latest/);
+});
+
 test("publisher verifier accepts exact Windows files and rejects partial/tampered input", (t) => {
   const bash = findBash();
   if (!bash) {

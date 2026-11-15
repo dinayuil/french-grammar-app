@@ -89,7 +89,7 @@ npm run windows
 
 两种安装包必须使用同一二进制、应用身份、页面来源和用户数据目录。公开/内部版身份不同，禁止混用题库或输出。修改 Tauri 的 identifier、页面 scheme 或存储路径会影响原进度访问，不可作为普通升级随意变更。覆盖升级、取消文件保存、断网启动与高 DPI 缩放均需验收。
 
-默认产物没有正式 Windows 代码签名，不能标为正式签名版本。正式发行前按 [Tauri Windows 签名说明](https://v2.tauri.app/distribute/sign/windows/) 配置独立证书与发布环境，并在目标 Windows 安全策略下检查安装和首次运行；不复用 Android 签名材料。Windows 测试包由 Actions 自动构建，与固定签名 Android APK 一起发布到 [`apk-latest` 预发布](https://github.com/dinayuil/french-grammar-app/releases/tag/apk-latest)，不设独立 Windows 发布页。
+默认产物没有正式 Windows 代码签名，不能标为正式签名版本。正式发行前按 [Tauri Windows 签名说明](https://v2.tauri.app/distribute/sign/windows/) 配置独立证书与发布环境，并在目标 Windows 安全策略下检查安装和首次运行；不复用 Android 签名材料。Windows 测试包由 Actions 自动构建，与固定签名 Android APK 一起发布到 [`client-latest` 预发布](https://github.com/dinayuil/french-grammar-app/releases/tag/client-latest)，不设独立 Windows 发布页。
 
 本地命令用于开发验收；公开发布使用同一次 Actions 构建的产物。发布前必须同时确认 Android 与 Windows 构建成功、应用与公开题库提交一致、安装包 hash 正确；对应源码必须已进入应用 main，题库必须来自公开题库 main。发布页必须注明 Windows 未签名测试版及已完成的验证范围，不能把本机 HTTP 联调写成第三方服务或安装升级已验收。不得上传内部版、私有内容、原始构建目录或本机追溯文件。
 
@@ -106,14 +106,16 @@ Android 使用应用 Keystore，鸿蒙使用 HUKS，Windows 使用当前用户 D
 ## 客户端自动构建与预发布
 
 - 工作流：`.github/workflows/build-public-apk.yml`
-- 固定入口：<https://github.com/dinayuil/french-grammar-app/releases/tag/apk-latest>
+- 固定入口：<https://github.com/dinayuil/french-grammar-app/releases/tag/client-latest>
 - 资产：`app-public-debug.apk`、`fge-windows-public-standard-setup.exe`、`fge-windows-public-offline-setup.exe`，以及各自的 `.sha256` 校验文件，共六个。
+
+发布标题为“客户端公开测试版（滚动更新）”。旧 `apk-latest` 保留历史下载，不再自动更新，避免旧链接立即失效。保留工作流文件名 `build-public-apk.yml` 以延续 Android 的 run_number 与版本号；发布入口已与文件名解耦。
 
 应用 `main` 推送及公开题库的 `content-updated` 通知，在 Android 与 Windows 两端构建都成功后更新滚动预发布。流水线先解析并固定同一对应用/公开题库提交，再分别执行 Linux Android 构建与 Windows 两种安装包构建；任一失败或提交不一致均不更新 Release。手动触发与 `v*` 标签只构建 Actions artifact，不刷新该入口；artifact 保留 14 天。
 
 应用与实际检出的内容提交都必须位于各自 `main` 历史。未合并的分支或标签所指提交会在依赖安装、签名前被拒绝。`main` 祖先的手工回滚可以构建；自动发布还要求应用和内容提交分别等于当前 `main` HEAD，过期构建不会覆盖新包。
 
-Android 自动构建的 `versionCode` 使用该 workflow 的 `run_number`，`versionName` 为 `1.0-test.<run_number>`。构建后验证公开包名、版本、唯一签名证书指纹和 APK 哈希；Windows 构建校验两包身份、安装模式与哈希，再分别上传精确的公开产物。独立发布 job 只下载本 run 的产物，复核提交、文件清单和哈希后统一更新 `apk-latest`，不会执行仓库构建代码；build job 为 `contents: read`，发布 job 单独使用 `contents: write`。
+Android 自动构建的 `versionCode` 使用该 workflow 的 `run_number`，`versionName` 为 `1.0-test.<run_number>`。构建后验证公开包名、版本、唯一签名证书指纹和 APK 哈希；Windows 构建校验两包身份、安装模式与哈希，再分别上传精确的公开产物。独立发布 job 只下载本 run 的产物，复核提交、文件清单和哈希后统一更新 `client-latest`，不会执行仓库构建代码；build job 为 `contents: read`，发布 job 单独使用 `contents: write`。
 
 下载后可用以下命令或等价工具核验：
 
@@ -142,7 +144,7 @@ Actions 需要以下 5 项：
 维护约束：
 
 - 发布逻辑限定仓库 `dinayuil/french-grammar-app`。fork 或迁移仓库时，除了配置 Secrets，还需明确修改工作流中的仓库常量。
-- `apk-latest` 必须保持可变，tag ruleset 和 immutable releases 不能阻止该标签滚动更新。其他 `v*` 标签不被这个机制改动。
+- `client-latest` 必须保持可变，tag ruleset 和 immutable releases 不能阻止该标签滚动更新。其他 `v*` 标签不被这个机制改动。
 - 保持 workflow 文件身份与 `run_number` 连续性。重建、重置或迁移工作流时，须确保版本号高于已发布版本；否则新构建会被版本检查跳过。
 - Secrets 当前为仓库级，信任拥有 workflow 写权限的维护者；文件内的 main 检查不能阻止有写权限者改写工作流来引用 Secrets。开放协作前，应把签名配置迁入具有 ref 保护和必要审批的 GitHub Environment，并绑定相应 job。
 - 私钥及凭据必须留有受控的持久存储，不能依赖 GitHub Secrets 读回原值。不要向仓库提交 keystore、密码、证书文件或本机路径。

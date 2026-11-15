@@ -175,14 +175,14 @@ gh() {
       esac
     done
     case "$api_path" in
-      */git/ref/tags/apk-latest)
+      */git/ref/tags/client-latest)
         if [ ! -f "$state/tag" ]; then
           echo "gh: Not Found (HTTP 404)" >&2
           return 1
         fi
         cat "$state/tag"
         ;;
-      */git/refs/tags/apk-latest)
+      */git/refs/tags/client-latest)
         printf '%s' "$sha" > "$state/tag"
         printf '%s' "$force" > "$state/tag_force"
         record "tag-patch"
@@ -257,7 +257,7 @@ function createHarness(): Harness {
   const releaseScript = path.join(root, "release.sh");
   writeFileSync(
     releaseScript,
-    stepRun("publish-public-release", "Update rolling apk-latest release"),
+    stepRun("publish-public-release", "Update rolling client-latest release"),
     "utf8",
   );
   const runner = path.join(root, "runner.sh");
@@ -381,7 +381,7 @@ function assertOrder(actions: string[], markers: string[]): void {
   }
 }
 
-describe("rolling apk-latest publish ordering and recovery", () => {
+describe("rolling client-latest publish ordering and recovery", () => {
   it.skipIf(!BASH)(
     "keeps the published version marker until uploads, verification and tag succeed, then recovers on rerun",
     () => {

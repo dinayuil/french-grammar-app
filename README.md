@@ -2,7 +2,7 @@
 
 面向中文学习者的法语语法学习应用。把知识讲解、互动练习和错题复习放在一起，按专题和小章逐步学习，并记录每天的学习进度。
 
-**[打开网页版](https://blog.yosorano.cc/french-grammar-app/)** · **[下载 Android 测试版](https://github.com/dinayuil/french-grammar-app/releases/download/apk-latest/app-public-debug.apk)** · **[下载 Windows 测试版](https://github.com/dinayuil/french-grammar-app/releases/download/apk-latest/fge-windows-public-standard-setup.exe)**
+**[打开网页版](https://blog.yosorano.cc/french-grammar-app/)** · **[下载 Android 测试版](https://github.com/dinayuil/french-grammar-app/releases/download/client-latest/app-public-debug.apk)** · **[下载 Windows 测试版](https://github.com/dinayuil/french-grammar-app/releases/download/client-latest/fge-windows-public-standard-setup.exe)**
 
 ## 可以做什么
 
@@ -45,10 +45,10 @@ Windows、Android 与鸿蒙客户端可在设置中连接自己的 WebDAV 存储
 
 ## Windows 软件
 
-Windows 版为独立桌面软件，题库随安装包提供，安装后可离线学习。Windows 与 Android 测试包由自动构建统一发布，下载及校验文件均在[公开测试版发布页](https://github.com/dinayuil/french-grammar-app/releases/tag/apk-latest)。当前 Windows 安装包未签名，Windows 可能显示未知发布者提示。
+Windows 版为独立桌面软件，题库随安装包提供，安装后可离线学习。Windows 与 Android 测试包由自动构建统一发布，下载及校验文件均在[公开测试版发布页](https://github.com/dinayuil/french-grammar-app/releases/tag/client-latest)。当前 Windows 安装包未签名，Windows 可能显示未知发布者提示。
 
-- **[标准安装包](https://github.com/dinayuil/french-grammar-app/releases/download/apk-latest/fge-windows-public-standard-setup.exe)**：电脑缺少 WebView2 运行时时，安装过程会联网补装。
-- **[完整离线安装包](https://github.com/dinayuil/french-grammar-app/releases/download/apk-latest/fge-windows-public-offline-setup.exe)**：包含 WebView2 离线安装程序，适合断网安装，体积较大。
+- **[标准安装包](https://github.com/dinayuil/french-grammar-app/releases/download/client-latest/fge-windows-public-standard-setup.exe)**：电脑缺少 WebView2 运行时时，安装过程会联网补装。
+- **[完整离线安装包](https://github.com/dinayuil/french-grammar-app/releases/download/client-latest/fge-windows-public-offline-setup.exe)**：包含 WebView2 离线安装程序，适合断网安装，体积较大。
 
 两种安装包的应用功能和身份相同。后续覆盖升级应使用同一公开版本，升级前仍建议导出学习进度备份。
 

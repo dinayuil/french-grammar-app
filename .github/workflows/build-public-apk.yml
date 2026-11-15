@@ -2,7 +2,7 @@ name: Build public Android and Windows clients
 
 # Client builds are slow, so they run on main pushes and v* tags rather than on
 # every branch push; workflow_dispatch is also available. Only successful
-# automatic main pushes and content-updated dispatches update apk-latest;
+# automatic main pushes and content-updated dispatches update client-latest;
 # manual and tag builds stay as short-lived Actions artifacts.
 on:
   workflow_dispatch:
@@ -707,7 +707,7 @@ jobs:
           echo "standard_sha256=$EXPECTED_STANDARD_SHA256" >> "$GITHUB_OUTPUT"
           echo "offline_sha256=$EXPECTED_OFFLINE_SHA256" >> "$GITHUB_OUTPUT"
 
-      - name: Update rolling apk-latest release
+      - name: Update rolling client-latest release
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_REPOSITORY: dinayuil/french-grammar-app
@@ -782,19 +782,19 @@ jobs:
           RELEASE_EXISTS=0
           IS_DRAFT=false
           RELEASE_BODY=""
-          if IS_DRAFT="$(gh release view apk-latest --repo "$EXPECTED_REPOSITORY" --json isDraft --jq '.isDraft' 2>"$ERR_FILE")"; then
+          if IS_DRAFT="$(gh release view client-latest --repo "$EXPECTED_REPOSITORY" --json isDraft --jq '.isDraft' 2>"$ERR_FILE")"; then
             RELEASE_EXISTS=1
             case "$IS_DRAFT" in
               true|false) : ;;
-              *) fail "Could not determine whether apk-latest is a draft." ;;
+              *) fail "Could not determine whether client-latest is a draft." ;;
             esac
             if [ "$IS_DRAFT" = "false" ]; then
-              RELEASE_BODY="$(gh release view apk-latest --repo "$EXPECTED_REPOSITORY" --json body --jq '.body')"
+              RELEASE_BODY="$(gh release view client-latest --repo "$EXPECTED_REPOSITORY" --json body --jq '.body')"
             fi
           else
             if ! grep -qi 'release not found' "$ERR_FILE"; then
               cat "$ERR_FILE" >&2
-              fail "Could not inspect the existing apk-latest release."
+              fail "Could not inspect the existing client-latest release."
             fi
           fi
 
@@ -805,12 +805,12 @@ jobs:
             PUBLISHED_VERSION="$(printf '%s\n' "$RELEASE_BODY" | sed -n 's/^- versionCode: `\([0-9][0-9]*\)`$/\1/p')"
             PUBLISHED_VERSION_NAME="$(printf '%s\n' "$RELEASE_BODY" | sed -n 's/^- versionName: `\([^`]*\)`$/\1/p')"
             [[ "$PUBLISHED_VERSION" =~ ^[1-9][0-9]{0,9}$ ]] ||
-              fail "Existing apk-latest release has no valid versionCode marker; refusing to overwrite it."
+              fail "Existing client-latest release has no valid versionCode marker; refusing to overwrite it."
             if (( PUBLISHED_VERSION < 1 || PUBLISHED_VERSION > 2100000000 )); then
-              fail "Existing apk-latest release versionCode is outside the supported range; refusing to overwrite it."
+              fail "Existing client-latest release versionCode is outside the supported range; refusing to overwrite it."
             fi
             if [ "$PUBLISHED_VERSION_NAME" != "1.0-test.$PUBLISHED_VERSION" ]; then
-              fail "Existing apk-latest release versionName does not match its versionCode marker; refusing to overwrite it."
+              fail "Existing client-latest release versionName does not match its versionCode marker; refusing to overwrite it."
             fi
             if (( PUBLISHED_VERSION >= VERSION_CODE )); then
               skip "Published versionCode $PUBLISHED_VERSION is not older than $VERSION_CODE; keeping the current release."
@@ -821,7 +821,7 @@ jobs:
           trap 'rm -f "$ERR_FILE" "$NOTES_FILE"' EXIT
           RUN_URL="https://github.com/${EXPECTED_REPOSITORY}/actions/runs/${RUN_ID}"
           {
-            printf '%s\n' '## 公开测试版 APK 与 Windows 安装包'
+            printf '%s\n' '## 客户端公开测试版（Android APK 与 Windows 安装包）'
             printf '%s\n' ''
             printf -- '- 应用提交（app）：`%s`\n' "$APP_SHA"
             printf -- '- 题库提交（content-public）：`%s`\n' "$CONTENT_SHA"
@@ -839,18 +839,18 @@ jobs:
 
           set_rolling_tag() {
             TAG_SHA=""
-            if TAG_SHA="$(gh api "repos/${EXPECTED_REPOSITORY}/git/ref/tags/apk-latest" --jq '.object.sha' 2>"$ERR_FILE")"; then
+            if TAG_SHA="$(gh api "repos/${EXPECTED_REPOSITORY}/git/ref/tags/client-latest" --jq '.object.sha' 2>"$ERR_FILE")"; then
               if [ "$TAG_SHA" != "$APP_SHA" ]; then
-                gh api -X PATCH "repos/${EXPECTED_REPOSITORY}/git/refs/tags/apk-latest" \
+                gh api -X PATCH "repos/${EXPECTED_REPOSITORY}/git/refs/tags/client-latest" \
                   -f sha="$APP_SHA" -F force=true >/dev/null
               fi
             else
               if ! grep -q 'HTTP 404' "$ERR_FILE"; then
                 cat "$ERR_FILE" >&2
-                fail "Could not inspect the existing apk-latest tag."
+                fail "Could not inspect the existing client-latest tag."
               fi
               gh api -X POST "repos/${EXPECTED_REPOSITORY}/git/refs" \
-                -f ref="refs/tags/apk-latest" -f sha="$APP_SHA" >/dev/null
+                -f ref="refs/tags/client-latest" -f sha="$APP_SHA" >/dev/null
             fi
           }
 
@@ -861,12 +861,12 @@ jobs:
           fi
 
           if [ "$RELEASE_EXISTS" -eq 0 ]; then
-            gh release create apk-latest \
+            gh release create client-latest \
               --repo "$EXPECTED_REPOSITORY" \
               --verify-tag \
               --draft \
               --prerelease \
-              --title "公开测试版（滚动更新）" \
+              --title "客户端公开测试版（滚动更新）" \
               --notes "发布准备中：资产上传并通过校验后自动发布。" >/dev/null
           fi
 
@@ -876,20 +876,20 @@ jobs:
           printf '%s  %s\n' "$APK_SHA256" "app-public-debug.apk" > "$APK_CHECKSUM_PATH"
           printf '%s  %s\n' "$STANDARD_SHA256" "fge-windows-public-standard-setup.exe" > "$STANDARD_CHECKSUM_PATH"
           printf '%s  %s\n' "$OFFLINE_SHA256" "fge-windows-public-offline-setup.exe" > "$OFFLINE_CHECKSUM_PATH"
-          gh release upload apk-latest "$APK_PATH" \
+          gh release upload client-latest "$APK_PATH" \
             --repo "$EXPECTED_REPOSITORY" --clobber >/dev/null
-          gh release upload apk-latest "$APK_CHECKSUM_PATH" \
+          gh release upload client-latest "$APK_CHECKSUM_PATH" \
             --repo "$EXPECTED_REPOSITORY" --clobber >/dev/null
-          gh release upload apk-latest "$STANDARD_PATH" \
+          gh release upload client-latest "$STANDARD_PATH" \
             --repo "$EXPECTED_REPOSITORY" --clobber >/dev/null
-          gh release upload apk-latest "$STANDARD_CHECKSUM_PATH" \
+          gh release upload client-latest "$STANDARD_CHECKSUM_PATH" \
             --repo "$EXPECTED_REPOSITORY" --clobber >/dev/null
-          gh release upload apk-latest "$OFFLINE_PATH" \
+          gh release upload client-latest "$OFFLINE_PATH" \
             --repo "$EXPECTED_REPOSITORY" --clobber >/dev/null
-          gh release upload apk-latest "$OFFLINE_CHECKSUM_PATH" \
+          gh release upload client-latest "$OFFLINE_CHECKSUM_PATH" \
             --repo "$EXPECTED_REPOSITORY" --clobber >/dev/null
 
-          ASSET_NAMES="$(gh release view apk-latest --repo "$EXPECTED_REPOSITORY" --json assets --jq '.assets[].name' | sort)"
+          ASSET_NAMES="$(gh release view client-latest --repo "$EXPECTED_REPOSITORY" --json assets --jq '.assets[].name' | sort)"
           EXPECTED_ASSETS="$(printf '%s\n' \
             'app-public-debug.apk' \
             'app-public-debug.apk.sha256' \
@@ -898,7 +898,7 @@ jobs:
             'fge-windows-public-offline-setup.exe' \
             'fge-windows-public-offline-setup.exe.sha256' | sort)"
           if [ "$ASSET_NAMES" != "$EXPECTED_ASSETS" ]; then
-            echo "::error::apk-latest assets are not exactly the Android and Windows packages with checksums:"
+            echo "::error::client-latest assets are not exactly the Android and Windows packages with checksums:"
             printf '%s\n' "$ASSET_NAMES" >&2
             exit 1
           fi
@@ -907,21 +907,21 @@ jobs:
             # Existing published release: move the rolling tag only after the
             # assets are verified, then update notes/version marker last.
             set_rolling_tag
-            gh release edit apk-latest \
+            gh release edit client-latest \
               --repo "$EXPECTED_REPOSITORY" \
-              --title "公开测试版（滚动更新）" \
+              --title "客户端公开测试版（滚动更新）" \
               --prerelease --latest=false \
               --notes-file "$NOTES_FILE" >/dev/null
           else
             # New or interrupted draft: publish only after assets verify.
             # gh finds drafts by their pending tag; the marker becomes visible
             # in the same atomic edit that flips draft=false.
-            gh release edit apk-latest \
+            gh release edit client-latest \
               --repo "$EXPECTED_REPOSITORY" \
               --draft=false \
-              --title "公开测试版（滚动更新）" \
+              --title "客户端公开测试版（滚动更新）" \
               --prerelease --latest=false \
               --notes-file "$NOTES_FILE" >/dev/null
           fi
 
-          echo "Published apk-latest for app $APP_SHA and content $CONTENT_SHA (versionCode $VERSION_CODE)."
+          echo "Published client-latest for app $APP_SHA and content $CONTENT_SHA (versionCode $VERSION_CODE)."
