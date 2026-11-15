@@ -228,7 +228,7 @@ export function ProgressBackup({ progress, onChange }: Props) {
           className={`btn btn-secondary backup-file-btn${busy !== null ? " is-disabled" : ""}`}
           aria-disabled={busy !== null ? "true" : undefined}
         >
-          {busy === "import" ? "正在读取…" : "选择备份文件"}
+          {busy === "import" ? "正在读取…" : "导入备份"}
           <input
             type="file"
             aria-label="选择学习进度备份文件"
