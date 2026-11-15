@@ -99,6 +99,109 @@ async function makeApp(root) {
   await writeAt(root, "android/app/src/main/res/mipmap-hdpi/ic_launcher.png", PNG_MAGIC);
 }
 
+async function makeHarmonyTemplate(root) {
+  const texts = {
+    "harmony/AppScope/app.json5": `{
+  app: {
+    bundleName: "__FGE_BUNDLE_NAME__",
+    vendor: "fge",
+    versionCode: 1,
+    versionName: "1.0.0",
+    icon: "$media:layered_image",
+    label: "$string:app_name",
+  },
+}
+`,
+    "harmony/build-profile.json5": `{
+  app: {
+    products: [{ name: "default", compileSdkVersion: "5.0.0(12)" }],
+  },
+  modules: [{ name: "entry", srcPath: "./entry" }],
+}
+`,
+    "harmony/oh-package.json5": `{
+  name: "fge",
+  version: "1.0.0",
+  dependencies: {},
+}
+`,
+    "harmony/hvigorfile.ts":
+      "import { appTasks } from '@ohos/hvigor-ohos-plugin';\nexport default { system: appTasks };\n",
+    "harmony/hvigor/hvigor-config.json5": `{
+  modelVersion: "5.0.0",
+  dependencies: {},
+}
+`,
+    "harmony/entry/build-profile.json5": `{
+  apiType: "stageMode",
+  buildOption: {},
+  targets: [{ name: "default" }],
+}
+`,
+    "harmony/entry/oh-package.json5": `{
+  name: "entry",
+  version: "1.0.0",
+  dependencies: {},
+}
+`,
+    "harmony/entry/hvigorfile.ts":
+      "import { hapTasks } from '@ohos/hvigor-ohos-plugin';\nexport default { system: hapTasks };\n",
+    "harmony/entry/src/main/module.json5": `{
+  module: {
+    name: "entry",
+    type: "entry",
+    srcEntry: "./ets/entryability/EntryAbility.ets",
+    pages: "$profile:main_pages",
+    abilities: [
+      { name: "EntryAbility", srcEntry: "./ets/entryability/EntryAbility.ets" },
+    ],
+  },
+}
+`,
+    "harmony/entry/src/main/ets/entryability/EntryAbility.ets":
+      "import { UIAbility } from '@kit.AbilityKit';\nexport default class EntryAbility extends UIAbility {}\n",
+    "harmony/entry/src/main/ets/pages/Index.ets":
+      "@Entry\n@Component\nstruct Index {\n  build() {}\n}\n",
+    "harmony/entry/src/main/ets/bridge/FgeHarmonyBridge.ets":
+      "export class FgeHarmonyBridge { static readonly NAME: string = 'fgeHarmony'; }\n",
+    "harmony/entry/src/main/resources/base/profile/main_pages.json": JSON.stringify(
+      { src: ["pages/Index"] },
+      null,
+      2
+    ),
+  };
+  for (const [rel, text] of Object.entries(texts)) await writeAt(root, rel, text);
+
+  const resources = {
+    "harmony/AppScope/resources/base/element/string.json": {
+      string: [{ name: "app_name", value: "__FGE_APP_NAME__" }],
+    },
+    "harmony/AppScope/resources/base/media/layered_image.json": {
+      "layered-image": { background: "$media:background", foreground: "$media:foreground" },
+    },
+    "harmony/entry/src/main/resources/base/element/string.json": {
+      string: [{ name: "module_desc", value: "FGE" }],
+    },
+    "harmony/entry/src/main/resources/base/element/color.json": {
+      color: [{ name: "start_window_background", value: "#f6f4ef" }],
+    },
+    "harmony/entry/src/main/resources/dark/element/color.json": {
+      color: [{ name: "start_window_background", value: "#0e1420" }],
+    },
+  };
+  for (const [rel, value] of Object.entries(resources)) {
+    await writeAt(root, rel, JSON.stringify(value, null, 2));
+  }
+
+  for (const rel of [
+    "harmony/AppScope/resources/base/media/background.png",
+    "harmony/AppScope/resources/base/media/foreground.png",
+    "harmony/entry/src/main/resources/base/media/startIcon.png",
+  ]) {
+    await writeAt(root, rel, PNG_MAGIC);
+  }
+}
+
 async function setupPublic(root, { chapters = {}, manifestPatch = {} } = {}) {
   await writeAt(root, "README.md", "# 合成公开题库（测试夹具）\n");
   await writeAt(root, ".gitignore", "*.tmp\n");
@@ -765,4 +868,215 @@ test("CLI defaults to the app and its sibling content-public", async (t) => {
   assert.equal(run.status, 0, run.stderr);
   assert.match(run.stdout, /check-public: OK/);
   assert.match(run.stdout.replaceAll("\\", "/"), /content-public/);
+});
+
+test("a minimal HarmonyOS template is allowed without widening ETS or JSON5", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await makeHarmonyTemplate(appRoot);
+
+  const result = await checkPublic({ appRoot, publicRoot });
+
+  assert.equal(result.ok, true, errorsOf(result));
+  for (const rel of [
+    "harmony/AppScope/app.json5",
+    "harmony/build-profile.json5",
+    "harmony/hvigor/hvigor-config.json5",
+    "harmony/entry/src/main/module.json5",
+    "harmony/entry/src/main/ets/entryability/EntryAbility.ets",
+    "harmony/entry/src/main/ets/pages/Index.ets",
+    "harmony/entry/src/main/ets/bridge/FgeHarmonyBridge.ets",
+    "harmony/AppScope/resources/base/media/layered_image.json",
+    "harmony/entry/src/main/resources/base/element/string.json",
+    "harmony/entry/src/main/resources/base/profile/main_pages.json",
+    "harmony/entry/src/main/resources/dark/element/color.json",
+    "harmony/entry/src/main/resources/base/media/startIcon.png",
+  ]) {
+    assert.ok(result.inventory.app.includes(rel), `${rel} was not inventoried:\n${errorsOf(result)}`);
+  }
+
+  const rules = RULES.join("\n");
+  assert.match(rules, /HarmonyOS template allowlist/);
+  assert.match(rules, /FgeHarmonyBridge\.ets/);
+  assert.match(rules, /dark/);
+  assert.match(rules, /\.hap/i);
+  assert.match(rules, /p7b/i);
+  assert.match(rules, /signing/i);
+});
+
+test("unknown HarmonyOS ETS, JSON5, and directories stay rejected", async (t) => {
+  const rejected = [
+    ["harmony/entry/src/main/ets/pages/Extra.ets", /ArkTS.*exact|exact.*ArkTS/i, "extra page ETS"],
+    ["harmony/entry/src/main/ets/bridge/Other.ets", /ArkTS.*exact|exact.*ArkTS/i, "extra bridge ETS"],
+    ["src/loose.ets", /ArkTS.*exact|exact.*ArkTS/i, "loose app ETS"],
+    ["harmony/extra.json5", /JSON5.*exact|exact.*JSON5/i, "extra harmony JSON5"],
+    [
+      "harmony/entry/src/main/resources/base/element/copied.json5",
+      /JSON5.*exact|exact.*JSON5/i,
+      "resource JSON5",
+    ],
+    ["harmony/entry/src/main/ets/unknown/Bad.ets", /unexpected directory/i, "unknown ets directory"],
+  ];
+
+  for (const [rel, pattern, label] of rejected) {
+    const { appRoot, publicRoot } = await sandbox(t);
+    await setupPublic(publicRoot);
+    await makeHarmonyTemplate(appRoot);
+    await writeAt(appRoot, rel, "synthetic fixture\n");
+
+    const result = await checkPublic({ appRoot, publicRoot });
+
+    assertFails(result, pattern, label);
+    assert.ok(errorsOf(result).includes(rel), `${label}: error did not name ${rel}:\n${errorsOf(result)}`);
+  }
+});
+
+test("HarmonyOS resource JSON is metadata only and cannot carry question-bank content", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await makeHarmonyTemplate(appRoot);
+
+  await writeAt(
+    appRoot,
+    "harmony/entry/src/main/resources/base/element/string.json",
+    JSON.stringify(chapter(), null, 2)
+  );
+
+  const rejected = await checkPublic({ appRoot, publicRoot });
+  assertFails(rejected, /metadata only|question-bank|content marker/i, "resource bank");
+  assert.match(errorsOf(rejected), /string\.json/);
+
+  await writeAt(
+    appRoot,
+    "harmony/entry/src/main/resources/base/element/string.json",
+    JSON.stringify({ string: [{ name: "app_name", value: "FGE" }] }, null, 2)
+  );
+
+  const allowed = await checkPublic({ appRoot, publicRoot });
+  assert.equal(allowed.ok, true, errorsOf(allowed));
+});
+
+test("HarmonyOS JSON5 config cannot carry question-bank content", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await makeHarmonyTemplate(appRoot);
+  await writeAt(appRoot, "harmony/build-profile.json5", JSON.stringify(chapter(), null, 2));
+
+  const result = await checkPublic({ appRoot, publicRoot });
+
+  assertFails(result, /question-bank content|not build configuration/i, "json5 bank");
+  assert.match(errorsOf(result), /build-profile\.json5/);
+});
+
+test("HarmonyOS signing configuration, passwords, certificate paths, and machine paths are rejected", async (t) => {
+  const signing = await sandbox(t);
+  await setupPublic(signing.publicRoot);
+  await makeHarmonyTemplate(signing.appRoot);
+  await writeAt(
+    signing.appRoot,
+    "harmony/build-profile.json5",
+    `{
+  app: {
+    signingConfigs: [
+      {
+        name: "default",
+        type: "HarmonyOS",
+        material: {
+          certpath: "C:\\\\Users\\\\fixture\\\\default.cer",
+          storePassword: "password",
+          keyAlias: "debugKey",
+          profile: "C:\\\\Users\\\\fixture\\\\default.p7b",
+        },
+      },
+    ],
+  },
+}
+`
+  );
+
+  const signingResult = await checkPublic({
+    appRoot: signing.appRoot,
+    publicRoot: signing.publicRoot,
+  });
+  assertFails(signingResult, /signing|password|certificate|machine-specific/i, "signing config");
+  assert.match(errorsOf(signingResult), /build-profile\.json5/);
+
+  const machinePath = await sandbox(t);
+  await setupPublic(machinePath.publicRoot);
+  await makeHarmonyTemplate(machinePath.appRoot);
+  await writeAt(
+    machinePath.appRoot,
+    "harmony/oh-package.json5",
+    `{
+  name: "fge",
+  version: "1.0.0",
+  cacheDir: "C:/Users/fixture/.ohpm",
+  dependencies: {},
+}
+`
+  );
+
+  const pathResult = await checkPublic({
+    appRoot: machinePath.appRoot,
+    publicRoot: machinePath.publicRoot,
+  });
+  assertFails(pathResult, /machine-specific|absolute path/i, "machine path");
+  assert.match(errorsOf(pathResult), /oh-package\.json5/);
+
+  const localConfig = await sandbox(t);
+  await setupPublic(localConfig.publicRoot);
+  await makeHarmonyTemplate(localConfig.appRoot);
+  await writeAt(localConfig.appRoot, "harmony/local.properties", "sdk.dir=C:/fixture/sdk\n");
+
+  assertFails(
+    await checkPublic({ appRoot: localConfig.appRoot, publicRoot: localConfig.publicRoot }),
+    /local configuration|credential/i,
+    "local config"
+  );
+});
+
+test("compiled HarmonyOS packages and signing chain material are rejected", async (t) => {
+  const rejected = [
+    ["harmony/entry/src/main/resources/base/media/entry.hap", /HarmonyOS|HAP/i],
+    ["harmony/entry/src/main/resources/base/media/library.har", /HarmonyOS|HAR/i],
+    ["harmony/entry/src/main/resources/base/media/shared.hsp", /HarmonyOS|HSP/i],
+    ["harmony/entry/src/main/resources/base/media/bundle.app", /HarmonyOS|APP/i],
+    ["harmony/entry/src/main/resources/base/media/default.p7b", /signing|profile/i],
+    ["harmony/entry/src/main/resources/base/media/default.p7c", /signing|profile/i],
+    ["harmony/entry/src/main/resources/base/media/default.p7s", /signing|signature/i],
+    ["harmony/entry/src/main/resources/base/media/default.p12", /signing|keystore/i],
+  ];
+
+  for (const [rel, pattern] of rejected) {
+    const { appRoot, publicRoot } = await sandbox(t);
+    await setupPublic(publicRoot);
+    await makeHarmonyTemplate(appRoot);
+    await writeAt(appRoot, rel, "synthetic fixture\n");
+
+    const result = await checkPublic({ appRoot, publicRoot });
+
+    assertFails(result, pattern, rel);
+    assert.ok(errorsOf(result).includes(rel), `${rel}: error did not name the artifact:\n${errorsOf(result)}`);
+  }
+});
+
+test("only exact HarmonyOS IDE and dependency generated locations are skipped", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await makeHarmonyTemplate(appRoot);
+  await writeAt(appRoot, "harmony/.hvigor/cache.bin", Buffer.from([0, 1, 2, 3]));
+  await writeAt(appRoot, "harmony/oh_modules/dep/index.js", "export {};\n");
+  await writeAt(appRoot, "harmony/entry/oh_modules/dep/index.js", "export {};\n");
+
+  const result = await checkPublic({ appRoot, publicRoot });
+
+  assert.equal(result.ok, true, errorsOf(result));
+  assert.ok(result.stats.skippedGenerated >= 3);
+  for (const rel of [
+    "harmony/.hvigor",
+    "harmony/oh_modules",
+    "harmony/entry/oh_modules",
+  ]) {
+    assert.ok(!result.inventory.app.includes(rel), `${rel} unexpectedly entered inventory`);
+  }
 });

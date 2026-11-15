@@ -88,6 +88,24 @@ function flushTasks(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+function installHarmonyBridge(invoke: ReturnType<typeof vi.fn>): void {
+  Object.defineProperty(window, "fgeHarmony", {
+    configurable: true,
+    value: { invoke },
+  });
+}
+
+function removeHarmonyBridge(): void {
+  delete (window as unknown as Record<string, unknown>).fgeHarmony;
+}
+
+function harmonyRequest(
+  invoke: ReturnType<typeof vi.fn>
+): Record<string, unknown> {
+  expect(invoke).toHaveBeenCalledTimes(1);
+  return JSON.parse(invoke.mock.calls[0][0]) as Record<string, unknown>;
+}
+
 /* ------------------------------------------------------------------ */
 /* Capacitor mocks (same shape the export path uses)                   */
 /* ------------------------------------------------------------------ */
@@ -139,6 +157,7 @@ function restoreUrlMethod(
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
+  removeHarmonyBridge();
 
   capacitorMock.isNativePlatform.mockReturnValue(false);
   filesystemMock.writeFile.mockResolvedValue({ uri: INCOMING_URI });
@@ -167,6 +186,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  removeHarmonyBridge();
   restoreUrlMethod("createObjectURL", urlDescriptors.createObjectURL);
   restoreUrlMethod("revokeObjectURL", urlDescriptors.revokeObjectURL);
   vi.restoreAllMocks();
@@ -909,5 +929,93 @@ describe("exportBackup native", () => {
     expect(filesystemMock.getUri).not.toHaveBeenCalled();
     expect(sharePluginMock.share).not.toHaveBeenCalled();
     expect(createObjectURL).not.toHaveBeenCalled();
+  });
+});
+
+describe("exportBackup harmony", () => {
+  test("鸿蒙桥优先于 Capacitor:发送 UTF-8 JSON,不写 Capacitor 缓存", async () => {
+    capacitorMock.isNativePlatform.mockReturnValue(true);
+    const invoke = vi.fn(async () => '{"status":"ok"}');
+    installHarmonyBridge(invoke);
+
+    await exportBackup(RICH);
+
+    const request = harmonyRequest(invoke);
+    expect(request.version).toBe(1);
+    expect(request.operation).toBe("shareFile");
+    expect(request.filename).toMatch(
+      /^fge-progress-(public|internal)-\d{4}-\d{2}-\d{2}\.json$/
+    );
+    expect(request.mimeType).toBe("application/json");
+    expect(request.encoding).toBe("utf8");
+    expect(typeof request.data).toBe("string");
+    expect(parseBackup(request.data as string).progress).toEqual(RICH);
+
+    expect(filesystemMock.writeFile).not.toHaveBeenCalled();
+    expect(filesystemMock.getUri).not.toHaveBeenCalled();
+    expect(sharePluginMock.share).not.toHaveBeenCalled();
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  test("鸿蒙取消导出 → BackupCancelledError,不降级为下载或 Capacitor", async () => {
+    capacitorMock.isNativePlatform.mockReturnValue(true);
+    installHarmonyBridge(vi.fn(async () => '{"status":"cancelled"}'));
+
+    let caught: unknown;
+    try {
+      await exportBackup(RICH);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(BackupCancelledError);
+    expect(isBackupCancelled(caught)).toBe(true);
+    expect((caught as Error).message).toMatch(/取消/);
+    expect(filesystemMock.writeFile).not.toHaveBeenCalled();
+    expect(sharePluginMock.share).not.toHaveBeenCalled();
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  test("鸿蒙 error 响应 → 可读 BackupError,不算取消且不降级", async () => {
+    capacitorMock.isNativePlatform.mockReturnValue(true);
+    installHarmonyBridge(
+      vi.fn(async () =>
+        JSON.stringify({ status: "error", message: "没有可用的分享目标" })
+      )
+    );
+
+    let caught: unknown;
+    try {
+      await exportBackup(RICH);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(BackupError);
+    expect(isBackupCancelled(caught)).toBe(false);
+    expect((caught as Error).message).toMatch(/系统分享失败/);
+    expect((caught as Error).message).toMatch(/没有可用的分享目标/);
+    expect(filesystemMock.writeFile).not.toHaveBeenCalled();
+    expect(sharePluginMock.share).not.toHaveBeenCalled();
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  test("鸿蒙坏响应 → BackupError,不偷偷走 Web 下载", async () => {
+    capacitorMock.isNativePlatform.mockReturnValue(true);
+    installHarmonyBridge(vi.fn(async () => "not-json"));
+
+    let caught: unknown;
+    try {
+      await exportBackup(RICH);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(BackupError);
+    expect(isBackupCancelled(caught)).toBe(false);
+    expect((caught as Error).message).toMatch(/系统分享失败|无效/);
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(clickedAnchors).toHaveLength(0);
+    expect(filesystemMock.writeFile).not.toHaveBeenCalled();
   });
 });

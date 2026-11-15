@@ -1,5 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import type { Progress } from "../types";
+import { isHarmonyPlatform, shareHarmonyFile } from "../native/platform";
 import {
   buildStatsCardData,
   createStatsCardCanvas,
@@ -40,6 +41,17 @@ export async function shareStatsCard(
   try {
     const filename = statsCardFilename(date);
     const canvas = createStatsCardCanvas(buildStatsCardData(progress, date));
+    if (isHarmonyPlatform()) {
+      const result = await shareHarmonyFile({
+        filename,
+        mimeType: "image/png",
+        encoding: "base64",
+        data: statsCardBase64(canvas).replace(BASE64_PNG_PREFIX, ""),
+      });
+      return result.status === "cancelled"
+        ? { status: "cancelled" }
+        : { status: "shared" };
+    }
     return Capacitor.isNativePlatform()
       ? await shareNative(canvas, filename)
       : await shareWeb(canvas, filename);

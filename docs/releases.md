@@ -47,6 +47,30 @@ android/app/build/outputs/apk/public/debug/app-public-debug.apk
 
 从本机受限的凭据存储加载这些值，只传给构建进程；不要把密码放进命令行参数、日志、文档或仓库。debug 构建用于测试分发，不代表应用商店正式版本。
 
+## 本地鸿蒙构建
+
+安装 DevEco Studio 26.0.0 及配套 HarmonyOS SDK。首次模拟器镜像下载和账号授权在 IDE 内完成；之后可以在命令行构建。若工具安装在非默认目录，设置 `DEVECO_STUDIO_HOME` 指向 IDE 安装根目录。
+
+```powershell
+npm run harmony
+```
+
+包装命令在 `.fge-build/harmony/public/` 下独立构建公开网页，校验内容版本与资源完整性，再将模板和网页资源同步到同版本的生成工程，调用 OHPM 和 Hvigor。鸿蒙网页输出与普通 `dist/public/` 分离，避免其他平台的并发构建覆盖资源路径。打包过程中不运行 Capacitor 同步，也不改写 Android 工程。使用包装命令输出的 HAP 路径进行安装，不直接从源码模板执行构建。
+
+生成工程可在 DevEco Studio 打开；用 HDC 安装和启动应用前，先在 Device Manager 启动模拟器，并通过 `hdc list targets` 确认连接。公开包名为 `com.fge.open`。模拟器可以接受此流程生成的未签名调试 HAP；该产物不代表真机可安装的正式发布包。
+
+默认公开版产物与安装命令如下，`hdc` 可通过 SDK 的 `toolchains` 目录调用：
+
+```powershell
+hdc list targets
+hdc install -r .fge-build/harmony/public/project/entry/build/default/outputs/default/entry-default-unsigned.hap
+hdc shell aa start -a EntryAbility -b com.fge.open
+```
+
+源码模板不包含网页构建结果、签名或本机路径。生成工程、HAP、依赖缓存和 IDE 本地文件不提交；尤其不要把打包后的 `rawfile` 资源复制回模板。鸿蒙正式证书、真机签名、商店发布与自动发布流水线需要另行配置，不能复用 Android 签名材料。
+
+覆盖安装时应保留同一包名和页面 origin，避免主动清除 WebStorage。卸载会删除进度，卸载前先导出备份。正式发布前须验证覆盖升级、备份导入导出、系统分享、主题和真实设备表现。
+
 ## APK 自动构建与预发布
 
 - 工作流：`.github/workflows/build-public-apk.yml`

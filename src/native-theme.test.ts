@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const apply = vi.fn();
@@ -13,10 +13,26 @@ vi.mock("@capacitor/core", () => mocks);
 
 import { applyNativeTheme } from "./native-theme";
 
+function installHarmony(invoke: ReturnType<typeof vi.fn>): void {
+  Object.defineProperty(window, "fgeHarmony", {
+    configurable: true,
+    value: { invoke },
+  });
+}
+
+function removeHarmony(): void {
+  delete (window as unknown as Record<string, unknown>).fgeHarmony;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  removeHarmony();
   mocks.registerPlugin.mockReturnValue({ apply: mocks.apply });
   mocks.apply.mockResolvedValue(undefined);
+});
+
+afterEach(() => {
+  removeHarmony();
 });
 
 describe("applyNativeTheme", () => {
@@ -42,5 +58,37 @@ describe("applyNativeTheme", () => {
     mocks.apply.mockRejectedValueOnce(new Error("not registered"));
     expect(() => applyNativeTheme("light")).not.toThrow();
     await Promise.resolve();
+  });
+});
+
+describe("applyNativeTheme harmony", () => {
+  test("鸿蒙桥优先于 Capacitor,发送 applyTheme 请求", () => {
+    mocks.Capacitor.isNativePlatform.mockReturnValue(true);
+    const invoke = vi.fn<(requestJson: string) => Promise<string>>(
+      async () => '{"status":"ok"}'
+    );
+    installHarmony(invoke);
+
+    applyNativeTheme("dark");
+
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(invoke.mock.calls[0][0])).toEqual({
+      version: 1,
+      operation: "applyTheme",
+      mode: "dark",
+    });
+    expect(mocks.registerPlugin).not.toHaveBeenCalled();
+    expect(mocks.apply).not.toHaveBeenCalled();
+  });
+
+  test("桥响应失败仍 best effort,不抛错", async () => {
+    const invoke = vi.fn(async () => {
+      throw new Error("bridge down");
+    });
+    installHarmony(invoke);
+
+    expect(() => applyNativeTheme("light")).not.toThrow();
+    await Promise.resolve();
+    expect(invoke).toHaveBeenCalledTimes(1);
   });
 });

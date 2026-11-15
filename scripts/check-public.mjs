@@ -88,6 +88,98 @@ const ANDROID_EXACT_DIRS = new Set([
   "android/gradle/wrapper",
 ]);
 
+// HarmonyOS template allowlist. Every entry is an exact path: unknown ETS,
+// JSON5, resource JSON, and directories are rejected. The generated projects
+// live under the skipped .fge-build tree and must not be copied back here.
+const HARMONY_EXACT_DIRS = new Set([
+  "harmony",
+  "harmony/AppScope",
+  "harmony/AppScope/resources",
+  "harmony/AppScope/resources/base",
+  "harmony/AppScope/resources/base/element",
+  "harmony/AppScope/resources/base/media",
+  "harmony/entry",
+  "harmony/entry/src",
+  "harmony/entry/src/main",
+  "harmony/entry/src/main/ets",
+  "harmony/entry/src/main/ets/entryability",
+  "harmony/entry/src/main/ets/pages",
+  "harmony/entry/src/main/ets/bridge",
+  "harmony/entry/src/main/resources",
+  "harmony/entry/src/main/resources/base",
+  "harmony/entry/src/main/resources/base/element",
+  "harmony/entry/src/main/resources/base/media",
+  "harmony/entry/src/main/resources/base/profile",
+  "harmony/entry/src/main/resources/dark",
+  "harmony/entry/src/main/resources/dark/element",
+  "harmony/hvigor",
+]);
+
+const HARMONY_CONFIG_FILES = new Set([
+  "harmony/AppScope/app.json5",
+  "harmony/build-profile.json5",
+  "harmony/hvigor/hvigor-config.json5",
+  "harmony/hvigorfile.ts",
+  "harmony/oh-package.json5",
+  "harmony/entry/build-profile.json5",
+  "harmony/entry/hvigorfile.ts",
+  "harmony/entry/oh-package.json5",
+  "harmony/entry/src/main/module.json5",
+]);
+
+const HARMONY_ETS_FILES = new Set([
+  "harmony/entry/src/main/ets/entryability/EntryAbility.ets",
+  "harmony/entry/src/main/ets/pages/Index.ets",
+  "harmony/entry/src/main/ets/bridge/FgeHarmonyBridge.ets",
+]);
+
+// Resource metadata only, by exact path. These files are parsed as JSON and
+// rejected if they contain question-bank content, so they cannot double as a
+// content payload.
+const HARMONY_RESOURCE_JSON_FILES = new Set([
+  "harmony/AppScope/resources/base/element/string.json",
+  "harmony/AppScope/resources/base/media/layered_image.json",
+  "harmony/entry/src/main/resources/base/element/string.json",
+  "harmony/entry/src/main/resources/base/element/color.json",
+  "harmony/entry/src/main/resources/base/profile/main_pages.json",
+  "harmony/entry/src/main/resources/dark/element/color.json",
+]);
+
+const HARMONY_MEDIA_DIRS = new Set([
+  "harmony/AppScope/resources/base/media",
+  "harmony/entry/src/main/resources/base/media",
+]);
+
+const HARMONY_CONTENT_KEYS = new Set([
+  "cards",
+  "challenges",
+  "chapters",
+  "expectedChapterCount",
+  "expectedQuestionCount",
+  "lessons",
+  "questions",
+  "schemaVersion",
+]);
+
+// JSON5 cannot be parsed by JSON.parse, so exact config paths also get a raw
+// key check: a copied question bank must not pass as build configuration.
+const HARMONY_CONTENT_KEY_PATTERN =
+  /(?:^|[\s,{])["']?(?:cards|challenges|chapters|expectedChapterCount|expectedQuestionCount|lessons|questions|schemaVersion)["']?\s*:/m;
+
+const HARMONY_SIGNING_PATTERNS = [
+  [/\bsigningConfigs?\b/i, "HarmonyOS signing configuration is not allowed in the source template"],
+  [/\b(?:storePassword|keyPassword|passphrase)\b/i, "signing passwords are not allowed"],
+  [
+    /\b(?:storeFile|certpath|certificateProfile|keyAlias|keystore)\b/i,
+    "signing certificate/key paths are not allowed",
+  ],
+  [/\{\{[A-Z0-9_]*PASSWORD[A-Z0-9_]*\}\}/i, "signing password placeholders are not allowed"],
+  [
+    /\.(?:p7b|p7c|p7s|p12|pfx|jks|keystore|pem|cer)\b/i,
+    "signing certificate/profile references are not allowed",
+  ],
+];
+
 const PUBLIC_ROOT_FILES = new Set([".gitattributes", ".gitignore", "LICENSE", "README.md", "manifest.json"]);
 // The public bank needs exactly one operational workflow to notify the app of
 // content updates. Keep this an exact allowlist: every other .github path is
@@ -107,6 +199,9 @@ const APP_SKIP_PREFIXES = [
   "android/app/build",
   "android/app/src/main/assets/public",
   "android/capacitor-cordova-android-plugins",
+  "harmony/.hvigor",
+  "harmony/oh_modules",
+  "harmony/entry/oh_modules",
 ];
 const PUBLIC_SKIP_PREFIXES = [".git"];
 
@@ -137,6 +232,13 @@ const FORBIDDEN_EXTENSIONS = new Map([
   [".apk", "compiled Android artifacts are not allowed in source trees"],
   [".aab", "compiled Android artifacts are not allowed in source trees"],
   [".aar", "compiled Android libraries are not allowed in source trees"],
+  [".hap", "compiled HarmonyOS artifacts are not allowed in source trees"],
+  [".har", "compiled HarmonyOS libraries are not allowed in source trees"],
+  [".hsp", "compiled HarmonyOS shared packages are not allowed in source trees"],
+  [".app", "compiled HarmonyOS application bundles are not allowed in source trees"],
+  [".p7b", "HarmonyOS signing profile material is not allowed"],
+  [".p7c", "HarmonyOS signing profile material is not allowed"],
+  [".p7s", "HarmonyOS signing signature material is not allowed"],
   [".ipa", "compiled Apple artifacts are not allowed in source trees"],
   [".dex", "compiled Android artifacts are not allowed in source trees"],
   [".class", "compiled JVM artifacts are not allowed in source trees"],
@@ -186,10 +288,11 @@ export const RULES = Object.freeze([
   "App maintenance documentation allowlist: exactly docs/development.md and docs/releases.md; other documents and nested documentation directories are rejected.",
   "GitHub Actions workflow allowlist: exactly .github/workflows/deploy-pages.yml, .github/workflows/ci.yml, and .github/workflows/build-public-apk.yml; other workflow files, nested workflow directories, .yaml duplicates, hidden files, and other .github files are rejected.",
   "Android template allowlist: the checked-in Gradle wrapper/config files, Java under android/app/src/main/java/**, XML/images under android/app/src/main/res/** or android/app/src/{public,internal}/res/**, and only the exact Gradle wrapper JAR under android/gradle/wrapper/.",
+  "HarmonyOS template allowlist: exactly the harmony/ root config files (build-profile.json5, oh-package.json5, hvigorfile.ts), AppScope/app.json5, hvigor/hvigor-config.json5, entry/build-profile.json5, entry/oh-package.json5, entry/hvigorfile.ts, entry/src/main/module.json5, the exact ArkTS sources EntryAbility.ets, Index.ets, and FgeHarmonyBridge.ets, exact element/profile resource metadata JSON (base and the dark color qualifier), and media icons under the exact AppScope/entry resource directories. Unknown ETS, JSON5, resource JSON, and directories are rejected; JSON5 is only accepted at those exact config paths and must not contain question-bank content. Signing configurations, passwords, certificate/key paths, and machine-specific paths are not allowed.",
   "Public bank allowlist: root manifest.json, LICENSE, README.md, .gitignore, .gitattributes, exactly .github/workflows/notify-app.yml, plus exactly the chapter JSON paths declared by manifest.json. No other public file is allowed.",
-  "Named app JSON allowlist: package.json, package-lock.json, tsconfig.json, tsconfig.tools.json only; any other app JSON is treated as real content and rejected.",
-  "Forbidden everywhere: PDFs, key/keystore/signing material, secrets, internal/private manifests, private content directories, source maps, APK/AAB/internal build artifacts, symlinks/junctions, and unknown files.",
-  "Skipped exact generated locations (not audited by this guard): .git, node_modules, dist, coverage, .fge-build, android/.gradle, android/build, android/app/build, android/app/src/main/assets/public, android/capacitor-cordova-android-plugins, and known Capacitor-generated files. A top-level .git ordinary file is skipped only when it is a single-line safe submodule gitdir pointer into ../.git/modules/<name> (LF/CRLF, at most 1024 bytes); its target Git directory is never followed or inventoried.",
+  "Named app JSON allowlist: package.json, package-lock.json, tsconfig.json, tsconfig.tools.json only; any other app JSON is treated as real content and rejected, except exact HarmonyOS resource metadata JSON which must not contain question-bank content.",
+  "Forbidden everywhere: PDFs, key/keystore/signing material, secrets, internal/private manifests, private content directories, source maps, APK/AAB and .hap/.har/.hsp/.app internal build artifacts, p7b/p7c/p7s signing chain material, symlinks/junctions, and unknown files.",
+  "Skipped exact generated locations (not audited by this guard): .git, node_modules, dist, coverage, .fge-build, android/.gradle, android/build, android/app/build, android/app/src/main/assets/public, android/capacitor-cordova-android-plugins, harmony/.hvigor, harmony/oh_modules, harmony/entry/oh_modules, and known Capacitor-generated files. A top-level .git ordinary file is skipped only when it is a single-line safe submodule gitdir pointer into ../.git/modules/<name> (LF/CRLF, at most 1024 bytes); its target Git directory is never followed or inventoried.",
   "This guard is an inventory/provenance check, not proof of copyright originality. Private-corpus comparison, all-history review, APK contents and generated output must be audited separately.",
 ]);
 
@@ -246,6 +349,12 @@ function forbiddenFileReason(rel) {
   if (ext === ".jar" && rel !== GRADLE_WRAPPER_JAR) {
     return "JAR binaries are only allowed for the exact Android Gradle wrapper";
   }
+  if (ext === ".json5" && !HARMONY_CONFIG_FILES.has(rel)) {
+    return "JSON5 files are only allowed for the exact HarmonyOS template config paths";
+  }
+  if (ext === ".ets" && !HARMONY_ETS_FILES.has(rel)) {
+    return "ArkTS files are only allowed for the exact HarmonyOS template source paths";
+  }
   if (FORBIDDEN_BASENAMES.has(base)) {
     return "local configuration or credential file is not allowed";
   }
@@ -260,6 +369,7 @@ function isAllowedAppDirectory(rel) {
   if (rel === "scripts" || rel.startsWith("scripts/")) return true;
   if (rel === ".github" || rel === ".github/workflows") return true;
   if (ANDROID_EXACT_DIRS.has(rel)) return true;
+  if (HARMONY_EXACT_DIRS.has(rel)) return true;
   if (rel.startsWith("android/app/src/main/java/")) return true;
   if (rel.startsWith("android/app/src/main/res/")) return true;
   if (isAndroidFlavorRoot(rel)) return true;
@@ -295,6 +405,8 @@ function isAllowedAppTextFile(rel) {
   if (rel.startsWith("build/") && APP_BUILD_EXTENSIONS.has(ext)) return true;
   if (rel.startsWith("scripts/") && APP_SCRIPT_EXTENSIONS.has(ext)) return true;
   if (ALLOWED_APP_WORKFLOWS.has(rel)) return true;
+  if (HARMONY_CONFIG_FILES.has(rel)) return true;
+  if (HARMONY_ETS_FILES.has(rel)) return true;
   if (ANDROID_TEXT_FILES.has(rel)) return true;
   if (rel.startsWith("android/app/src/main/java/") && ext === ".java") return true;
   if (rel.startsWith("android/app/src/main/res/") && ext === ".xml") return true;
@@ -307,6 +419,7 @@ function isAllowedAppBinary(rel) {
   if (rel === GRADLE_WRAPPER_JAR) return true;
   if (rel.startsWith("android/app/src/main/res/") && APP_IMAGE_EXTENSIONS.has(ext)) return true;
   if (isAndroidFlavorResPath(rel) && APP_IMAGE_EXTENSIONS.has(ext)) return true;
+  if (HARMONY_MEDIA_DIRS.has(path.posix.dirname(rel)) && APP_IMAGE_EXTENSIONS.has(ext)) return true;
   return false;
 }
 
@@ -582,6 +695,89 @@ function scanTextSecrets(text, rel, label, errors) {
   }
 }
 
+function harmonyMachinePathReason(text) {
+  if (/(?:^|[^A-Za-z0-9])[A-Za-z]:[\\/]/.test(text)) {
+    return "machine-specific absolute path";
+  }
+  if (/(?:^|[^A-Za-z0-9])\/(?:Users|home|root|opt|var|tmp)\//.test(text)) {
+    return "machine-specific absolute path";
+  }
+  if (/(?:^|[\s"'(=:,])~[\\/]/.test(text)) {
+    return "machine-specific home-relative path";
+  }
+  if (/\\\\[A-Za-z0-9._-]+\\/.test(text)) {
+    return "machine-specific UNC path";
+  }
+  if (/file:\/\//i.test(text)) {
+    return "machine-specific file URL";
+  }
+  return null;
+}
+
+function scanHarmonyText(text, rel, label, errors) {
+  for (const [pattern, reason] of HARMONY_SIGNING_PATTERNS) {
+    if (pattern.test(text)) addError(errors, `${label}: ${rel}: ${reason}`);
+  }
+  const machinePath = harmonyMachinePathReason(text);
+  if (machinePath) {
+    addError(errors, `${label}: ${rel}: ${machinePath} is not allowed in the HarmonyOS template`);
+  }
+}
+
+function findHarmonyContentMarker(value) {
+  const stack = [{ node: value, path: "$" }];
+  let visited = 0;
+  while (stack.length > 0) {
+    const { node, path: nodePath } = stack.pop();
+    visited += 1;
+    if (visited > MAX_JSON_NODES) return `${nodePath} (JSON too large to inspect safely)`;
+    if (Array.isArray(node)) {
+      for (let index = node.length - 1; index >= 0; index -= 1) {
+        const child = node[index];
+        if (isPlainObject(child) || Array.isArray(child)) {
+          stack.push({ node: child, path: `${nodePath}[${index}]` });
+        }
+      }
+      continue;
+    }
+    if (!isPlainObject(node)) continue;
+    for (const [key, child] of Object.entries(node)) {
+      if (HARMONY_CONTENT_KEYS.has(key)) return `${nodePath}.${key}`;
+      if (isPlainObject(child) || Array.isArray(child)) {
+        stack.push({ node: child, path: `${nodePath}.${key}` });
+      }
+    }
+  }
+  return null;
+}
+
+function validateHarmonyResourceMetadata(value, rel, label, errors) {
+  if (!isPlainObject(value)) {
+    addError(errors, `${label}: ${rel}: HarmonyOS resource JSON must be a JSON object`);
+    return;
+  }
+  const marker = findHarmonyContentMarker(value);
+  if (marker) {
+    addError(
+      errors,
+      `${label}: ${rel}: HarmonyOS resource JSON is metadata only; question-bank content marker at ${marker}`
+    );
+  }
+}
+
+function isHarmonyScannedText(rel) {
+  return HARMONY_CONFIG_FILES.has(rel) || HARMONY_ETS_FILES.has(rel);
+}
+
+function scanHarmonyJson5Config(text, rel, label, errors) {
+  if (HARMONY_CONTENT_KEY_PATTERN.test(text)) {
+    addError(
+      errors,
+      `${label}: ${rel}: HarmonyOS JSON5 config looks like question-bank content, not build configuration`
+    );
+  }
+}
+
 function validateBinarySignature(rel, buffer, errors) {
   const ext = fileExtension(rel);
   if (rel === GRADLE_WRAPPER_JAR) {
@@ -620,6 +816,18 @@ async function inspectAppFile(rel, abs, size, label, errors) {
     return;
   }
 
+  if (HARMONY_RESOURCE_JSON_FILES.has(rel)) {
+    const text = await readUtf8File(abs, rel, size, label, errors);
+    if (text !== null) {
+      scanTextSecrets(text, rel, label, errors);
+      // Resource metadata is not question-bank content: do not apply the
+      // public chapter provenance (`source`) schema to it.
+      const parsed = parseJsonText(text, rel, label, errors, false);
+      if (parsed.ok) validateHarmonyResourceMetadata(parsed.value, rel, label, errors);
+    }
+    return;
+  }
+
   if (ext === ".json") {
     const isNamedConfig = APP_ROOT_JSON_FILES.has(rel);
     const text = await readUtf8File(abs, rel, size, label, errors);
@@ -640,7 +848,11 @@ async function inspectAppFile(rel, abs, size, label, errors) {
 
   if (isAllowedAppTextFile(rel)) {
     const text = await readUtf8File(abs, rel, size, label, errors);
-    if (text !== null) scanTextSecrets(text, rel, label, errors);
+    if (text !== null) {
+      scanTextSecrets(text, rel, label, errors);
+      if (isHarmonyScannedText(rel)) scanHarmonyText(text, rel, label, errors);
+      if (fileExtension(rel) === ".json5") scanHarmonyJson5Config(text, rel, label, errors);
+    }
     return;
   }
 

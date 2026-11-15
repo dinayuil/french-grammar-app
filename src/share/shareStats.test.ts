@@ -52,6 +52,24 @@ function flushTasks(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+function installHarmonyBridge(invoke: ReturnType<typeof vi.fn>): void {
+  Object.defineProperty(window, "fgeHarmony", {
+    configurable: true,
+    value: { invoke },
+  });
+}
+
+function removeHarmonyBridge(): void {
+  delete (window as unknown as Record<string, unknown>).fgeHarmony;
+}
+
+function harmonyRequest(
+  invoke: ReturnType<typeof vi.fn>
+): Record<string, unknown> {
+  expect(invoke).toHaveBeenCalledTimes(1);
+  return JSON.parse(invoke.mock.calls[0][0]) as Record<string, unknown>;
+}
+
 function restoreUrlMethod(
   name: "createObjectURL" | "revokeObjectURL",
   descriptor?: PropertyDescriptor
@@ -80,6 +98,7 @@ function mockWebShare(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  removeHarmonyBridge();
 
   statsCardMocks.buildStatsCardData.mockReturnValue({});
   statsCardMocks.createStatsCardCanvas.mockReturnValue({});
@@ -116,6 +135,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  removeHarmonyBridge();
   mockWebShare();
   restoreUrlMethod("createObjectURL", urlDescriptors.createObjectURL);
   restoreUrlMethod("revokeObjectURL", urlDescriptors.revokeObjectURL);
@@ -254,6 +274,71 @@ describe("shareStatsCard native", () => {
       status: "error",
       message: "没有可用的分享目标",
     });
+  });
+});
+
+describe("shareStatsCard harmony", () => {
+  test("鸿蒙桥优先于 Capacitor:发送剥掉前缀的 PNG base64", async () => {
+    capacitorMock.isNativePlatform.mockReturnValue(true);
+    const invoke = vi.fn(async () => '{"status":"ok"}');
+    installHarmonyBridge(invoke);
+
+    const result = await shareStatsCard(PROGRESS, DATE);
+
+    expect(result).toEqual({ status: "shared" });
+    expect(harmonyRequest(invoke)).toEqual({
+      version: 1,
+      operation: "shareFile",
+      filename: FILENAME,
+      mimeType: "image/png",
+      encoding: "base64",
+      data: "QUJD",
+    });
+    expect(filesystemMock.writeFile).not.toHaveBeenCalled();
+    expect(sharePluginMock.share).not.toHaveBeenCalled();
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  test("鸿蒙取消分享 → cancelled,不降级为下载或 Capacitor", async () => {
+    capacitorMock.isNativePlatform.mockReturnValue(true);
+    installHarmonyBridge(vi.fn(async () => '{"status":"cancelled"}'));
+
+    const result = await shareStatsCard(PROGRESS, DATE);
+
+    expect(result).toEqual({ status: "cancelled" });
+    expect(filesystemMock.writeFile).not.toHaveBeenCalled();
+    expect(sharePluginMock.share).not.toHaveBeenCalled();
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(clickedAnchors).toHaveLength(0);
+  });
+
+  test("鸿蒙 error 响应 → error,message 可见且不降级", async () => {
+    capacitorMock.isNativePlatform.mockReturnValue(true);
+    installHarmonyBridge(
+      vi.fn(async () =>
+        JSON.stringify({ status: "error", message: "没有可用的分享目标" })
+      )
+    );
+
+    const result = await shareStatsCard(PROGRESS, DATE);
+
+    expect(result).toEqual({
+      status: "error",
+      message: "没有可用的分享目标",
+    });
+    expect(sharePluginMock.share).not.toHaveBeenCalled();
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  test("鸿蒙坏响应 → error,不偷偷走 Web 下载", async () => {
+    installHarmonyBridge(vi.fn(async () => "not-json"));
+
+    const result = await shareStatsCard(PROGRESS, DATE);
+
+    expect(result.status).toBe("error");
+    expect(result).toMatchObject({ message: expect.stringMatching(/鸿蒙|无效/) });
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(clickedAnchors).toHaveLength(0);
   });
 });
 

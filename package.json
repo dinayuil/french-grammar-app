@@ -14,7 +14,9 @@
     "test:internal": "node scripts/run-mode.mjs test internal",
     "check:public": "node scripts/check-public.mjs",
     "apk": "node scripts/build-apk.mjs public",
-    "apk:internal": "node scripts/build-apk.mjs internal"
+    "apk:internal": "node scripts/build-apk.mjs internal",
+    "harmony": "node scripts/build-harmony.mjs public",
+    "harmony:internal": "node scripts/build-harmony.mjs internal"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.0",

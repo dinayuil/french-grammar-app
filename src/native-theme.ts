@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
+import { applyHarmonyTheme, isHarmonyPlatform } from "./native/platform";
 
 export interface AppThemePlugin {
   apply(options: { mode: "light" | "dark" }): Promise<void>;
@@ -14,6 +15,11 @@ function getAppTheme(): AppThemePlugin {
 
 /** 原生平台把系统栏 / window 背景同步到强制主题;Web 上 no-op。 */
 export function applyNativeTheme(mode: "light" | "dark"): void {
+  // 鸿蒙桥存在即优先走鸿蒙,不注册也不触碰 Capacitor 平台判断。
+  if (isHarmonyPlatform()) {
+    applyHarmonyTheme(mode);
+    return;
+  }
   const plugin = getAppTheme();
   if (!Capacitor.isNativePlatform()) return;
   void plugin.apply({ mode }).catch(() => {
