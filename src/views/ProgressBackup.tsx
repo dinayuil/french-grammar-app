@@ -284,7 +284,7 @@ export function ProgressBackup({ progress, onChange }: Props) {
             </div>
           </dl>
           <p className="backup-warning">
-            恢复将替换当前学习记录，并覆盖每日目标、音效和翻译设置。主题设置不会迁移。
+            恢复将替换当前学习记录，并覆盖每日目标、音效、翻译和分享卡设置。主题设置不会迁移。
           </p>
           <div className="backup-preview-actions">
             <button

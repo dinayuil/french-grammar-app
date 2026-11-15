@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Progress } from "../types";
+import type { Progress, ShareCardContent } from "../types";
 import type { ThemeChoice } from "../theme";
 import { GOAL_PRESETS, STORAGE_KEY } from "../config";
 import { DEFAULT_PROGRESS } from "../storage";
@@ -18,6 +18,18 @@ const THEME_OPTIONS: ReadonlyArray<{ value: ThemeChoice; label: string }> = [
   { value: "dark", label: "深色" },
 ];
 
+const SHARE_CONTENT_OPTIONS: ReadonlyArray<{ value: ShareCardContent; label: string }> = [
+  { value: "xp", label: "经验" },
+  { value: "time", label: "时间" },
+  { value: "both", label: "都有" },
+];
+
+/** 旧运行时对象可能还没有 shareCardContent;选择器按默认「都有」显示。 */
+function shareContentFor(progress: Progress): ShareCardContent {
+  const value = progress.shareCardContent;
+  return value === "xp" || value === "time" || value === "both" ? value : "both";
+}
+
 export function SettingsView({
   progress,
   onChange,
@@ -25,6 +37,7 @@ export function SettingsView({
   onThemeChange,
 }: Props) {
   const [confirming, setConfirming] = useState(false);
+  const shareContent = shareContentFor(progress);
 
   return (
     <div className="settings">
@@ -53,6 +66,22 @@ export function SettingsView({
             onClick={() => onChange({ ...progress, dailyGoal: g })}
           >
             {g} XP / 天
+          </button>
+        ))}
+      </div>
+
+      <div className="settings-title">分享卡内容</div>
+      <div className="goal-presets" role="radiogroup" aria-label="分享卡内容">
+        {SHARE_CONTENT_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={shareContent === option.value}
+            className={`option-btn ${shareContent === option.value ? "selected" : ""}`}
+            onClick={() => onChange({ ...progress, shareCardContent: option.value })}
+          >
+            {option.label}
           </button>
         ))}
       </div>

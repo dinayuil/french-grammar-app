@@ -22,6 +22,7 @@ const RICH: Progress = {
   sound: false,
   translationEnabled: false,
   translationTiming: "before",
+  shareCardContent: "time",
   days: {
     "2026-11-14": {
       xp: 12,
@@ -239,6 +240,37 @@ describe("parseBackup 往返与白名单", () => {
 
     expect(parsed).toEqual(backup);
     expect(parsed.progress).toEqual(RICH);
+  });
+
+  test("分享卡内容 xp/time/both 备份往返一致", () => {
+    for (const mode of ["xp", "time", "both"] as const) {
+      const backup = createBackup({ ...RICH, shareCardContent: mode });
+      expect(backup.progress.shareCardContent).toBe(mode);
+      expect(parseBackup(JSON.stringify(backup)).progress.shareCardContent).toBe(
+        mode
+      );
+    }
+  });
+
+  test("旧备份缺少 shareCardContent → both,版本仍为 1", () => {
+    const raw = rawBackup();
+    delete (raw.progress as Record<string, unknown>).shareCardContent;
+
+    const parsed = parseRaw(raw);
+    expect(parsed.version).toBe(1);
+    expect(parsed.progress.shareCardContent).toBe("both");
+  });
+
+  test("非法 shareCardContent → 拒绝导入", () => {
+    expect(() => parseRaw(rawBackup({}, { shareCardContent: "video" }))).toThrow(
+      /shareCardContent/
+    );
+    expect(() => parseRaw(rawBackup({}, { shareCardContent: 1 }))).toThrow(
+      /shareCardContent/
+    );
+    expect(() =>
+      parseRaw(rawBackup({}, { shareCardContent: null }))
+    ).toThrow(/shareCardContent/);
   });
 
   test("dailyGoal=0、stars=0、count=0 均合法", () => {
@@ -593,6 +625,17 @@ describe("restoreBackup", () => {
     const writtenKeys = setSpy.mock.calls.map((call) => String(call[0]));
     expect(writtenKeys).toEqual([RECOVERY_STORAGE_KEY, STORAGE_KEY]);
     setSpy.mockRestore();
+  });
+
+  test("恢复旧备份(无 shareCardContent)后存储为 both", () => {
+    const raw = rawBackup();
+    delete (raw.progress as Record<string, unknown>).shareCardContent;
+    const old = parseRaw(raw);
+
+    restoreBackup(old, RICH);
+
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!) as Progress;
+    expect(stored.shareCardContent).toBe("both");
   });
 
   test("无效备份在写入前拒绝,当前进度与快照均不变", () => {

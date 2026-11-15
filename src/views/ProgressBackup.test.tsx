@@ -197,7 +197,7 @@ describe("学习进度备份", () => {
     expect(preview.textContent).toContain("420 XP");
     expect(preview.textContent).toContain("2 个");
     expect(preview.textContent).toContain("替换当前学习记录");
-    expect(preview.textContent).toContain("每日目标、音效和翻译设置");
+    expect(preview.textContent).toContain("每日目标、音效、翻译和分享卡设置");
     expect(preview.textContent).toContain("主题设置不会迁移");
     expect($('[role="status"]')?.textContent).toContain("请确认是否恢复");
 

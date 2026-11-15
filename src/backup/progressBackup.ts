@@ -272,6 +272,20 @@ function normalizeProgress(value: unknown): Progress {
     fail("progress.translationTiming 必须是 before 或 after");
   }
 
+  // 旧备份没有 shareCardContent:按默认 both 兼容;显式非法值拒绝导入。
+  let shareCardContent: Progress["shareCardContent"];
+  if (raw.shareCardContent === undefined) {
+    shareCardContent = "both";
+  } else if (
+    raw.shareCardContent === "xp" ||
+    raw.shareCardContent === "time" ||
+    raw.shareCardContent === "both"
+  ) {
+    shareCardContent = raw.shareCardContent;
+  } else {
+    fail("progress.shareCardContent 必须是 xp、time 或 both");
+  }
+
   return {
     xp: requireSafeNonNegativeInt(raw.xp, "progress.xp"),
     dailyGoal: requireSafeNonNegativeInt(raw.dailyGoal, "progress.dailyGoal"),
@@ -281,6 +295,7 @@ function normalizeProgress(value: unknown): Progress {
       "progress.translationEnabled"
     ),
     translationTiming: raw.translationTiming,
+    shareCardContent,
     days: normalizeDays(raw.days),
     lessons: normalizeLessons(raw.lessons),
     mistakes: normalizeMistakes(raw.mistakes),

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Progress } from "../types";
 import { shiftDate, today } from "../storage";
 import { levelFor, streakFor, studyTotals } from "../engine";
+import { formatStudyDuration } from "../formatStudyDuration";
 import type { ShareResult } from "../share/shareStats";
 
 type ShareStatus = "idle" | ShareResult["status"];
@@ -27,14 +28,6 @@ function statusText(result: ShareResult): string {
     case "error":
       return failureText(result.message);
   }
-}
-
-function formatDuration(seconds: number): string {
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} 分`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return m > 0 ? `${h} 小时 ${m} 分` : `${h} 小时`;
 }
 
 export function StatsView({
@@ -155,8 +148,8 @@ export function StatsView({
       </div>
 
       <div className="study-total">
-        累计学习时长 {formatDuration(totals.total)}（看讲解 {formatDuration(totals.read)} /
-        做练习 {formatDuration(totals.practice)}）
+        累计学习时长 {formatStudyDuration(totals.total)}（看讲解 {formatStudyDuration(totals.read)} /
+        做练习 {formatStudyDuration(totals.practice)}）
       </div>
 
       {onShare && (

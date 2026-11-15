@@ -27,6 +27,7 @@ const base: Progress = {
   sound: false,
   translationEnabled: true,
   translationTiming: "before",
+  shareCardContent: "both",
   days: {},
   lessons: {},
   mistakes: {},
