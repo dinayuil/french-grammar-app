@@ -241,11 +241,18 @@ function createHarness(): Harness {
   tempRoots.push(root);
   const state = path.join(root, "state");
   const releaseDir = path.join(root, "release");
+  const windowsDir = path.join(releaseDir, "windows");
   mkdirSync(state, { recursive: true });
-  mkdirSync(releaseDir, { recursive: true });
+  mkdirSync(windowsDir, { recursive: true });
   const apk = path.join(releaseDir, "app-public-debug.apk");
   writeFileSync(apk, "fake apk bytes", "utf8");
   const apkSha256 = createHash("sha256").update(readFileSync(apk)).digest("hex");
+  const standard = path.join(windowsDir, "fge-windows-public-standard-setup.exe");
+  const offline = path.join(windowsDir, "fge-windows-public-offline-setup.exe");
+  writeFileSync(standard, "fake standard installer", "utf8");
+  writeFileSync(offline, "fake offline installer", "utf8");
+  const standardSha256 = createHash("sha256").update(readFileSync(standard)).digest("hex");
+  const offlineSha256 = createHash("sha256").update(readFileSync(offline)).digest("hex");
 
   const releaseScript = path.join(root, "release.sh");
   writeFileSync(
@@ -274,6 +281,10 @@ function createHarness(): Harness {
     VERSION_NAME: "1.0-test.100",
     APK_SHA256: apkSha256,
     APK_PATH: "release/app-public-debug.apk",
+    STANDARD_SHA256: standardSha256,
+    OFFLINE_SHA256: offlineSha256,
+    STANDARD_PATH: "release/windows/fge-windows-public-standard-setup.exe",
+    OFFLINE_PATH: "release/windows/fge-windows-public-offline-setup.exe",
     RUN_ID: "12345",
     APP_MAIN_SHA: APP_SHA,
     CONTENT_MAIN_SHA: CONTENT_SHA,
@@ -397,6 +408,10 @@ describe("rolling apk-latest publish ordering and recovery", () => {
       assertOrder(retry.actions, [
         "upload:app-public-debug.apk",
         "upload:app-public-debug.apk.sha256",
+        "upload:fge-windows-public-standard-setup.exe",
+        "upload:fge-windows-public-standard-setup.exe.sha256",
+        "upload:fge-windows-public-offline-setup.exe",
+        "upload:fge-windows-public-offline-setup.exe.sha256",
         "view:assets",
         "tag-patch",
         "edit:draft=",
@@ -439,6 +454,10 @@ describe("rolling apk-latest publish ordering and recovery", () => {
       assertOrder(retry.actions, [
         "upload:app-public-debug.apk",
         "upload:app-public-debug.apk.sha256",
+        "upload:fge-windows-public-standard-setup.exe",
+        "upload:fge-windows-public-standard-setup.exe.sha256",
+        "upload:fge-windows-public-offline-setup.exe",
+        "upload:fge-windows-public-offline-setup.exe.sha256",
         "view:assets",
         "edit:draft=false",
       ]);
@@ -448,6 +467,10 @@ describe("rolling apk-latest publish ordering and recovery", () => {
       expect(harness.assets()).toEqual([
         "app-public-debug.apk",
         "app-public-debug.apk.sha256",
+        "fge-windows-public-offline-setup.exe",
+        "fge-windows-public-offline-setup.exe.sha256",
+        "fge-windows-public-standard-setup.exe",
+        "fge-windows-public-standard-setup.exe.sha256",
       ]);
 
       const third = harness.run();
@@ -473,6 +496,10 @@ describe("rolling apk-latest publish ordering and recovery", () => {
         "tag-patch",
         "upload:app-public-debug.apk",
         "upload:app-public-debug.apk.sha256",
+        "upload:fge-windows-public-standard-setup.exe",
+        "upload:fge-windows-public-standard-setup.exe.sha256",
+        "upload:fge-windows-public-offline-setup.exe",
+        "upload:fge-windows-public-offline-setup.exe.sha256",
         "view:assets",
         "edit:draft=false",
       ]);

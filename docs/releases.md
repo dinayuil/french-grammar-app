@@ -89,9 +89,9 @@ npm run windows
 
 两种安装包必须使用同一二进制、应用身份、页面来源和用户数据目录。公开/内部版身份不同，禁止混用题库或输出。修改 Tauri 的 identifier、页面 scheme 或存储路径会影响原进度访问，不可作为普通升级随意变更。覆盖升级、取消文件保存、断网启动与高 DPI 缩放均需验收。
 
-默认产物没有正式 Windows 代码签名，不能标为正式签名版本。正式发行前按 [Tauri Windows 签名说明](https://v2.tauri.app/distribute/sign/windows/) 配置独立证书与发布环境，并在目标 Windows 安全策略下检查安装和首次运行；不复用 Android 签名材料。当前测试包通过本地命令构建，手动发布到 [`windows-latest` 预发布](https://github.com/dinayuil/french-grammar-app/releases/tag/windows-latest)，没有 Windows 自动发布流水线。
+默认产物没有正式 Windows 代码签名，不能标为正式签名版本。正式发行前按 [Tauri Windows 签名说明](https://v2.tauri.app/distribute/sign/windows/) 配置独立证书与发布环境，并在目标 Windows 安全策略下检查安装和首次运行；不复用 Android 签名材料。Windows 测试包由 Actions 自动构建，与固定签名 Android APK 一起发布到 [`apk-latest` 预发布](https://github.com/dinayuil/french-grammar-app/releases/tag/apk-latest)，不设独立 Windows 发布页。
 
-发布只上传公开版 standard/offline 两个安装包及各自 SHA-256 校验文件，并在说明中列明应用与公开题库提交。上传前核对 manifest、安装包 hash 和两个内嵌应用二进制一致；对应源码必须已进入应用 main，题库必须来自公开题库 main。发布页必须注明未签名测试版及已完成的验证范围，不能把本机 HTTP 联调写成第三方服务或安装升级已验收。不得上传内部版、私有内容、原始构建目录或本机追溯文件。
+本地命令用于开发验收；公开发布使用同一次 Actions 构建的产物。发布前必须同时确认 Android 与 Windows 构建成功、应用与公开题库提交一致、安装包 hash 正确；对应源码必须已进入应用 main，题库必须来自公开题库 main。发布页必须注明 Windows 未签名测试版及已完成的验证范围，不能把本机 HTTP 联调写成第三方服务或安装升级已验收。不得上传内部版、私有内容、原始构建目录或本机追溯文件。
 
 ## 客户端同步验收
 
@@ -103,22 +103,24 @@ WebDAV 仅在 Windows、Android、鸿蒙客户端启用。测试使用专门的�
 
 Android 使用应用 Keystore，鸿蒙使用 HUKS，Windows 使用当前用户 DPAPI；复制密文文件到另一设备不应当作迁移凭据的方法。同步云端文件本身是普通 JSON，未实现额外的端到端口令加密。用户选择第三方存储后，相关联网行为、数据去向与隐私说明需与实际安装包保持一致。
 
-## APK 自动构建与预发布
+## 客户端自动构建与预发布
 
 - 工作流：`.github/workflows/build-public-apk.yml`
 - 固定入口：<https://github.com/dinayuil/french-grammar-app/releases/tag/apk-latest>
-- 资产：`app-public-debug.apk`、`app-public-debug.apk.sha256`
+- 资产：`app-public-debug.apk`、`fge-windows-public-standard-setup.exe`、`fge-windows-public-offline-setup.exe`，以及各自的 `.sha256` 校验文件，共六个。
 
-应用 `main` 推送及公开题库的 `content-updated` 通知，在构建成功后更新滚动预发布。手动触发与 `v*` 标签只构建 Actions artifact，不刷新该入口；artifact 名为 `app-public-debug`，保留 14 天。
+应用 `main` 推送及公开题库的 `content-updated` 通知，在 Android 与 Windows 两端构建都成功后更新滚动预发布。流水线先解析并固定同一对应用/公开题库提交，再分别执行 Linux Android 构建与 Windows 两种安装包构建；任一失败或提交不一致均不更新 Release。手动触发与 `v*` 标签只构建 Actions artifact，不刷新该入口；artifact 保留 14 天。
 
 应用与实际检出的内容提交都必须位于各自 `main` 历史。未合并的分支或标签所指提交会在依赖安装、签名前被拒绝。`main` 祖先的手工回滚可以构建；自动发布还要求应用和内容提交分别等于当前 `main` HEAD，过期构建不会覆盖新包。
 
-自动构建的 `versionCode` 使用该 workflow 的 `run_number`，`versionName` 为 `1.0-test.<run_number>`。构建后验证公开包名、版本、唯一签名证书指纹和 APK 哈希，再上传精确的公开 APK artifact。独立发布 job 只下载本 run 的该 artifact，复核哈希后更新 `apk-latest`，不会执行仓库构建代码；build job 为 `contents: read`，发布 job 单独使用 `contents: write`。
+Android 自动构建的 `versionCode` 使用该 workflow 的 `run_number`，`versionName` 为 `1.0-test.<run_number>`。构建后验证公开包名、版本、唯一签名证书指纹和 APK 哈希；Windows 构建校验两包身份、安装模式与哈希，再分别上传精确的公开产物。独立发布 job 只下载本 run 的产物，复核提交、文件清单和哈希后统一更新 `apk-latest`，不会执行仓库构建代码；build job 为 `contents: read`，发布 job 单独使用 `contents: write`。
 
 下载后可用以下命令或等价工具核验：
 
 ```text
 sha256sum -c app-public-debug.apk.sha256
+sha256sum -c fge-windows-public-standard-setup.exe.sha256
+sha256sum -c fge-windows-public-offline-setup.exe.sha256
 apksigner verify --verbose --print-certs app-public-debug.apk
 aapt2 dump badging app-public-debug.apk
 ```
@@ -147,7 +149,7 @@ Actions 需要以下 5 项：
 
 ## 发布失败恢复
 
-首次发布先创建 draft，资产上传并校验后才公开；失败重跑会复用 draft。已有发布先上传 APK 和校验文件、核对资产集合，再更新滚动 tag，最后写入说明中的版本标记。未完成标记写入的运行可以重跑恢复；上传期间的短暂不一致会在重跑后收敛。
+首次发布先创建 draft，资产上传并校验后才公开；失败重跑会复用 draft。已有发布先上传 Android APK、两种 Windows 安装包及各自校验文件，核对六个资产，再更新滚动 tag，最后写入说明中的版本标记。未完成标记写入的运行可以重跑恢复；上传期间的短暂不一致会在重跑后收敛。
 
 Release notes 中以下两行是发布状态标记，不能任意删除或修改：
 
@@ -156,6 +158,6 @@ Release notes 中以下两行是发布状态标记，不能任意删除或修改
 - versionName: `1.0-test.N`
 ```
 
-已发布的相同或更高 `versionCode` 会被跳过。标记缺失或互相不匹配时，发布会明确失败；将其恢复为最后一次已发布版本后再重跑。若手工操作或历史故障造成标记已写入、资产却缺失，可用下一次更高 `run_number` 的自动构建修复，或修复/删除该 Release 后重跑，不添加第三个 metadata 资产。
+已发布的相同或更高 `versionCode` 会被跳过。标记缺失或互相不匹配时，发布会明确失败；将其恢复为最后一次已发布版本后再重跑。若手工操作或历史故障造成标记已写入、资产却缺失，可用下一次更高 `run_number` 的自动构建修复，或修复/删除该 Release 后重跑，不额外上传 metadata 资产。
 
-APK 发布、Pages 部署分别查看对应 Actions 结果；上游通知成功只表示 dispatch 已送达。
+客户端发布、Pages 部署分别查看对应 Actions 结果；上游通知成功只表示 dispatch 已送达。

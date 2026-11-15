@@ -73,7 +73,9 @@ describe("public APK release workflow", () => {
     expect(WORKFLOW).toMatch(/tags:\s*\n\s*- "v\*"/);
     expect(WORKFLOW).toMatch(/workflow_dispatch:/);
 
-    expect(release).toMatch(/needs: build-public-apk/);
+    expect(release).toContain("  - build-public-apk");
+    expect(release).toContain("  - build-public-windows");
+    expect(release).toContain("  - resolve-public-inputs");
     expect(release).toMatch(
       /github\.repository == 'dinayuil\/french-grammar-app'/,
     );
@@ -111,7 +113,7 @@ describe("public APK release workflow", () => {
     expect(release).not.toMatch(/\.\/scripts\//);
   });
 
-  it("uploads only the exact APK and checksum from the build artifact", () => {
+  it("uploads only the exact APK and Windows installers from build artifacts", () => {
     const upload = stepBlock(build, "Upload public debug APK");
     expect(upload).toMatch(/name: app-public-debug/);
     expect(upload).toMatch(
@@ -120,8 +122,27 @@ describe("public APK release workflow", () => {
     expect(upload).not.toMatch(/\*/);
     expect(release).toMatch(/gh release upload apk-latest "\$APK_PATH"/);
     expect(release).toMatch(/app-public-debug\.apk\.sha256/);
+    expect(release).toMatch(
+      /gh release upload apk-latest "\$STANDARD_PATH"/,
+    );
+    expect(release).toMatch(
+      /gh release upload apk-latest "\$OFFLINE_PATH"/,
+    );
+    expect(release).toMatch(/fge-windows-public-standard-setup\.exe\.sha256/);
+    expect(release).toMatch(/fge-windows-public-offline-setup\.exe\.sha256/);
     expect(release).not.toMatch(/release\/\*/);
     expect(release).not.toMatch(/gh release upload[^\n]*release\s/);
+
+    const windowsUpload = stepBlock(
+      jobBlock("build-public-windows"),
+      "Upload public Windows installers",
+    );
+    expect(windowsUpload).toMatch(/name: public-windows-installers/);
+    expect(windowsUpload).toMatch(
+      /path: \|\n\s+app\/\.fge-build\/windows\/public\/packages\/fge-windows-public-standard-setup\.exe\n\s+app\/\.fge-build\/windows\/public\/packages\/fge-windows-public-offline-setup\.exe/,
+    );
+    expect(windowsUpload).toContain("if-no-files-found: error");
+    expect(windowsUpload).toContain("retention-days: 14");
   });
 
   it("pins every action to a full commit SHA", () => {
@@ -223,6 +244,8 @@ describe("public APK release workflow", () => {
       "VERSION_CODE",
       "VERSION_NAME",
       "APK_SHA256",
+      "STANDARD_SHA256",
+      "OFFLINE_SHA256",
       "RUN_URL",
     ]) {
       expect(release).toContain(token);
@@ -233,6 +256,8 @@ describe("public APK release workflow", () => {
     expect(release).toMatch(/versionCode/);
     expect(release).toMatch(/versionName/);
     expect(release).toMatch(/固定测试签名/);
+    expect(release).toMatch(/Windows/);
+    expect(release).toMatch(/未签名/);
     expect(release).toMatch(/不是应用商店正式版本/);
   });
 
@@ -285,15 +310,88 @@ describe("public APK release workflow", () => {
     }
   });
 
-  it("creates new releases as drafts and publishes only after asset verification", () => {
+  it("resolves app/content once and feeds exact SHAs to both build jobs", () => {
+    const resolver = jobBlock("resolve-public-inputs");
+    const windows = jobBlock("build-public-windows");
+    expect(resolver).toMatch(
+      /uses: actions\/checkout@[0-9a-f]{40} # v7\.0\.1/,
+    );
+    expect(resolver).toMatch(/persist-credentials: false/);
+    expect(resolver).toMatch(/merge-base --is-ancestor/);
+    expect(resolver).toMatch(
+      /echo "app_sha=\$APP_SHA" >> "\$GITHUB_OUTPUT"/,
+    );
+    expect(resolver).toMatch(
+      /echo "content_sha=\$CONTENT_SHA" >> "\$GITHUB_OUTPUT"/,
+    );
+    expect(build).toContain(
+      "ref: ${{ needs.resolve-public-inputs.outputs.app_sha }}",
+    );
+    expect(build).toContain(
+      "ref: ${{ needs.resolve-public-inputs.outputs.content_sha }}",
+    );
+    expect(windows).toContain(
+      "ref: ${{ needs.resolve-public-inputs.outputs.app_sha }}",
+    );
+    expect(windows).toContain(
+      "ref: ${{ needs.resolve-public-inputs.outputs.content_sha }}",
+    );
+  });
+
+  it("builds Windows read-only on windows-latest with pinned cache and Rust tests", () => {
+    const windows = jobBlock("build-public-windows");
+    expect(windows).toMatch(/runs-on: windows-latest/);
+    expect(windows).toMatch(/timeout-minutes: 90/);
+    expect(windows).toMatch(/permissions:\n      contents: read/);
+    expect(windows).not.toMatch(/secrets\.FGE_/);
+    expect(windows).toMatch(
+      /uses: actions\/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4\.2\.3/,
+    );
+    expect(windows).toMatch(/stable-x86_64-pc-windows-msvc/);
+    expect(windows).toMatch(/cargo test --manifest-path src-tauri\/Cargo\.toml --lib --locked/);
+    expect(windows).toMatch(/run: npm run windows/);
+    expect(windows).toMatch(/fge-windows-public-standard-setup\.exe/);
+    expect(windows).toMatch(/fge-windows-public-offline-setup\.exe/);
+    expect(windows).toMatch(/standard_sha256/);
+    expect(windows).toMatch(/offline_sha256/);
+    expect(windows).toMatch(/fge-windows/);
+    expect(windows).toMatch(/com\.fge\.open/);
+  });
+
+  it("publisher requires both builds, verifies shared SHAs and exact six assets", () => {
+    expect(release).toMatch(/needs:\n\s+- resolve-public-inputs\n\s+- build-public-apk\n\s+- build-public-windows/);
+    expect(release).toContain("APK_APP_SHA");
+    expect(release).toContain("WINDOWS_APP_SHA");
+    expect(release).toContain("APK_CONTENT_SHA");
+    expect(release).toContain("WINDOWS_CONTENT_SHA");
+    expect(release).toContain("RESOLVED_APP_SHA");
+    expect(release).toContain("RESOLVED_CONTENT_SHA");
+    expect(release).toContain("public-windows-installers");
+    expect(release).toContain("release/windows");
+    for (const asset of [
+      "app-public-debug.apk",
+      "app-public-debug.apk.sha256",
+      "fge-windows-public-standard-setup.exe",
+      "fge-windows-public-standard-setup.exe.sha256",
+      "fge-windows-public-offline-setup.exe",
+      "fge-windows-public-offline-setup.exe.sha256",
+    ]) {
+      expect(release).toContain(asset);
+    }
+    expect(release).toMatch(/EXPECTED_ASSETS/);
+    expect(release).toMatch(/assets are not exactly/);
+    expect(release).toMatch(/printf '%s  %s\\n'/);
+  });
+
+  it("creates new releases as drafts and publishes only after six-asset verification", () => {
     expect(release).toContain("--json isDraft");
     expect(release).toMatch(/--draft\b/);
     expect(release).toContain("--draft=false");
     expect(release).toMatch(
-      /gh release upload apk-latest "\$APK_PATH"[\s\S]*?gh release upload apk-latest "\$CHECKSUM_PATH"/,
+      /gh release upload apk-latest "\$APK_PATH"[\s\S]*?gh release upload apk-latest "\$APK_CHECKSUM_PATH"/,
     );
     expect(release).toMatch(
-      /gh release upload apk-latest "\$CHECKSUM_PATH"[\s\S]*?ASSET_NAMES/,
+      /gh release upload apk-latest "\$OFFLINE_CHECKSUM_PATH"[\s\S]*?ASSET_NAMES/,
     );
     expect(release).toMatch(
       /ASSET_NAMES[\s\S]*?gh release edit apk-latest/,
