@@ -1,15 +1,19 @@
 import { useState } from "react";
 import type { Progress, ShareCardContent } from "../types";
 import type { ThemeChoice } from "../theme";
+import type { ClientSyncController } from "../sync/useClientSync";
 import { GOAL_PRESETS, STORAGE_KEY } from "../config";
 import { DEFAULT_PROGRESS } from "../storage";
 import { ProgressBackup } from "./ProgressBackup";
+import { SyncSettings } from "./SyncSettings";
 
 interface Props {
   progress: Progress;
   onChange: (p: Progress) => void;
   themeChoice?: ThemeChoice;
   onThemeChange?: (choice: ThemeChoice) => void;
+  /** 只在原生容器传入;网页版保持 null,对应设置完全不渲染。 */
+  syncController?: ClientSyncController | null;
 }
 
 const THEME_OPTIONS: ReadonlyArray<{ value: ThemeChoice; label: string }> = [
@@ -35,6 +39,7 @@ export function SettingsView({
   onChange,
   themeChoice = "system",
   onThemeChange,
+  syncController = null,
 }: Props) {
   const [confirming, setConfirming] = useState(false);
   const shareContent = shareContentFor(progress);
@@ -136,6 +141,8 @@ export function SettingsView({
       </div>
 
       <ProgressBackup progress={progress} onChange={onChange} />
+
+      {syncController && <SyncSettings controller={syncController} />}
 
       <div className="settings-title">危险操作</div>
       {confirming ? (

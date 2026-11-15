@@ -1,6 +1,6 @@
 # 发布与签名维护
 
-本文件维护公开网页版部署、Android 测试包、稳定签名、Actions 配置及发布故障恢复。开发环境、内容路径与日常测试见[开发文档](development.md)；面向使用者的产品说明见[README](../README.md)。这里记录维护规则，不记录逐次构建进度或版本计数。
+本文件维护网页版部署、Android / 鸿蒙 / Windows 打包、签名、Actions 配置及发布故障恢复。开发环境、内容路径与日常测试见[开发文档](development.md)；面向使用者的产品说明见[README](../README.md)。这里记录维护规则，不记录逐次构建进度或版本计数。
 
 ## 公开网页版
 
@@ -70,6 +70,38 @@ hdc shell aa start -a EntryAbility -b com.fge.open
 源码模板不包含网页构建结果、签名或本机路径。生成工程、HAP、依赖缓存和 IDE 本地文件不提交；尤其不要把打包后的 `rawfile` 资源复制回模板。鸿蒙正式证书、真机签名、商店发布与自动发布流水线需要另行配置，不能复用 Android 签名材料。
 
 覆盖安装时应保留同一包名和页面 origin，避免主动清除 WebStorage。卸载会删除进度，卸载前先导出备份。正式发布前须验证覆盖升级、备份导入导出、系统分享、主题和真实设备表现。
+
+## 本地 Windows 构建
+
+使用 Windows、Node.js、稳定版 Rust MSVC 工具链，以及 Visual Studio C++ 桌面开发工具和 Windows SDK。开发运行需要 WebView2。先安装应用依赖，再执行：
+
+```powershell
+npm run windows
+```
+
+内部版本使用 `npm run windows:internal`。包装脚本先检查前端类型与公开/内部身份，再向 `.fge-build/windows/<edition>/web/` 单独构建前端；不复用 `dist/public` 或鸿蒙输出。Rust 编译目录为该版下的 `target/`。打包需取得 NSIS 和 WebView2 运行时安装程序，构建机需要可访问对应下载源；“完整离线包”指用户安装时无需联网，不表示首次构建无需网络。
+
+公开版最终产物位于 `.fge-build/windows/public/packages/`：
+
+- `fge-windows-public-standard-setup.exe`：缺少 WebView2 时联网补装。
+- `fge-windows-public-offline-setup.exe`：附带 WebView2 离线安装程序。
+- `manifest.json`：记录两种包的身份、大小、SHA-256 和安装模式，发布前应核对。
+
+两种安装包必须使用同一二进制、应用身份、页面来源和用户数据目录。公开/内部版身份不同，禁止混用题库或输出。修改 Tauri 的 identifier、页面 scheme 或存储路径会影响原进度访问，不可作为普通升级随意变更。覆盖升级、取消文件保存、断网启动与高 DPI 缩放均需验收。
+
+默认产物没有正式 Windows 代码签名，不能标为正式签名版本。正式发行前按 [Tauri Windows 签名说明](https://v2.tauri.app/distribute/sign/windows/) 配置独立证书与发布环境，并在目标 Windows 安全策略下检查安装和首次运行；不复用 Android 签名材料。当前测试包通过本地命令构建，手动发布到 [`windows-latest` 预发布](https://github.com/dinayuil/french-grammar-app/releases/tag/windows-latest)，没有 Windows 自动发布流水线。
+
+发布只上传公开版 standard/offline 两个安装包及各自 SHA-256 校验文件，并在说明中列明应用与公开题库提交。上传前核对 manifest、安装包 hash 和两个内嵌应用二进制一致；对应源码必须已进入应用 main，题库必须来自公开题库 main。发布页必须注明未签名测试版及已完成的验证范围，不能把本机 HTTP 联调写成第三方服务或安装升级已验收。不得上传内部版、私有内容、原始构建目录或本机追溯文件。
+
+## 客户端同步验收
+
+WebDAV 仅在 Windows、Android、鸿蒙客户端启用。测试使用专门的根目录和测试账号，不指向已有生产备份。HTTP 和 HTTPS 均支持，包括局域网地址及自定义端口；Android 明文网络策略必须实际允许 HTTP。使用者输入 WebDAV 根地址，应用通过 MKCOL 自动创建 `FrenchGrammarExercise/`；目录已存在时，用 Depth: 0 的 PROPFIND 验证 collection，再读写其中当前版本的固定同步文件。目录创建或验证失败必须停止，不能回退向用户根目录直接写文件。
+
+服务还需要强 ETag 以及 `If-Match` / `If-None-Match` 条件写；无效或缺失版本标记必须停止覆盖。用户不填写同步 JSON 路径。新目录布局使用独立的基线作用域，旧布局恢复副本继续可导出；旧根目录文件不自动移动或删除。
+
+至少验证两设备交替学习、两边离线修改形成冲突、412 竞争、请求期间继续学习、改账号、断开重连、重装为空、错误密码、断网重试及恢复副本导出。同步错误不得中断本地学习；双边修改不得自动相加；运行中切换配置不得向新目标应用旧基线。凭据只在系统加密存储中保存，不能出现在日志、截图、manifest 或进度备份中。
+
+Android 使用应用 Keystore，鸿蒙使用 HUKS，Windows 使用当前用户 DPAPI；复制密文文件到另一设备不应当作迁移凭据的方法。同步云端文件本身是普通 JSON，未实现额外的端到端口令加密。用户选择第三方存储后，相关联网行为、数据去向与隐私说明需与实际安装包保持一致。
 
 ## APK 自动构建与预发布
 

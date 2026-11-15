@@ -4,6 +4,8 @@ import { describe, expect, test, vi } from "vitest";
 import { SettingsView } from "./views/SettingsView";
 import { DEFAULT_PROGRESS } from "./storage";
 import type { Progress } from "./types";
+import type { ClientSyncController } from "./sync/useClientSync";
+import type { SyncSnapshot } from "./sync/types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -26,6 +28,28 @@ function renderSettings(progress: Progress, onChange: (p: Progress) => void = ()
   act(() => root.render(<SettingsView progress={progress} onChange={onChange} />));
 }
 
+const SYNC_SNAPSHOT: SyncSnapshot = {
+  status: "idle",
+  config: null,
+  message: "",
+  lastSyncedAt: null,
+  conflict: null,
+};
+
+function fakeSyncController(): ClientSyncController {
+  return {
+    subscribe: () => () => {},
+    getSnapshot: () => SYNC_SNAPSHOT,
+    initialize: async () => {},
+    configure: async () => {},
+    disconnect: async () => {},
+    sync: async () => {},
+    resolveConflict: async () => {},
+    notifyLocalChange: () => {},
+    dispose: () => {},
+  };
+}
+
 function shareContentButtons(): HTMLButtonElement[] {
   const group = container.querySelector<HTMLElement>(
     '[role="radiogroup"][aria-label="分享卡内容"]'
@@ -39,6 +63,29 @@ function click(element: HTMLElement) {
     element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
 }
+
+describe("SettingsView 同步入口", () => {
+  test("网页版没有同步控制器时不显示跨设备同步", () => {
+    renderSettings(DEFAULT_PROGRESS);
+    expect(container.textContent).not.toContain("跨设备同步");
+    expect(container.querySelector("#sync-url")).toBeNull();
+  });
+
+  test("原生端传入控制器后显示同步设置", () => {
+    act(() =>
+      root.render(
+        <SettingsView
+          progress={DEFAULT_PROGRESS}
+          onChange={() => {}}
+          syncController={fakeSyncController()}
+        />
+      )
+    );
+    expect(container.textContent).toContain("跨设备同步");
+    expect(container.querySelector("#sync-url")).not.toBeNull();
+    expect(container.textContent).not.toContain("网页版");
+  });
+});
 
 describe("SettingsView AI 披露", () => {
   test("底部显示内容说明", () => {

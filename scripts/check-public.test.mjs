@@ -164,6 +164,8 @@ async function makeHarmonyTemplate(root) {
       "@Entry\n@Component\nstruct Index {\n  build() {}\n}\n",
     "harmony/entry/src/main/ets/bridge/FgeHarmonyBridge.ets":
       "export class FgeHarmonyBridge { static readonly NAME: string = 'fgeHarmony'; }\n",
+    "harmony/entry/src/main/ets/bridge/FgeSyncManager.ets":
+      "export class FgeSyncManager { static readonly VERSION: number = 1; }\n",
     "harmony/entry/src/main/resources/base/profile/main_pages.json": JSON.stringify(
       { src: ["pages/Index"] },
       null,
@@ -200,6 +202,61 @@ async function makeHarmonyTemplate(root) {
   ]) {
     await writeAt(root, rel, PNG_MAGIC);
   }
+}
+
+async function makeWindowsShell(root) {
+  const texts = {
+    "src-tauri/Cargo.toml": "[package]\nname = \"fge-desktop\"\nversion = \"0.1.0\"\n",
+    "src-tauri/Cargo.lock": "version = 4\n",
+    "src-tauri/build.rs": "fn main() { tauri_build::build() }\n",
+    "src-tauri/src/main.rs": "fn main() {}\n",
+    "src-tauri/src/lib.rs": "pub fn run() {}\n",
+    "src-tauri/tauri.conf.json": JSON.stringify(
+      {
+        productName: "法语语法练习",
+        identifier: "com.fge.open",
+        build: { frontendDist: "../.fge-build/windows/public/web" },
+        bundle: { targets: ["nsis"], icon: ["icons/icon.ico"] },
+      },
+      null,
+      2
+    ),
+    "src-tauri/tauri.public.conf.json": JSON.stringify(
+      { identifier: "com.fge.open", build: { frontendDist: "../.fge-build/windows/public/web" } },
+      null,
+      2
+    ),
+    "src-tauri/tauri.internal.conf.json": JSON.stringify(
+      { identifier: "com.fge.app", build: { frontendDist: "../.fge-build/windows/internal/web" } },
+      null,
+      2
+    ),
+    "src-tauri/tauri.installer-standard.conf.json": JSON.stringify(
+      { bundle: { windows: { webviewInstallMode: { type: "downloadBootstrapper" } } } },
+      null,
+      2
+    ),
+    "src-tauri/tauri.installer-offline.conf.json": JSON.stringify(
+      { bundle: { windows: { webviewInstallMode: { type: "offlineInstaller" } } } },
+      null,
+      2
+    ),
+    "src-tauri/capabilities/main.json": JSON.stringify(
+      {
+        identifier: "main",
+        windows: ["main"],
+        permissions: ["core:default", "core:window:allow-set-theme"],
+      },
+      null,
+      2
+    ),
+  };
+  for (const [rel, text] of Object.entries(texts)) await writeAt(root, rel, text);
+  await writeAt(
+    root,
+    "src-tauri/icons/icon.ico",
+    Buffer.from([0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10])
+  );
 }
 
 async function setupPublic(root, { chapters = {}, manifestPatch = {} } = {}) {
@@ -886,6 +943,7 @@ test("a minimal HarmonyOS template is allowed without widening ETS or JSON5", as
     "harmony/entry/src/main/ets/entryability/EntryAbility.ets",
     "harmony/entry/src/main/ets/pages/Index.ets",
     "harmony/entry/src/main/ets/bridge/FgeHarmonyBridge.ets",
+    "harmony/entry/src/main/ets/bridge/FgeSyncManager.ets",
     "harmony/AppScope/resources/base/media/layered_image.json",
     "harmony/entry/src/main/resources/base/element/string.json",
     "harmony/entry/src/main/resources/base/profile/main_pages.json",
@@ -929,6 +987,69 @@ test("unknown HarmonyOS ETS, JSON5, and directories stay rejected", async (t) =>
     assertFails(result, pattern, label);
     assert.ok(errorsOf(result).includes(rel), `${label}: error did not name ${rel}:\n${errorsOf(result)}`);
   }
+});
+
+test("Windows Tauri shell is allowlisted exactly without widening target/gen or icons", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await makeWindowsShell(appRoot);
+  await writeAt(appRoot, "src-tauri/target/debug/build/output.bin", "ignored generated\n");
+  await writeAt(appRoot, "src-tauri/gen/schemas/desktop-schema.json", "{}\n");
+
+  const result = await checkPublic({ appRoot, publicRoot });
+
+  assert.equal(result.ok, true, errorsOf(result));
+  for (const rel of [
+    "src-tauri/Cargo.toml",
+    "src-tauri/Cargo.lock",
+    "src-tauri/build.rs",
+    "src-tauri/src/main.rs",
+    "src-tauri/tauri.conf.json",
+    "src-tauri/tauri.internal.conf.json",
+    "src-tauri/capabilities/main.json",
+    "src-tauri/icons/icon.ico",
+  ]) {
+    assert.ok(result.inventory.app.includes(rel), `${rel} was not inventoried:\n${errorsOf(result)}`);
+  }
+  assert.ok(!result.inventory.app.includes("src-tauri/target/debug/build/output.bin"));
+  assert.ok(!result.inventory.app.includes("src-tauri/gen/schemas/desktop-schema.json"));
+  assert.ok(result.stats.skippedGenerated >= 2);
+
+  const rules = RULES.join("\n");
+  assert.match(rules, /Windows Tauri allowlist/);
+  assert.match(rules, /src-tauri\/src/);
+  assert.match(rules, /icon\.ico/);
+});
+
+test("unknown Windows Tauri JSON, ICO, JSON5 and directories stay rejected", async (t) => {
+  const rejected = [
+    ["src-tauri/extra.json", /non-allowlisted app file|real content JSON/i, "extra Tauri JSON"],
+    ["src-tauri/icons/other.ico", /non-allowlisted app file/i, "extra ICO"],
+    ["src-tauri/tauri.conf.json5", /JSON5.*exact|exact.*JSON5/i, "Tauri JSON5"],
+    ["src-tauri/windows/hooks.nsh", /unexpected directory|non-allowlisted/i, "extra Tauri dir"],
+  ];
+
+  for (const [rel, pattern, label] of rejected) {
+    const { appRoot, publicRoot } = await sandbox(t);
+    await setupPublic(publicRoot);
+    await makeWindowsShell(appRoot);
+    await writeAt(appRoot, rel, "synthetic fixture\n");
+
+    const result = await checkPublic({ appRoot, publicRoot });
+
+    assertFails(result, pattern, label);
+    assert.ok(errorsOf(result).includes(rel), `${label}: error did not name ${rel}:\n${errorsOf(result)}`);
+  }
+
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot);
+  await makeWindowsShell(appRoot);
+  await writeAt(
+    appRoot,
+    "src-tauri/icons/icon.ico",
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  );
+  assertFails(await checkPublic({ appRoot, publicRoot }), /ICO signature/i, "fake ICO");
 });
 
 test("HarmonyOS resource JSON is metadata only and cannot carry question-bank content", async (t) => {

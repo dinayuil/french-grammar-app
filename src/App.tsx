@@ -23,6 +23,7 @@ import {
   type SectionMap,
 } from "./learning/sections";
 import type { Chapter, Progress } from "./types";
+import { useClientSync } from "./sync/useClientSync";
 import {
   applyTheme,
   getSystemPrefersDark,
@@ -79,6 +80,8 @@ export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: Section
   );
   const libraryScrollTop = useRef(0);
   const [goalDialogProgress, setGoalDialogProgress] = useState<Progress | null>(null);
+  /** 同步控制器就绪后,把本地学习变更登记为待同步;远端应用不经过这里。 */
+  const notifyLocalChangeRef = useRef<(() => void) | null>(null);
 
   const [themeChoice, setThemeChoice] = useState<ThemeChoice>(() => loadThemeChoice());
   const [systemDark, setSystemDark] = useState(() => getSystemPrefersDark());
@@ -96,10 +99,45 @@ export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: Section
   };
 
   const updateProgress = (p: Progress) => {
+    const changed = p !== progressRef.current;
     progressRef.current = p;
     setProgress(p);
     saveProgress(p);
+    // 只有真正落盘成功的本地修改才通知同步;远端应用走 applyRemoteProgress。
+    if (changed) {
+      try {
+        notifyLocalChangeRef.current?.();
+      } catch {
+        // 同步调度异常不能影响学习记录的保存与显示。
+      }
+    }
   };
+
+  /**
+   * 云端进度:必须先成功写入本机存储,再更新 ref 与界面。控制器在回调成功返回
+   * 后才确认共同基线;这里绝不通知 dirty,避免把下载结果再上传成新变更。
+   */
+  const applyRemoteProgress = (remote: Progress) => {
+    saveProgress(remote);
+    progressRef.current = remote;
+    setProgress(remote);
+  };
+
+  const { controller: syncController } = useClientSync({
+    getProgress: () => progressRef.current,
+    applyProgress: applyRemoteProgress,
+    interactionActive:
+      view.name === "lesson" || view.name === "review" || view.name === "reader",
+  });
+
+  useEffect(() => {
+    notifyLocalChangeRef.current = syncController
+      ? () => syncController.notifyLocalChange()
+      : null;
+    return () => {
+      notifyLocalChangeRef.current = null;
+    };
+  }, [syncController]);
 
   const handleStudyTick = (kind: StudyKind, seconds: number) => {
     try {
@@ -311,6 +349,7 @@ export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: Section
         onChange={updateProgress}
         themeChoice={themeChoice}
         onThemeChange={changeTheme}
+        syncController={syncController}
       />
     );
   }

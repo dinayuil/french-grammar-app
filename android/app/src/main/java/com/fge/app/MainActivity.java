@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(AppThemePlugin.class);
+        registerPlugin(FgeSyncPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

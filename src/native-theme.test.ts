@@ -11,6 +11,20 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("@capacitor/core", () => mocks);
 
+const desktopMock = vi.hoisted(() => ({
+  isDesktopPlatform: vi.fn(),
+  saveDesktopFile: vi.fn(),
+}));
+
+vi.mock("./native/desktop", () => desktopMock);
+
+const windowMock = vi.hoisted(() => ({
+  setTheme: vi.fn(),
+  getCurrentWindow: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/window", () => windowMock);
+
 import { applyNativeTheme } from "./native-theme";
 
 function installHarmony(invoke: ReturnType<typeof vi.fn>): void {
@@ -27,6 +41,9 @@ function removeHarmony(): void {
 beforeEach(() => {
   vi.clearAllMocks();
   removeHarmony();
+  desktopMock.isDesktopPlatform.mockReturnValue(false);
+  windowMock.setTheme.mockResolvedValue(undefined);
+  windowMock.getCurrentWindow.mockReturnValue({ setTheme: windowMock.setTheme });
   mocks.registerPlugin.mockReturnValue({ apply: mocks.apply });
   mocks.apply.mockResolvedValue(undefined);
 });
@@ -90,5 +107,29 @@ describe("applyNativeTheme harmony", () => {
     expect(() => applyNativeTheme("light")).not.toThrow();
     await Promise.resolve();
     expect(invoke).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("applyNativeTheme desktop", () => {
+  test("Tauri 桌面通过窗口 API 同步标题栏主题,不触碰 Capacitor", async () => {
+    desktopMock.isDesktopPlatform.mockReturnValue(true);
+
+    applyNativeTheme("dark");
+
+    await vi.waitFor(() =>
+      expect(windowMock.setTheme).toHaveBeenCalledWith("dark")
+    );
+    expect(mocks.registerPlugin).not.toHaveBeenCalled();
+    expect(mocks.apply).not.toHaveBeenCalled();
+  });
+
+  test("桌面主题失败仍是 best effort", async () => {
+    desktopMock.isDesktopPlatform.mockReturnValue(true);
+    windowMock.setTheme.mockRejectedValueOnce(new Error("no permission"));
+
+    expect(() => applyNativeTheme("light")).not.toThrow();
+    await vi.waitFor(() =>
+      expect(windowMock.setTheme).toHaveBeenCalledWith("light")
+    );
   });
 });

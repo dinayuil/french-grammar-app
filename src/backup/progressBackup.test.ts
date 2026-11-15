@@ -129,6 +129,13 @@ const sharePluginMock = vi.hoisted(() => ({ share: vi.fn() }));
 
 vi.mock("@capacitor/share", () => ({ Share: sharePluginMock }));
 
+const desktopMock = vi.hoisted(() => ({
+  isDesktopPlatform: vi.fn(),
+  saveDesktopFile: vi.fn(),
+}));
+
+vi.mock("../native/desktop", () => desktopMock);
+
 /* ------------------------------------------------------------------ */
 /* Web download mocks                                                  */
 /* ------------------------------------------------------------------ */
@@ -156,6 +163,7 @@ function restoreUrlMethod(
 
 beforeEach(() => {
   localStorage.clear();
+  desktopMock.isDesktopPlatform.mockReturnValue(false);
   vi.clearAllMocks();
   removeHarmonyBridge();
 
@@ -1017,5 +1025,63 @@ describe("exportBackup harmony", () => {
     expect(createObjectURL).not.toHaveBeenCalled();
     expect(clickedAnchors).toHaveLength(0);
     expect(filesystemMock.writeFile).not.toHaveBeenCalled();
+  });
+});
+
+describe("exportBackup desktop", () => {
+  beforeEach(() => {
+    desktopMock.isDesktopPlatform.mockReturnValue(true);
+  });
+
+  test("桌面另存为写入 UTF-8 JSON,不触发 Capacitor 或下载", async () => {
+    desktopMock.saveDesktopFile.mockResolvedValue({ status: "saved" });
+    capacitorMock.isNativePlatform.mockReturnValue(true);
+
+    await exportBackup(RICH);
+
+    expect(desktopMock.saveDesktopFile).toHaveBeenCalledTimes(1);
+    const file = desktopMock.saveDesktopFile.mock.calls[0][0];
+    expect(file.filename).toMatch(
+      /^fge-progress-(public|internal)-\d{4}-\d{2}-\d{2}\.json$/
+    );
+    expect(file.mimeType).toBe("application/json");
+    expect(file.encoding).toBe("utf8");
+    expect(parseBackup(file.data).progress).toEqual(RICH);
+    expect(filesystemMock.writeFile).not.toHaveBeenCalled();
+    expect(sharePluginMock.share).not.toHaveBeenCalled();
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  test("取消另存为 → BackupCancelledError,不降级", async () => {
+    desktopMock.saveDesktopFile.mockResolvedValue({ status: "cancelled" });
+
+    let caught: unknown;
+    try {
+      await exportBackup(RICH);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(BackupCancelledError);
+    expect(isBackupCancelled(caught)).toBe(true);
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(filesystemMock.writeFile).not.toHaveBeenCalled();
+  });
+
+  test("原生保存失败 → BackupError,不偷偷下载", async () => {
+    desktopMock.saveDesktopFile.mockRejectedValue(new Error("无法写入导出文件"));
+
+    let caught: unknown;
+    try {
+      await exportBackup(RICH);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(BackupError);
+    expect((caught as Error).message).toMatch(/导出失败/);
+    expect((caught as Error).message).toMatch(/无法写入导出文件/);
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(clickedAnchors).toHaveLength(0);
   });
 });

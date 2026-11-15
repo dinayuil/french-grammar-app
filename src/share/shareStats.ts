@@ -1,5 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import type { Progress } from "../types";
+import { isDesktopPlatform, saveDesktopFile } from "../native/desktop";
 import { isHarmonyPlatform, shareHarmonyFile } from "../native/platform";
 import {
   buildStatsCardData,
@@ -51,6 +52,17 @@ export async function shareStatsCard(
       return result.status === "cancelled"
         ? { status: "cancelled" }
         : { status: "shared" };
+    }
+    if (isDesktopPlatform()) {
+      const result = await saveDesktopFile({
+        filename,
+        mimeType: "image/png",
+        encoding: "base64",
+        data: statsCardBase64(canvas).replace(BASE64_PNG_PREFIX, ""),
+      });
+      return result.status === "cancelled"
+        ? { status: "cancelled" }
+        : { status: "downloaded", filename };
     }
     return Capacitor.isNativePlatform()
       ? await shareNative(canvas, filename)

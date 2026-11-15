@@ -35,6 +35,13 @@ const sharePluginMock = vi.hoisted(() => ({ share: vi.fn() }));
 
 vi.mock("@capacitor/share", () => ({ Share: sharePluginMock }));
 
+const desktopMock = vi.hoisted(() => ({
+  isDesktopPlatform: vi.fn(),
+  saveDesktopFile: vi.fn(),
+}));
+
+vi.mock("../native/desktop", () => desktopMock);
+
 type ShareFn = (data?: ShareData) => Promise<unknown>;
 type CanShareFn = (data?: ShareData) => boolean;
 
@@ -109,6 +116,7 @@ beforeEach(() => {
   statsCardMocks.statsCardFilename.mockReturnValue(FILENAME);
 
   capacitorMock.isNativePlatform.mockReturnValue(false);
+  desktopMock.isDesktopPlatform.mockReturnValue(false);
   filesystemMock.writeFile.mockResolvedValue({ uri: CACHED_URI });
   filesystemMock.getUri.mockResolvedValue({ uri: CACHED_URI });
   sharePluginMock.share.mockResolvedValue({ activityType: "test" });
@@ -337,6 +345,55 @@ describe("shareStatsCard harmony", () => {
 
     expect(result.status).toBe("error");
     expect(result).toMatchObject({ message: expect.stringMatching(/鸿蒙|无效/) });
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(clickedAnchors).toHaveLength(0);
+  });
+});
+
+describe("shareStatsCard desktop", () => {
+  beforeEach(() => {
+    desktopMock.isDesktopPlatform.mockReturnValue(true);
+  });
+
+  test("桌面另存为 PNG → downloaded,不触发 Capacitor/Web 分享", async () => {
+    desktopMock.saveDesktopFile.mockResolvedValue({ status: "saved" });
+    capacitorMock.isNativePlatform.mockReturnValue(true);
+
+    const result = await shareStatsCard(PROGRESS, DATE);
+
+    expect(result).toEqual({ status: "downloaded", filename: FILENAME });
+    expect(desktopMock.saveDesktopFile).toHaveBeenCalledWith({
+      filename: FILENAME,
+      mimeType: "image/png",
+      encoding: "base64",
+      data: "QUJD",
+    });
+    expect(filesystemMock.writeFile).not.toHaveBeenCalled();
+    expect(sharePluginMock.share).not.toHaveBeenCalled();
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  test("取消另存为 → cancelled,不降级为下载", async () => {
+    desktopMock.saveDesktopFile.mockResolvedValue({ status: "cancelled" });
+
+    const result = await shareStatsCard(PROGRESS, DATE);
+
+    expect(result).toEqual({ status: "cancelled" });
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(clickedAnchors).toHaveLength(0);
+  });
+
+  test("原生保存失败 → error,不偷偷下载", async () => {
+    desktopMock.saveDesktopFile.mockRejectedValue(
+      new Error("无法写入导出文件")
+    );
+
+    const result = await shareStatsCard(PROGRESS, DATE);
+
+    expect(result).toEqual({
+      status: "error",
+      message: "无法写入导出文件",
+    });
     expect(createObjectURL).not.toHaveBeenCalled();
     expect(clickedAnchors).toHaveLength(0);
   });

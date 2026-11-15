@@ -48,6 +48,35 @@ const APP_ROOT_TEXT_FILES = new Set([
 
 const APP_ROOT_JSON_FILES = new Set(["package.json", "package-lock.json", "tsconfig.json", "tsconfig.tools.json"]);
 const APP_DOC_FILES = new Set(["docs/development.md", "docs/releases.md"]);
+
+// Windows Tauri shell. Only exact configuration paths are accepted as JSON;
+// Rust sources are confined to src-tauri/src and the single generated icon is
+// the only binary asset. Generated cargo/gen output is skipped explicitly.
+const WINDOWS_EXACT_DIRS = new Set([
+  "src-tauri",
+  "src-tauri/src",
+  "src-tauri/capabilities",
+  "src-tauri/icons",
+]);
+const WINDOWS_TEXT_FILES = new Set([
+  "src-tauri/Cargo.lock",
+  "src-tauri/Cargo.toml",
+  "src-tauri/build.rs",
+  "src-tauri/tauri.conf.json",
+  "src-tauri/tauri.public.conf.json",
+  "src-tauri/tauri.internal.conf.json",
+  "src-tauri/tauri.installer-standard.conf.json",
+  "src-tauri/tauri.installer-offline.conf.json",
+]);
+const WINDOWS_JSON_FILES = new Set([
+  "src-tauri/tauri.conf.json",
+  "src-tauri/tauri.public.conf.json",
+  "src-tauri/tauri.internal.conf.json",
+  "src-tauri/tauri.installer-standard.conf.json",
+  "src-tauri/tauri.installer-offline.conf.json",
+  "src-tauri/capabilities/main.json",
+]);
+const WINDOWS_BINARY_FILES = new Set(["src-tauri/icons/icon.ico"]);
 // Exact workflow allowlist: no wildcards, no nested directories, no .yaml
 // duplicates, and no hidden files. Anything else under .github is rejected.
 const ALLOWED_APP_WORKFLOWS = new Set([
@@ -131,6 +160,7 @@ const HARMONY_ETS_FILES = new Set([
   "harmony/entry/src/main/ets/entryability/EntryAbility.ets",
   "harmony/entry/src/main/ets/pages/Index.ets",
   "harmony/entry/src/main/ets/bridge/FgeHarmonyBridge.ets",
+  "harmony/entry/src/main/ets/bridge/FgeSyncManager.ets",
 ]);
 
 // Resource metadata only, by exact path. These files are parsed as JSON and
@@ -202,6 +232,8 @@ const APP_SKIP_PREFIXES = [
   "harmony/.hvigor",
   "harmony/oh_modules",
   "harmony/entry/oh_modules",
+  "src-tauri/target",
+  "src-tauri/gen",
 ];
 const PUBLIC_SKIP_PREFIXES = [".git"];
 
@@ -286,13 +318,14 @@ export const RULES = Object.freeze([
   "App root source/config allowlist: .gitattributes, .gitignore, LICENSE, README.md, capacitor.config.ts, index.html, package.json, package-lock.json, start.bat, tsconfig.json, tsconfig.tools.json, vite.config.ts, build-apk.bat.",
   "App code allowlist: src/**/*.{ts,tsx,css}, build/**/*.{ts,mjs,mts}, scripts/**/*.{mjs,mts}.",
   "App maintenance documentation allowlist: exactly docs/development.md and docs/releases.md; other documents and nested documentation directories are rejected.",
+  "Windows Tauri allowlist: exact src-tauri config/lock/build files, capabilities/main.json, Rust under src-tauri/src/**, and only icons/icon.ico. Other Tauri JSON/ICO, Cargo target/gen output, and nested arbitrary directories are rejected.",
   "GitHub Actions workflow allowlist: exactly .github/workflows/deploy-pages.yml, .github/workflows/ci.yml, and .github/workflows/build-public-apk.yml; other workflow files, nested workflow directories, .yaml duplicates, hidden files, and other .github files are rejected.",
   "Android template allowlist: the checked-in Gradle wrapper/config files, Java under android/app/src/main/java/**, XML/images under android/app/src/main/res/** or android/app/src/{public,internal}/res/**, and only the exact Gradle wrapper JAR under android/gradle/wrapper/.",
-  "HarmonyOS template allowlist: exactly the harmony/ root config files (build-profile.json5, oh-package.json5, hvigorfile.ts), AppScope/app.json5, hvigor/hvigor-config.json5, entry/build-profile.json5, entry/oh-package.json5, entry/hvigorfile.ts, entry/src/main/module.json5, the exact ArkTS sources EntryAbility.ets, Index.ets, and FgeHarmonyBridge.ets, exact element/profile resource metadata JSON (base and the dark color qualifier), and media icons under the exact AppScope/entry resource directories. Unknown ETS, JSON5, resource JSON, and directories are rejected; JSON5 is only accepted at those exact config paths and must not contain question-bank content. Signing configurations, passwords, certificate/key paths, and machine-specific paths are not allowed.",
+  "HarmonyOS template allowlist: exactly the harmony/ root config files (build-profile.json5, oh-package.json5, hvigorfile.ts), AppScope/app.json5, hvigor/hvigor-config.json5, entry/build-profile.json5, entry/oh-package.json5, entry/hvigorfile.ts, entry/src/main/module.json5, the exact ArkTS sources EntryAbility.ets, Index.ets, FgeHarmonyBridge.ets, and FgeSyncManager.ets, exact element/profile resource metadata JSON (base and the dark color qualifier), and media icons under the exact AppScope/entry resource directories. Unknown ETS, JSON5, resource JSON, and directories are rejected; JSON5 is only accepted at those exact config paths and must not contain question-bank content. Signing configurations, passwords, certificate/key paths, and machine-specific paths are not allowed.",
   "Public bank allowlist: root manifest.json, LICENSE, README.md, .gitignore, .gitattributes, exactly .github/workflows/notify-app.yml, plus exactly the chapter JSON paths declared by manifest.json. No other public file is allowed.",
-  "Named app JSON allowlist: package.json, package-lock.json, tsconfig.json, tsconfig.tools.json only; any other app JSON is treated as real content and rejected, except exact HarmonyOS resource metadata JSON which must not contain question-bank content.",
+  "Named app JSON allowlist: package.json, package-lock.json, tsconfig.json, tsconfig.tools.json only; any other app JSON is treated as real content and rejected, except exact HarmonyOS resource metadata JSON which must not contain question-bank content, and exact Windows Tauri config/capability JSON.",
   "Forbidden everywhere: PDFs, key/keystore/signing material, secrets, internal/private manifests, private content directories, source maps, APK/AAB and .hap/.har/.hsp/.app internal build artifacts, p7b/p7c/p7s signing chain material, symlinks/junctions, and unknown files.",
-  "Skipped exact generated locations (not audited by this guard): .git, node_modules, dist, coverage, .fge-build, android/.gradle, android/build, android/app/build, android/app/src/main/assets/public, android/capacitor-cordova-android-plugins, harmony/.hvigor, harmony/oh_modules, harmony/entry/oh_modules, and known Capacitor-generated files. A top-level .git ordinary file is skipped only when it is a single-line safe submodule gitdir pointer into ../.git/modules/<name> (LF/CRLF, at most 1024 bytes); its target Git directory is never followed or inventoried.",
+  "Skipped exact generated locations (not audited by this guard): .git, node_modules, dist, coverage, .fge-build, android/.gradle, android/build, android/app/build, android/app/src/main/assets/public, android/capacitor-cordova-android-plugins, harmony/.hvigor, harmony/oh_modules, harmony/entry/oh_modules, src-tauri/target, src-tauri/gen, and known Capacitor-generated files. A top-level .git ordinary file is skipped only when it is a single-line safe submodule gitdir pointer into ../.git/modules/<name> (LF/CRLF, at most 1024 bytes); its target Git directory is never followed or inventoried.",
   "This guard is an inventory/provenance check, not proof of copyright originality. Private-corpus comparison, all-history review, APK contents and generated output must be audited separately.",
 ]);
 
@@ -370,6 +403,8 @@ function isAllowedAppDirectory(rel) {
   if (rel === ".github" || rel === ".github/workflows") return true;
   if (ANDROID_EXACT_DIRS.has(rel)) return true;
   if (HARMONY_EXACT_DIRS.has(rel)) return true;
+  if (WINDOWS_EXACT_DIRS.has(rel)) return true;
+  if (rel.startsWith("src-tauri/src/")) return true;
   if (rel.startsWith("android/app/src/main/java/")) return true;
   if (rel.startsWith("android/app/src/main/res/")) return true;
   if (isAndroidFlavorRoot(rel)) return true;
@@ -405,6 +440,8 @@ function isAllowedAppTextFile(rel) {
   if (rel.startsWith("build/") && APP_BUILD_EXTENSIONS.has(ext)) return true;
   if (rel.startsWith("scripts/") && APP_SCRIPT_EXTENSIONS.has(ext)) return true;
   if (ALLOWED_APP_WORKFLOWS.has(rel)) return true;
+  if (WINDOWS_TEXT_FILES.has(rel)) return true;
+  if (rel.startsWith("src-tauri/src/") && ext === ".rs") return true;
   if (HARMONY_CONFIG_FILES.has(rel)) return true;
   if (HARMONY_ETS_FILES.has(rel)) return true;
   if (ANDROID_TEXT_FILES.has(rel)) return true;
@@ -417,6 +454,7 @@ function isAllowedAppTextFile(rel) {
 function isAllowedAppBinary(rel) {
   const ext = fileExtension(rel);
   if (rel === GRADLE_WRAPPER_JAR) return true;
+  if (WINDOWS_BINARY_FILES.has(rel)) return true;
   if (rel.startsWith("android/app/src/main/res/") && APP_IMAGE_EXTENSIONS.has(ext)) return true;
   if (isAndroidFlavorResPath(rel) && APP_IMAGE_EXTENSIONS.has(ext)) return true;
   if (HARMONY_MEDIA_DIRS.has(path.posix.dirname(rel)) && APP_IMAGE_EXTENSIONS.has(ext)) return true;
@@ -786,6 +824,18 @@ function validateBinarySignature(rel, buffer, errors) {
     }
     return;
   }
+  if (rel === "src-tauri/icons/icon.ico") {
+    if (
+      buffer.length < 6 ||
+      buffer[0] !== 0x00 ||
+      buffer[1] !== 0x00 ||
+      buffer[2] !== 0x01 ||
+      buffer[3] !== 0x00
+    ) {
+      addError(errors, `app: ${rel}: Windows icon does not have an ICO signature`);
+    }
+    return;
+  }
   if (ext === ".png" && !hasPngMagic(buffer)) {
     addError(errors, `app: ${rel}: file ending in .png is not a PNG image`);
   } else if ((ext === ".jpg" || ext === ".jpeg") && !hasJpegMagic(buffer)) {
@@ -829,7 +879,7 @@ async function inspectAppFile(rel, abs, size, label, errors) {
   }
 
   if (ext === ".json") {
-    const isNamedConfig = APP_ROOT_JSON_FILES.has(rel);
+    const isNamedConfig = APP_ROOT_JSON_FILES.has(rel) || WINDOWS_JSON_FILES.has(rel);
     const text = await readUtf8File(abs, rel, size, label, errors);
     if (text !== null) {
       parseJsonText(text, rel, label, errors, !isNamedConfig);

@@ -1,4 +1,5 @@
 import { Capacitor } from "@capacitor/core";
+import { isDesktopPlatform, saveDesktopFile } from "../native/desktop";
 import { isHarmonyPlatform, shareHarmonyFile } from "../native/platform";
 import { saveProgress } from "../storage";
 import type { DayRecord, LessonRecord, MistakeInfo, Progress } from "../types";
@@ -560,6 +561,18 @@ export async function exportBackup(progress: Progress): Promise<void> {
   try {
     if (isHarmonyPlatform()) {
       await shareHarmony(json, filename);
+      return;
+    }
+    if (isDesktopPlatform()) {
+      const result = await saveDesktopFile({
+        filename,
+        mimeType: "application/json",
+        encoding: "utf8",
+        data: json,
+      });
+      if (result.status === "cancelled") {
+        throw new BackupCancelledError("已取消导出");
+      }
       return;
     }
     if (Capacitor.isNativePlatform()) {

@@ -27,6 +27,10 @@ android/app/src/main/res/xml/config.xml
 *.apk
 *.aab
 
+# Windows Tauri build output and generated ACL schemas
+src-tauri/target/
+src-tauri/gen/
+
 # HarmonyOS packages, signing material and local IDE config
 *.hap
 *.har

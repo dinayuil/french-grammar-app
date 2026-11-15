@@ -5,10 +5,12 @@ import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { systemShare } from '@kit.ShareKit';
 import { util } from '@kit.ArkTS';
 import { window } from '@kit.ArkUI';
+import { FgeSyncManager } from './FgeSyncManager';
 
 const MAX_BACKUP_BYTES = 5 * 1024 * 1024;
 const MAX_PNG_BYTES = 10 * 1024 * 1024;
 const MAX_FILENAME_LENGTH = 120;
+const PASSWORD_KEY = 'password';
 const PNG_SIGNATURE: number[] = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 function themeBackground(mode: string): string {
@@ -24,6 +26,13 @@ interface Reply {
   message?: string;
 }
 
+interface SyncReply {
+  status: string;
+  message?: string;
+  config?: Object;
+  response?: Object;
+}
+
 interface ParsedRequest {
   operation: string;
   mode: string;
@@ -31,6 +40,7 @@ interface ParsedRequest {
   mimeType: string;
   encoding: string;
   data: string;
+  raw: Record<string, Object> | null;
 }
 
 /**
@@ -47,9 +57,11 @@ export class FgeHarmonyBridge {
 
   private context: common.UIAbilityContext | null = null;
   private shareBusy: boolean = false;
+  private sync: FgeSyncManager = new FgeSyncManager();
 
   setContext(context: common.UIAbilityContext): void {
     this.context = context;
+    this.sync.setContext(context);
   }
 
   invoke(requestJson: string): Promise<string> {
@@ -58,7 +70,10 @@ export class FgeHarmonyBridge {
       if (request.operation === 'applyTheme') {
         return this.applyTheme(request.mode);
       }
-      return this.shareFile(request);
+      if (request.operation === 'shareFile') {
+        return this.shareFile(request);
+      }
+      return this.handleSync(request);
     } catch (error) {
       return Promise.resolve(this.reply({
         status: 'error',
@@ -135,6 +150,7 @@ export class FgeHarmonyBridge {
         mimeType: '',
         encoding: '',
         data: '',
+        raw: null,
       };
     }
 
@@ -155,10 +171,117 @@ export class FgeHarmonyBridge {
       ) {
         throw new Error('分享字段类型无效');
       }
-      return { operation, mode: '', filename, mimeType, encoding, data };
+      return {
+        operation,
+        mode: '',
+        filename,
+        mimeType,
+        encoding,
+        data,
+        raw: null,
+      };
+    }
+
+    return this.parseSyncRequest(operation, keys, record);
+  }
+
+  private emptyRequest(
+    operation: string,
+    raw: Record<string, Object>
+  ): ParsedRequest {
+    return {
+      operation,
+      mode: '',
+      filename: '',
+      mimeType: '',
+      encoding: '',
+      data: '',
+      raw,
+    };
+  }
+
+  /** 同步 operation 只接受锁定字段;请求/配置内容由原生同步层再次校验。 */
+  private parseSyncRequest(
+    operation: string,
+    keys: string[],
+    record: Record<string, Object>
+  ): ParsedRequest {
+    if (operation === 'syncReadConfig' || operation === 'syncDisconnect') {
+      this.assertExactKeys(keys, ['version', 'operation']);
+      return this.emptyRequest(operation, record);
+    }
+
+    if (operation === 'syncWriteConfig') {
+      const allowed = ['version', 'operation', 'config'];
+      const hasPassword = keys.indexOf(PASSWORD_KEY) >= 0;
+      if (hasPassword) {
+        allowed.push(PASSWORD_KEY);
+      }
+      this.assertExactKeys(keys, allowed);
+      const config = record['config'];
+      if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+        throw new Error('同步配置无效');
+      }
+      if (hasPassword && typeof record[PASSWORD_KEY] !== 'string') {
+        throw new Error('同步密码无效');
+      }
+      return this.emptyRequest(operation, record);
+    }
+
+    if (operation === 'syncRequest') {
+      this.assertExactKeys(keys, ['version', 'operation', 'request']);
+      const request = record['request'];
+      if (typeof request !== 'object' || request === null || Array.isArray(request)) {
+        throw new Error('同步请求无效');
+      }
+      return this.emptyRequest(operation, record);
     }
 
     throw new Error('未知 operation');
+  }
+
+  private async handleSync(request: ParsedRequest): Promise<string> {
+    const raw = request.raw;
+    if (raw === null) {
+      return this.reply({ status: 'error', message: '请求无效' });
+    }
+
+    try {
+      if (request.operation === 'syncReadConfig') {
+        const config = await this.sync.readConfig();
+        const result: SyncReply = { status: 'ok' };
+        if (config !== null) {
+          result.config = config;
+        }
+        return this.replySync(result);
+      }
+      if (request.operation === 'syncWriteConfig') {
+        const passwordValue = raw[PASSWORD_KEY];
+        const password: string | null =
+          passwordValue === undefined ? null : passwordValue as string;
+        await this.sync.writeConfig(raw['config'] as Object, password);
+        return this.replySync({ status: 'ok' });
+      }
+      if (request.operation === 'syncDisconnect') {
+        await this.sync.disconnect();
+        return this.replySync({ status: 'ok' });
+      }
+      if (request.operation === 'syncRequest') {
+        const response = await this.sync.request(raw['request'] as Object);
+        const result: SyncReply = { status: 'ok', response: response };
+        return this.replySync(result);
+      }
+      return this.reply({ status: 'error', message: '未知 operation' });
+    } catch (error) {
+      return this.reply({
+        status: 'error',
+        message: this.messageFor(error, '同步失败'),
+      });
+    }
+  }
+
+  private replySync(reply: SyncReply): string {
+    return JSON.stringify(reply);
   }
 
   private validateFilename(filename: string): void {
