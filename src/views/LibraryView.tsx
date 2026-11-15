@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Card, Chapter } from "../types";
 import {
   buildSearchIndex,
@@ -23,6 +23,11 @@ interface Props {
   onQueryChange: (query: string) => void;
   onOpenCard: (chapterId: string, cardId: string, sectionId?: string) => void;
   sectionMap?: SectionMap;
+  /** 由父级保存时，返回讲解库后仍保持原来的展开章节。 */
+  expanded?: Set<string>;
+  onExpandedChange?: (expanded: Set<string>) => void;
+  /** 从阅读器返回时恢复目录的页面滚动位置。 */
+  restoreScrollTop?: number | null;
 }
 
 export function LibraryView({
@@ -31,9 +36,34 @@ export function LibraryView({
   onQueryChange,
   onOpenCard,
   sectionMap = SECTION_MAP,
+  expanded: expandedProp,
+  onExpandedChange,
+  restoreScrollTop,
 }: Props) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [innerExpanded, setInnerExpanded] = useState<Set<string>>(
+    () => new Set()
+  );
+  const expanded = expandedProp ?? innerExpanded;
   const activeQuery = query.trim();
+  const returnToDirectoryRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (restoreScrollTop == null) return;
+    // 讲解库使用页面滚动；阅读器会把页面归零，返回后在这里恢复。
+    const root = document.scrollingElement ?? document.documentElement;
+    if (root) root.scrollTop = restoreScrollTop;
+    if (document.body) document.body.scrollTop = restoreScrollTop;
+  }, [restoreScrollTop]);
+
+  useLayoutEffect(() => {
+    // 从搜索结果点「返回讲解库」后目录是新的视觉起点，滚动归顶。
+    // 手动清空搜索不触发这里，保持搜索框自带清除的原有行为。
+    if (activeQuery !== "" || !returnToDirectoryRef.current) return;
+    returnToDirectoryRef.current = false;
+    const root = document.scrollingElement ?? document.documentElement;
+    if (root) root.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+  }, [activeQuery]);
 
   const sectionSets = useMemo(
     () => chapters.map((chapter) => getLearningSections(chapter, sectionMap)),
@@ -72,12 +102,16 @@ export function LibraryView({
   }, [results, chapters, sectionSets]);
 
   const toggleChapter = (id: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    const next = new Set(expanded);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    if (expandedProp === undefined) setInnerExpanded(next);
+    onExpandedChange?.(next);
+  };
+
+  const backToDirectory = () => {
+    returnToDirectoryRef.current = true;
+    onQueryChange("");
   };
 
   const openCard = (chapterId: string, cardId: string, sectionId?: string) =>
@@ -99,7 +133,16 @@ export function LibraryView({
     chapterId: string,
     sectionId?: string
   ) => {
-    const units = groupCardsByUnit(cards);
+    // 已配置小章时，小章自身就是呈现层：按传入的源序平铺，不再按稳定
+    // ID 里的 -uN- 重建单元层，否则跨章迁入/无单元卡会被重排。
+    const units = sectionId
+      ? [
+          {
+            unit: null,
+            cards: cards.map((card, cardIndex) => ({ card, cardIndex })),
+          },
+        ]
+      : groupCardsByUnit(cards);
     return (
       <div className="library-card-list">
         {units.map((unit) => (
@@ -141,17 +184,28 @@ export function LibraryView({
             onChange={(e) => onQueryChange(e.target.value)}
           />
         </div>
+        {activeQuery && (
+          <div className="library-results-bar">
+            <button
+              className="library-results-back btn btn-small btn-secondary"
+              type="button"
+              onClick={backToDirectory}
+            >
+              <span aria-hidden="true">←</span> 返回讲解库
+            </button>
+            <span className="library-result-count">找到 {results.length} 条结果</span>
+          </div>
+        )}
       </div>
 
       {activeQuery ? (
         <div className="library-results">
-          <div className="library-result-count">找到 {results.length} 条结果</div>
           {results.length === 0 ? (
             <div className="library-empty">
               <p>未找到「{activeQuery}」相关讲解</p>
               <button
                 className="library-clear btn btn-secondary"
-                onClick={() => onQueryChange("")}
+                onClick={backToDirectory}
               >
                 清除搜索
               </button>

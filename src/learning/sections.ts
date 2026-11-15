@@ -1,8 +1,9 @@
 import type { Card, Chapter, Lesson, Progress } from "../types";
 
 /**
- * 章节内的小章配置。章节根容器、卡片/关卡 ID 与内容顺序都不变，本文件只
- * 声明学习组织层：每张卡、每个练习恰好属于一个小章，挑战可留在专题综合区。
+ * 章节内的小章配置。小章只声明学习组织层：每张卡、每个练习恰好属于一个
+ * 小章，挑战可留在专题综合区。资源可以跨章迁移并保留原 ID，因此本文件按
+ * 题库实际内容显式接纳资源，不要求 ID 前缀与所属章节一致。
  *
  * `key` 只需在章节内稳定；对外暴露的小章 id 会自动加上章节前缀，避免跨专题
  * 冲突。未在本表配置的章节（内部题库、测试章节）整章回退。
@@ -58,9 +59,6 @@ export const COMPREHENSIVE_TITLE = "专题综合挑战";
 
 const COMPREHENSIVE_KEY = "comprehensive";
 
-const range = (from: number, to: number): number[] =>
-  Array.from({ length: to - from + 1 }, (_, index) => from + index);
-
 function section(
   key: string,
   title: string,
@@ -82,19 +80,56 @@ const remainingChallenges: ComprehensiveBlueprint = { allChallenges: true };
 export const SECTION_MAP: SectionMap = {
   "pub-c01-boundaries": {
     sections: [
-      section("all", "冠词、省音与缩合", [], [], {
-        cardIds: range(1, 8).map((index) => `pub-c01-boundaries-card-${index}`),
-        lessonGroups: range(1, 8),
-        challengeGroups: [1, 2, 3],
+      section("all", "冠词", [], [], {
+        cardIds: [
+          "pub-c01-boundaries-card-gender-number",
+          "pub-c02-noun-phrases-card-u6-1",
+          "pub-c01-boundaries-card-1",
+          "pub-c02-noun-phrases-card-u6-2",
+          "pub-c02-noun-phrases-card-u6-3",
+        ],
+        lessonIds: [
+          "pub-c01-boundaries-l1",
+          "pub-c02-noun-phrases-l6-1",
+        ],
+      }),
+      section("spelling", "省音与缩合", [], [], {
+        cardIds: [
+          "pub-c01-boundaries-card-2",
+          "pub-c01-boundaries-card-3",
+          "pub-c01-boundaries-card-4",
+          "pub-c01-boundaries-card-du-des",
+          "pub-c01-boundaries-card-5",
+          "pub-c01-boundaries-card-6",
+          "pub-c01-boundaries-card-7",
+        ],
+        lessonIds: [
+          "pub-c01-boundaries-l2",
+          "pub-c01-boundaries-l3",
+          "pub-c01-boundaries-l4",
+          "pub-c01-boundaries-l5",
+          "pub-c02-noun-phrases-l6-2",
+          "pub-c01-boundaries-l6",
+          "pub-c01-boundaries-l7",
+          "pub-c01-boundaries-l8",
+        ],
       }),
     ],
+    comprehensive: remainingChallenges,
   },
 
   "pub-c02-noun-phrases": {
     sections: [
-      section("s1", "名词性数与阴性词形基础", [1, 2], [1, 2]),
-      section("s2", "阴性词尾与不规则、复合名词", [3, 4], [3, 4]),
-      section("s3", "复数、冠词与数量表达", [5, 6, 7], [5, 6, 7]),
+      section("s1", "名词性数、词义与词尾判性", [1], [1], {
+        cardIds: ["pub-c02-noun-phrases-card-u3-3"],
+      }),
+      section("s2", "阴性词形与不规则、复合名词", [2, 4], [2, 3, 4], {
+        cardIds: [
+          "pub-c02-noun-phrases-card-u3-1",
+          "pub-c02-noun-phrases-card-u3-2",
+        ],
+      }),
+      section("s3", "复数与数量表达", [5, 7], [5, 7]),
       section("s4", "名词补语与单复数转换", [8, 9], [8, 9]),
     ],
     comprehensive: remainingChallenges,
@@ -132,7 +167,14 @@ export const SECTION_MAP: SectionMap = {
 
   "pub-c05-present": {
     sections: [
-      section("s1", "être/avoir 与第一组现在时", [1, 2], [1, 2]),
+      section("s1", "语式时态概览与现在时基础", [1, 2], [1, 2], {
+        cardIds: [
+          "pub-c05-present-card-overview-mode-tense",
+          "pub-c05-present-card-overview-modes",
+          "pub-c05-present-card-overview-indicative",
+          "pub-c05-present-card-overview-other-tenses",
+        ],
+      }),
       section("s2", "拼写调整与 -ir 动词", [3, 4], [3, 4]),
       section("s3", "主谓一致与泛指主语", [5, 6], [5, 6]),
       section("s4", "现在时用法与不定式词干", [7, 8], [7, 8]),

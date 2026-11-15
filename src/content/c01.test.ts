@@ -47,4 +47,102 @@ describe.skipIf(__FGE_EDITION__ !== "public")("public: C01 word boundaries", () 
     expect(question).toBeDefined();
     if (question) expect(judge(question, ["J'habite", "Lyon."])).toBe(true);
   });
+
+  test("chapter title names articles and basic spelling", () => {
+    const chapter = CHAPTERS.find((item) => item.id === "pub-c01-boundaries");
+    expect(chapter?.title).toBe("冠词与基本拼写规则");
+    expect(chapter?.titleFr).toBe("Articles et règles de base de l'écriture");
+  });
+
+  test("cards follow the approved article-then-spelling sequence", () => {
+    const chapter = CHAPTERS.find((item) => item.id === "pub-c01-boundaries");
+    expect(chapter?.cards.map((card) => card.id)).toEqual([
+      "pub-c01-boundaries-card-gender-number",
+      "pub-c02-noun-phrases-card-u6-1",
+      "pub-c01-boundaries-card-1",
+      "pub-c02-noun-phrases-card-u6-2",
+      "pub-c02-noun-phrases-card-u6-3",
+      "pub-c01-boundaries-card-2",
+      "pub-c01-boundaries-card-3",
+      "pub-c01-boundaries-card-4",
+      "pub-c01-boundaries-card-du-des",
+      "pub-c01-boundaries-card-5",
+      "pub-c01-boundaries-card-6",
+      "pub-c01-boundaries-card-7",
+    ]);
+    expect(chapter?.cards.map((card) => card.id)).not.toContain(
+      "pub-c01-boundaries-card-8"
+    );
+  });
+
+  test("moved C02 article lessons sit after the spelling lessons and keep their IDs", () => {
+    const chapter = CHAPTERS.find((item) => item.id === "pub-c01-boundaries");
+    expect(chapter?.lessons.map((lesson) => lesson.id)).toEqual([
+      "pub-c01-boundaries-l1",
+      "pub-c01-boundaries-l2",
+      "pub-c01-boundaries-l3",
+      "pub-c01-boundaries-l4",
+      "pub-c01-boundaries-l5",
+      "pub-c02-noun-phrases-l6-1",
+      "pub-c02-noun-phrases-l6-2",
+      "pub-c01-boundaries-l6",
+      "pub-c01-boundaries-l7",
+      "pub-c01-boundaries-l8",
+    ]);
+    expect(chapter?.challenges.map((item) => item.id)).toEqual([
+      "pub-c01-boundaries-x1",
+      "pub-c01-boundaries-x2",
+      "pub-c01-boundaries-x3",
+    ]);
+  });
+
+  test("moved C02 lessons keep original question IDs and stay judgeable", () => {
+    const chapter = CHAPTERS.find((item) => item.id === "pub-c01-boundaries");
+    const moved = chapter?.lessons.filter((lesson) =>
+      lesson.id.startsWith("pub-c02-noun-phrases-l6-")
+    );
+    expect(moved?.map((lesson) => lesson.id)).toEqual([
+      "pub-c02-noun-phrases-l6-1",
+      "pub-c02-noun-phrases-l6-2",
+    ]);
+    expect(moved?.map((lesson) => lesson.questions.length)).toEqual([6, 6]);
+    expect(moved?.map((lesson) => lesson.questions.map((question) => question.id))).toEqual([
+      [
+        "pub-c02-noun-phrases-l6-q1",
+        "pub-c02-noun-phrases-l6-q2",
+        "pub-c02-noun-phrases-l6-q3",
+        "pub-c02-noun-phrases-l6-q4",
+        "pub-c02-noun-phrases-l6-q5",
+        "pub-c02-noun-phrases-l6-q6",
+      ],
+      [
+        "pub-c02-noun-phrases-l6-q7",
+        "pub-c02-noun-phrases-l6-q8",
+        "pub-c02-noun-phrases-l6-q9",
+        "pub-c02-noun-phrases-l6-q10",
+        "pub-c02-noun-phrases-l6-q11",
+        "pub-c02-noun-phrases-l6-q12",
+      ],
+    ]);
+
+    for (const lesson of moved ?? []) {
+      for (const question of lesson.questions) {
+        expect(
+          judge(question, question.answer),
+          `${question.id} 的原答案应判为正确`
+        ).toBe(true);
+        expect(
+          completedQuestion(question).prompt.trim(),
+          `${question.id} 应能生成完成题干`
+        ).not.toBe("");
+      }
+    }
+  });
+
+  test("C01 cards no longer reference deleted cards or old numeric card/unit labels", () => {
+    const chapter = CHAPTERS.find((item) => item.id === "pub-c01-boundaries");
+    const bodies = chapter?.cards.map((card) => card.body ?? "").join("\n") ?? "";
+    expect(bodies).not.toMatch(/局部综合/);
+    expect(bodies).not.toMatch(/第\s*\d+\s*(张|单元)/);
+  });
 });
