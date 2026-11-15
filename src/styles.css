@@ -45,6 +45,10 @@
   --gray-dark: var(--disabled);
   --text-light: var(--text-secondary);
   --nav-h: 64px;
+  --content-max: 520px;
+  --page-gutter: 16px;
+  --content-pad-top: 16px;
+  --content-pad-bottom: 24px;
   --shadow-sm: 0 1px 2px rgba(28, 36, 51, 0.05);
   --shadow-card: 0 1px 2px rgba(28, 36, 51, 0.04), 0 12px 28px -18px rgba(28, 36, 51, 0.28);
   --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
@@ -167,9 +171,10 @@ body {
 }
 
 .content {
-  max-width: 520px;
+  max-width: var(--content-max);
   margin: 0 auto;
-  padding: 16px 16px calc(var(--nav-h) + 24px);
+  padding: var(--content-pad-top) var(--page-gutter)
+    calc(var(--nav-h) + var(--content-pad-bottom));
 }
 
 /* ---- 主页 ---- */
@@ -886,7 +891,12 @@ body {
 .lesson {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - var(--nav-h) - 40px);
+  min-height: calc(
+    100vh - var(--nav-h) - var(--content-pad-top) - var(--content-pad-bottom)
+  );
+  min-height: calc(
+    100dvh - var(--nav-h) - var(--content-pad-top) - var(--content-pad-bottom)
+  );
 }
 
 .lesson-header {
@@ -1613,6 +1623,7 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
+  z-index: 20;
   height: var(--nav-h);
   display: flex;
   justify-content: center;
@@ -2047,8 +2058,12 @@ mark {
 .reader {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--nav-h) - 40px);
-  height: calc(100dvh - var(--nav-h) - 40px);
+  height: calc(
+    100vh - var(--nav-h) - var(--content-pad-top) - var(--content-pad-bottom)
+  );
+  height: calc(
+    100dvh - var(--nav-h) - var(--content-pad-top) - var(--content-pad-bottom)
+  );
 }
 
 .reader-header {
@@ -2522,6 +2537,247 @@ mark {
 
   .library-section-start {
     padding: 6px 10px;
+  }
+}
+
+/* ---- 平板:只加宽,保持手机单列 ---- */
+@media (min-width: 768px) {
+  :root {
+    --content-max: 700px;
+    --page-gutter: 24px;
+    --content-pad-top: 24px;
+  }
+
+  .reader-body {
+    padding: 24px 24px 28px;
+  }
+}
+
+/* ---- 桌面:顶部导航与按页面限宽 ---- */
+@media (min-width: 1024px) {
+  :root {
+    --content-max: 1120px;
+    --page-gutter: 32px;
+    --content-pad-top: 28px;
+    --content-pad-bottom: 40px;
+  }
+
+  .content {
+    padding-bottom: var(--content-pad-bottom);
+  }
+
+  /* 导航在 DOM 中位于内容之前;手机仍固定在底部。 */
+  .bottom-nav {
+    position: sticky;
+    top: 0;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    z-index: 20;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-top: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav-item {
+    flex: 0 0 auto;
+    min-width: 112px;
+    min-height: 44px;
+    max-width: none;
+    flex-direction: row;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+  }
+
+  .nav-item:not(.active):hover {
+    background: var(--surface-muted);
+  }
+
+  .nav-item.active {
+    background: var(--primary-soft);
+  }
+
+  .nav-item.active .nav-icon {
+    background: transparent;
+  }
+
+  .nav-item:focus-visible {
+    border-radius: 10px;
+    box-shadow: var(--focus);
+  }
+
+  .nav-item:focus-visible .nav-icon {
+    box-shadow: none;
+  }
+
+  /* 首页:左侧今日进度与复习,右侧章节列表。 */
+  .home {
+    display: grid;
+    grid-template-columns: 360px minmax(0, 1fr);
+    gap: 0 32px;
+    align-items: start;
+  }
+
+  .home-side {
+    position: sticky;
+    top: calc(var(--nav-h) + var(--content-pad-top));
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .home-greeting {
+    margin: 4px 0 16px;
+    font-size: 28px;
+  }
+
+  .home-hero {
+    margin-bottom: 12px;
+  }
+
+  .btn-review {
+    margin-bottom: 0;
+  }
+
+  .chapter-list,
+  .empty-state {
+    min-width: 0;
+  }
+
+  .chapter-card,
+  .section-card,
+  .lesson-item {
+    scroll-margin-top: calc(var(--nav-h) + 16px);
+  }
+
+  .chapter-card,
+  .section-card {
+    scroll-margin-bottom: 16px;
+  }
+
+  /* 练习:保持窄阅读列,底部主操作不再通栏。 */
+  .lesson {
+    max-width: 720px;
+    margin-inline: auto;
+  }
+
+  .quiz-prompt {
+    font-size: 20px;
+  }
+
+  .quiz-footer {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .quiz-footer .btn-wide {
+    width: auto;
+    min-width: 240px;
+    padding-inline: 32px;
+  }
+
+  /* 阅读器:正文限宽,目录从右侧打开。 */
+  .reader {
+    max-width: 700px;
+    margin-inline: auto;
+  }
+
+  .reader-chapter-title,
+  .reader-section-name {
+    font-size: 14px;
+  }
+
+  .reader-body {
+    padding: 28px 32px 32px;
+  }
+
+  .reader-body .card-title {
+    font-size: 24px;
+  }
+
+  .reader-body .card-body {
+    font-size: 16px;
+    line-height: 1.85;
+  }
+
+  .reader-drawer {
+    align-items: flex-end;
+    justify-content: flex-start;
+  }
+
+  .reader-drawer-panel {
+    width: 400px;
+    max-width: 400px;
+    height: 100%;
+    max-height: 100dvh;
+    margin: 0;
+    border-left: 1px solid var(--border);
+    border-radius: 0;
+    animation: drawer-slide-in 0.25s ease;
+  }
+
+  /* 讲解库:适度加宽,搜索结果保持较短行宽。 */
+  .library {
+    max-width: 1000px;
+    margin-inline: auto;
+  }
+
+  .library-header {
+    top: var(--nav-h);
+  }
+
+  .library-header h1 {
+    font-size: 30px;
+  }
+
+  .library-search-field {
+    max-width: 560px;
+  }
+
+  /* 章节行:把「开始阅读」并入标题行,避免在宽屏下多出一整行空白。 */
+  .library-chapter {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .library-chapter-head {
+    display: contents;
+  }
+
+  .library-chapter-actions {
+    padding: 0 14px 0 0;
+  }
+
+  .library-section-list,
+  .library-card-list {
+    grid-column: 1 / -1;
+  }
+
+  .library-results {
+    max-width: 760px;
+  }
+
+  /* 统计与设置:表单/图表不需要 1120。 */
+  .stats,
+  .settings {
+    max-width: 800px;
+    margin-inline: auto;
+  }
+}
+
+@keyframes drawer-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
   }
 }
 

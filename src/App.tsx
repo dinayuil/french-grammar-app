@@ -281,8 +281,7 @@ export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: Section
 
   return (
     <div className="app">
-      <div className="content">{body}</div>
-      <nav className="bottom-nav">
+      <nav className="bottom-nav" aria-label="主导航">
         <button
           className={`nav-item ${isPractice ? "active" : ""}`}
           type="button"
@@ -325,6 +324,7 @@ export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: Section
           <span>设置</span>
         </button>
       </nav>
+      <div className="content">{body}</div>
       {goalDialogProgress && (
         <GoalReachedDialog
           progress={goalDialogProgress}
