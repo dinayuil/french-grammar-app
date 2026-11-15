@@ -322,53 +322,55 @@ export function HomeView({
 
   return (
     <div className="home">
-      <h1 className="home-greeting">
-        Bonjour，今天练一点 <em>français</em>
-      </h1>
+      <div className="home-side">
+        <h1 className="home-greeting">
+          Bonjour，今天练一点 <em>français</em>
+        </h1>
 
-      <div className="home-hero">
-        <div className="hero-top">
-          <StreakFlame count={streak} />
-          <div
-            className={`hero-goal${goalMet ? " is-done" : ""}${
-              dailyGoal <= 0 ? " is-unset" : ""
-            }`}
-          >
-            <div className="hero-goal-head">
-              <span className="hero-goal-label">
-                {dailyGoal > 0 ? "今日目标" : "今日获得"}
-              </span>
-              <span className="hero-goal-rule" aria-hidden="true" />
-              <span className="hero-goal-value">
-                <b>{todayXp}</b>
-                {dailyGoal > 0 && (
-                  <span className="hero-goal-total"> / {dailyGoal}</span>
-                )}
-                <span className="hero-goal-unit"> XP</span>
-              </span>
+        <div className="home-hero">
+          <div className="hero-top">
+            <StreakFlame count={streak} />
+            <div
+              className={`hero-goal${goalMet ? " is-done" : ""}${
+                dailyGoal <= 0 ? " is-unset" : ""
+              }`}
+            >
+              <div className="hero-goal-head">
+                <span className="hero-goal-label">
+                  {dailyGoal > 0 ? "今日目标" : "今日获得"}
+                </span>
+                <span className="hero-goal-rule" aria-hidden="true" />
+                <span className="hero-goal-value">
+                  <b>{todayXp}</b>
+                  {dailyGoal > 0 && (
+                    <span className="hero-goal-total"> / {dailyGoal}</span>
+                  )}
+                  <span className="hero-goal-unit"> XP</span>
+                </span>
+              </div>
+              <div className="hero-goal-track" aria-hidden="true">
+                <div
+                  className="hero-goal-fill"
+                  style={{ width: `${goalPct}%` }}
+                />
+              </div>
+              <span className="hero-goal-note">{goalNote}</span>
             </div>
-            <div className="hero-goal-track" aria-hidden="true">
-              <div
-                className="hero-goal-fill"
-                style={{ width: `${goalPct}%` }}
-              />
-            </div>
-            <span className="hero-goal-note">{goalNote}</span>
           </div>
+          <LevelBar xp={progress.xp} />
         </div>
-        <LevelBar xp={progress.xp} />
-      </div>
 
-      <button
-        className="btn btn-review"
-        type="button"
-        disabled={reviewCount === 0}
-        onClick={() => onOpenReview()}
-      >
-        <ReviewIcon />
-        <span>复习错题</span>
-        {reviewCount > 0 && <span className="review-count">{reviewCount}</span>}
-      </button>
+        <button
+          className="btn btn-review"
+          type="button"
+          disabled={reviewCount === 0}
+          onClick={() => onOpenReview()}
+        >
+          <ReviewIcon />
+          <span>复习错题</span>
+          {reviewCount > 0 && <span className="review-count">{reviewCount}</span>}
+        </button>
+      </div>
 
       {!hasPlayableContent ? (
         <div className="empty-state">
