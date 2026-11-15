@@ -15,6 +15,34 @@ describe.skipIf(__FGE_EDITION__ !== "public")("public: C05 present tense", () =>
     ]);
   });
 
+  test("chapter title names indicative present, rules and subject-verb agreement", () => {
+    const chapter = CHAPTERS.find((item) => item.id === "pub-c05-present");
+    expect(chapter?.title).toBe("直陈式现在时：规则与主谓一致");
+    expect(chapter?.titleFr).toBe(
+      "Le présent de l'indicatif : règles et accord sujet-verbe"
+    );
+  });
+
+  test("four overview cards precede the existing conjugation cards", () => {
+    const chapter = CHAPTERS.find((item) => item.id === "pub-c05-present");
+    expect(chapter?.cards).toHaveLength(34);
+    expect(chapter?.cards.slice(0, 4).map((card) => card.id)).toEqual([
+      "pub-c05-present-card-overview-mode-tense",
+      "pub-c05-present-card-overview-modes",
+      "pub-c05-present-card-overview-indicative",
+      "pub-c05-present-card-overview-other-tenses",
+    ]);
+    expect(chapter?.cards[4]?.id).toBe("pub-c05-present-card-u1-1");
+    expect(chapter?.lessons).toHaveLength(17);
+    expect(chapter?.challenges).toHaveLength(3);
+    expect(
+      [...(chapter?.lessons ?? []), ...(chapter?.challenges ?? [])].reduce(
+        (count, lesson) => count + lesson.questions.length,
+        0
+      )
+    ).toBe(160);
+  });
+
   test("多空位 choice:选项分槽数与空数一致,正确项补全后无占位符或双空格", () => {
     const chapter = CHAPTERS.find((item) => item.id === "pub-c05-present");
     expect(chapter).toBeDefined();

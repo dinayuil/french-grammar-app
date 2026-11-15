@@ -9,7 +9,9 @@ vi.mock("virtual:fge-content", async () => {
 
 import App from "./App";
 import { STORAGE_KEY } from "./config";
-import { sectionedMap } from "./test/sectionFixtures";
+import { DEFAULT_PROGRESS } from "./storage";
+import { HomeView } from "./views/HomeView";
+import { sectionedChapters, sectionedMap } from "./test/sectionFixtures";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -102,7 +104,7 @@ afterEach(() => {
 });
 
 describe("首页小章呈现", () => {
-  test("专题展开后显示小章标题、讲解数与各自完成度，展开只显示该小章练习", () => {
+  test("专题展开后同时显示所有小章、练习与综合挑战，没有二次折叠", () => {
     seed({
       lessons: {
         "sec-demo-l1-1": { completed: true, stars: 2 },
@@ -124,31 +126,26 @@ describe("首页小章呈现", () => {
       $$(".chapter-card")[0]!.querySelector(".chapter-head .btn-cards")
     ).toBeNull();
 
-    // 多小章专题先展示紧凑的小章选择，选中小章后再显示练习。
-    expect(sections[0]!.querySelector(".lesson-list")).toBeNull();
-    expect(sections[1]!.querySelector(".lesson-list")).toBeNull();
-
-    click(sections[0]!.querySelector(".section-toggle"));
+    // 大章展开后所有小节直接可见，不再有第二层折叠。
+    expect($$(".section-toggle").length).toBe(0);
+    expect($$(".section-fold").length).toBe(0);
     expect(sections[0]!.querySelectorAll(".lesson-item").length).toBe(2);
     expect(sections[0]!.textContent).toContain("主题一练习一");
     expect(sections[0]!.textContent).toContain("主题一练习二");
-    expect(sections[1]!.querySelector(".lesson-list")).toBeNull();
-
-    click(sections[1]!.querySelector(".section-toggle"));
-    expect(sections[0]!.querySelector(".lesson-list")).toBeNull();
     expect(sections[1]!.querySelectorAll(".lesson-item").length).toBe(1);
     expect(sections[1]!.textContent).toContain("主题二练习一");
     expect(sections[1]!.textContent).not.toContain("主题一练习一");
 
-    click(sections[0]!.querySelector(".section-toggle"));
-    expect(sections[0]!.querySelectorAll(".lesson-item").length).toBe(2);
-    expect(sections[1]!.querySelector(".lesson-list")).toBeNull();
-
     const comprehensive = comprehensiveCard()!;
     expect(comprehensive.textContent).toContain("专题综合挑战");
     expect(comprehensive.textContent).toContain("1/2 关");
-    click(comprehensive.querySelector(".section-toggle"));
     expect(comprehensive.querySelectorAll(".lesson-item").length).toBe(2);
+
+    // 小节标题是可程序聚焦的 heading，而不是折叠按钮。
+    const heading = sections[0]!.querySelector(".section-info") as HTMLElement;
+    expect(heading.getAttribute("tabindex")).toBe("-1");
+    expect(sections[0]!.querySelector(".section-title")?.tagName).toBe("H3");
+    expect(heading.getAttribute("aria-expanded")).toBeNull();
   });
 
   test("未配置小章的专题保持整章列表与章节级讲解入口", () => {
@@ -163,6 +160,41 @@ describe("首页小章呈现", () => {
     expect($$(".reader").length).toBe(1);
     expect($$(".reader-counter")[0]!.textContent).toBe("1/1");
     expect(container.querySelector(".reader-section-name")).toBeNull();
+  });
+});
+
+describe("小节与综合挑战点击", () => {
+  test("点击小节关卡和综合挑战传入正确 chapter/section/lesson", () => {
+    const onOpenLesson = vi.fn();
+    act(() =>
+      root.render(
+        <HomeView
+          chapters={sectionedChapters}
+          progress={DEFAULT_PROGRESS}
+          openChapterId={sectionedChapters[0]!.id}
+          onOpenLesson={onOpenLesson}
+          onOpenCards={() => {}}
+          onOpenReview={() => {}}
+          sectionMap={sectionedMap}
+        />
+      )
+    );
+
+    const firstSection = $$(".section-card:not(.section-comprehensive)")[0]!;
+    click(firstSection.querySelector(".lesson-item"));
+    expect(onOpenLesson).toHaveBeenLastCalledWith(
+      "sec-demo",
+      "sec-demo-l1-1",
+      "sec-demo::basics"
+    );
+
+    const comprehensive = comprehensiveCard()!;
+    click(comprehensive.querySelector(".lesson-item"));
+    expect(onOpenLesson).toHaveBeenLastCalledWith(
+      "sec-demo",
+      "sec-demo-x1",
+      "sec-demo::comprehensive"
+    );
   });
 });
 
@@ -195,25 +227,24 @@ describe("小章阅读范围与练习入口", () => {
     expect(container.textContent).not.toContain("主题一讲解一");
   });
 
-  test("「练习本章」回到该小章并聚焦小章切换按钮", () => {
+  test("「练习本章」回到该小章并聚焦小节标题，其他小节仍可见", () => {
     renderApp();
     openFirstChapter();
     click(sectionCards()[1]!.querySelector(".section-cards"));
     click($$(".reader-practice")[0]!);
 
     const sections = sectionCards();
-    expect(sections[0]!.querySelector(".lesson-list")).toBeNull();
+    expect(sections[0]!.querySelector(".lesson-list")).not.toBeNull();
     expect(sections[1]!.querySelector(".lesson-list")).not.toBeNull();
     expect(document.activeElement).toBe(
-      sections[1]!.querySelector(".section-toggle")
+      sections[1]!.querySelector(".section-info")
     );
   });
 
-  test("练习关闭后展开小章并聚焦原关卡", () => {
+  test("练习关闭后展开小节并聚焦原关卡，其他小节仍可见", () => {
     renderApp();
     openFirstChapter();
     const firstSection = sectionCards()[0]!;
-    click(firstSection.querySelector(".section-toggle"));
     click(firstSection.querySelector(".lesson-item"));
 
     expect($$(".lesson").length).toBe(1);
@@ -221,6 +252,7 @@ describe("小章阅读范围与练习入口", () => {
 
     const sections = sectionCards();
     expect(sections[0]!.querySelector(".lesson-list")).not.toBeNull();
+    expect(sections[1]!.querySelector(".lesson-list")).not.toBeNull();
     const item = sections[0]!.querySelector(".lesson-item");
     expect(document.activeElement).toBe(item);
     expect(scrollIntoView.mock.instances).toContain(item);
@@ -239,7 +271,15 @@ describe("讲解库按小章选择与搜索归属", () => {
       "主题二 · 进阶",
     ]);
     expect($$(".library-card-item").length).toBe(5);
-    expect($$(".library-unit-title").length).toBe(2);
+    // 小节自身就是呈现层：不再按旧 -uN- 重建单元标题。
+    expect($$(".library-unit-title").length).toBe(0);
+    expect($$(".library-card-index").map((el) => el.textContent)).toEqual([
+      "1.",
+      "2.",
+      "1.",
+      "2.",
+      "3.",
+    ]);
 
     click($$(".library-section-start")[1]!);
     expect($$(".reader").length).toBe(1);
@@ -273,9 +313,7 @@ describe("下一关与小章终点", () => {
   test("下一关只在小章内推进，最后一关不再出现", () => {
     renderApp();
     openFirstChapter();
-    const firstSection = sectionCards()[0]!;
-    click(firstSection.querySelector(".section-toggle"));
-    click(firstSection.querySelectorAll(".lesson-item")[0]!);
+    click(sectionCards()[0]!.querySelector(".lesson-item"));
 
     expect(container.textContent).toContain("Première question du thème un.");
     answerCurrentQuestion();
@@ -292,7 +330,8 @@ describe("下一关与小章终点", () => {
 
     click(settlementButton("返回"));
     const sections = sectionCards();
-    expect(sections[0]!.querySelector(".lesson-list")).not.toBeNull();
+    expect(sections[0]!.querySelectorAll(".lesson-item").length).toBe(2);
+    expect(sections[1]!.querySelectorAll(".lesson-item").length).toBe(1);
     expect(document.activeElement).toBe(
       sections[0]!.querySelectorAll(".lesson-item")[1]
     );
@@ -302,7 +341,6 @@ describe("下一关与小章终点", () => {
     renderApp();
     openFirstChapter();
     const comprehensive = comprehensiveCard()!;
-    click(comprehensive.querySelector(".section-toggle"));
     click(comprehensive.querySelectorAll(".lesson-item")[0]!);
 
     answerCurrentQuestion();
@@ -367,32 +405,30 @@ describe("法国主题折叠与真实进度", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
   });
 
-  test("小章折叠由独立 plus/minus 按钮控制，点击不会打开讲解", () => {
+  test("小节没有第二层折叠，标题是可程序聚焦的 heading", () => {
     renderApp();
     openFirstChapter();
     const section = sectionCards()[0] as HTMLElement;
-    const fold = section.querySelector(".section-fold") as HTMLButtonElement;
-    expect(fold).not.toBeNull();
-    expect(fold.getAttribute("aria-expanded")).toBe("false");
-    const sectionTitle = section.querySelector(".section-title")?.textContent ?? "";
-    expect(fold.getAttribute("aria-label")).toContain(sectionTitle);
-    expect(
-      fold.querySelector(".plus-minus-icon")?.getAttribute("aria-hidden")
-    ).toBe("true");
-    click(fold);
+    expect(section.querySelector(".section-toggle")).toBeNull();
+    expect(section.querySelector(".section-fold")).toBeNull();
     expect(section.classList.contains("is-open")).toBe(true);
-    expect(fold.getAttribute("aria-expanded")).toBe("true");
+
+    const heading = section.querySelector(".section-info") as HTMLElement;
+    expect(heading.getAttribute("tabindex")).toBe("-1");
+    expect(section.querySelector(".section-title")?.tagName).toBe("H3");
+    expect(heading.getAttribute("aria-expanded")).toBeNull();
+
+    const lessonCount = section.querySelectorAll(".lesson-item").length;
+    click(heading);
+    expect(section.querySelectorAll(".lesson-item").length).toBe(lessonCount);
     expect($$(".reader").length).toBe(0);
-    click(fold);
-    expect(section.classList.contains("is-open")).toBe(false);
-    expect(fold.getAttribute("aria-expanded")).toBe("false");
   });
 
   test("讲解入口是标题行的兄弟按钮，点击只进入阅读器", () => {
     renderApp();
     openFirstChapter();
     const section = sectionCards()[0] as HTMLElement;
-    expect(section.querySelector(".section-toggle .btn-cards")).toBeNull();
+    expect(section.querySelector(".section-info .btn-cards")).toBeNull();
     const cards = section.querySelector(".section-head .btn-cards") as HTMLButtonElement;
     expect(cards).not.toBeNull();
     click(cards);

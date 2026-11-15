@@ -11,8 +11,12 @@ interface Props {
   chapterNumber: number;
   /** 指定后阅读范围仅限该小章；不传则保持整章（内部题库/未配置章节）。 */
   section?: LearningSection | null;
+  /** 同一章内有卡片的前后小节；只在当前小节首/末张出现衔接入口。 */
+  previousSection?: LearningSection | null;
+  nextSection?: LearningSection | null;
   initialCardId?: string;
   onBack: () => void;
+  onOpenSection?: (sectionId: string, cardId?: string) => void;
   onPracticeChapter: (sectionId?: string) => void;
   onStudyTick?: (kind: StudyKind, seconds: number) => void;
 }
@@ -21,8 +25,11 @@ export function ReaderView({
   chapter,
   chapterNumber,
   section,
+  previousSection,
+  nextSection,
   initialCardId,
   onBack,
+  onOpenSection,
   onPracticeChapter,
   onStudyTick,
 }: Props) {
@@ -75,7 +82,31 @@ export function ReaderView({
   }
 
   const progress = ((cardIndex + 1) / Math.max(total, 1)) * 100;
-  const units = groupCardsByUnit(cards);
+  // 小节阅读范围已由配置决定分组，目录直接跟随正文源序，避免旧 ID 的
+  // -uN- 分组把跨章迁入卡前置或把无单元卡挤后。
+  const units = section
+    ? [
+        {
+          unit: null,
+          cards: cards.map((card, cardIndex) => ({ card, cardIndex })),
+        },
+      ]
+    : groupCardsByUnit(cards);
+  const previousCard =
+    previousSection && previousSection.cards.length > 0
+      ? previousSection.cards[previousSection.cards.length - 1]!
+      : null;
+  const nextSectionStart =
+    nextSection && nextSection.cards.length > 0 ? nextSection.cards[0]! : null;
+  // 只在当前小节的首/末张出现小节衔接，中间仍按原来的「上一张/下一张」。
+  const previousLink =
+    onOpenSection && previousSection && previousCard && cardIndex === 0
+      ? { section: previousSection, cardId: previousCard.id, open: onOpenSection }
+      : null;
+  const nextLink =
+    onOpenSection && nextSection && nextSectionStart && cardIndex === total - 1
+      ? { section: nextSection, open: onOpenSection }
+      : null;
 
   return (
     <div className="reader">
@@ -117,11 +148,50 @@ export function ReaderView({
       </div>
 
       <div className="reader-body" ref={bodyRef}>
+        {previousLink && (
+          <button
+            className="reader-section-prev"
+            type="button"
+            aria-label={`上一节：${previousLink.section.title}`}
+            onClick={() =>
+              previousLink.open(previousLink.section.id, previousLink.cardId)
+            }
+          >
+            <span className="reader-section-prev-arrow" aria-hidden="true">
+              ←
+            </span>
+            <span className="reader-section-prev-label">上一节</span>
+            <span className="reader-section-prev-title">
+              {previousLink.section.title}
+            </span>
+          </button>
+        )}
         <div className="card-title">{card.title}</div>
         <div
           className="card-body"
           dangerouslySetInnerHTML={{ __html: sanitizeCardHtml(card.body) }}
         />
+        {nextLink && (
+          <div className="reader-section-end">
+            <div className="reader-section-end-label">本节读完</div>
+            <button
+              className="reader-section-next"
+              type="button"
+              aria-label={`下一节：${nextLink.section.title}`}
+              onClick={() => nextLink.open(nextLink.section.id)}
+            >
+              <span className="reader-section-next-copy">
+                <span className="reader-section-next-label">下一节</span>
+                <span className="reader-section-next-title">
+                  {nextLink.section.title}
+                </span>
+              </span>
+              <span className="reader-section-next-arrow" aria-hidden="true">
+                →
+              </span>
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="reader-footer">

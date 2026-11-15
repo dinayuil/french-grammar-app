@@ -14,6 +14,7 @@ import { NavIcon } from "./components/icons";
 import { shareStatsCard, type ShareResult } from "./share/shareStats";
 import {
   SECTION_MAP,
+  allLearningSections,
   findSectionByCard,
   findSectionById,
   findSectionByLesson,
@@ -62,11 +63,21 @@ function findSettlementAction(): HTMLElement | null {
   return secondary[secondary.length - 1] ?? null;
 }
 
+/** 页面本身的滚动位置；阅读器正文是内部滚动，不能拿来当目录位置。 */
+function pageScrollTop(): number {
+  const root = document.scrollingElement ?? document.documentElement;
+  return Math.max(window.scrollY || 0, root?.scrollTop ?? 0);
+}
+
 export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: SectionMap } = {}) {
   const [view, setView] = useState<View>({ name: "home" });
   const [progress, setProgress] = useState<Progress>(() => loadProgress());
   const progressRef = useRef(progress);
   const [libraryQuery, setLibraryQuery] = useState("");
+  const [libraryExpanded, setLibraryExpanded] = useState<Set<string>>(
+    () => new Set()
+  );
+  const libraryScrollTop = useRef(0);
   const [goalDialogProgress, setGoalDialogProgress] = useState<Progress | null>(null);
 
   const [themeChoice, setThemeChoice] = useState<ThemeChoice>(() => loadThemeChoice());
@@ -151,28 +162,47 @@ export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: Section
         chapters={CHAPTERS}
         query={libraryQuery}
         sectionMap={sectionMap}
+        expanded={libraryExpanded}
+        onExpandedChange={setLibraryExpanded}
+        restoreScrollTop={libraryScrollTop.current}
         onQueryChange={setLibraryQuery}
-        onOpenCard={(chapterId, cardId, sectionId) =>
-          setView({ name: "reader", chapterId, sectionId, cardId, from: "library" })
-        }
+        onOpenCard={(chapterId, cardId, sectionId) => {
+          // 先记下目录位置：阅读器挂载时会把页面滚到顶部，返回时要靠它复位。
+          libraryScrollTop.current = pageScrollTop();
+          setView({ name: "reader", chapterId, sectionId, cardId, from: "library" });
+        }}
       />
     );
   } else if (view.name === "reader") {
     const chapterIndex = CHAPTERS.findIndex((c) => c.id === view.chapterId);
     const ch = CHAPTERS[chapterIndex];
-    const sections = ch ? getLearningSections(ch, sectionMap) : null;
+    const sectionSet = ch ? getLearningSections(ch, sectionMap) : null;
     // 卡片 ID 是搜索/清单进入阅读器时最可靠的归属依据；只有不带卡片时才用
     // sectionId 从专题开读。
-    const section = sections
-      ? (view.cardId ? findSectionByCard(sections, view.cardId) : null) ??
-        (view.sectionId ? findSectionById(sections, view.sectionId) : null)
+    const section = sectionSet
+      ? (view.cardId ? findSectionByCard(sectionSet, view.cardId) : null) ??
+        (view.sectionId ? findSectionById(sectionSet, view.sectionId) : null)
       : null;
+    // 阅读器只在同一章内衔接有卡片的小节；专题综合区不参与翻页。
+    const cardSections = sectionSet
+      ? allLearningSections(sectionSet).filter((item) => item.cards.length > 0)
+      : [];
+    const sectionIndex = section
+      ? cardSections.findIndex((item) => item.id === section.id)
+      : -1;
+    const previousSection = sectionIndex > 0 ? cardSections[sectionIndex - 1]! : null;
+    const nextSection =
+      sectionIndex >= 0 && sectionIndex < cardSections.length - 1
+        ? cardSections[sectionIndex + 1]!
+        : null;
     body = ch ? (
       <ReaderView
         key={`${ch.id}:${section?.id ?? "chapter"}`}
         chapter={ch}
         chapterNumber={chapterIndex + 1}
         section={section}
+        previousSection={previousSection}
+        nextSection={nextSection}
         initialCardId={view.cardId}
         onBack={() => {
           if (view.from === "library") {
@@ -187,6 +217,15 @@ export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: Section
             setView({ name: "home" });
           }
         }}
+        onOpenSection={(sectionId, cardId) =>
+          setView({
+            name: "reader",
+            chapterId: ch.id,
+            sectionId,
+            cardId,
+            from: view.from,
+          })
+        }
         onPracticeChapter={(sectionId) =>
           setView({
             name: "home",

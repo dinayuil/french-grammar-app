@@ -65,12 +65,11 @@ export function HomeView({
   sectionMap = SECTION_MAP,
 }: Props) {
   const [openChapter, setOpenChapter] = useState<string | null>(openChapterId ?? null);
-  const [openSection, setOpenSection] = useState<string | null>(openSectionId ?? null);
   const chapterRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const toggleRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const lessonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const sectionToggleRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const sectionHeadingRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const handledOpenChapter = useRef<string | null>(null);
   const handledOpenSection = useRef<string | null>(null);
   const handledOpenLesson = useRef<string | null>(null);
@@ -83,34 +82,19 @@ export function HomeView({
   useEffect(() => {
     if (openChapterId === undefined) {
       setOpenChapter(null);
-      setOpenSection(null);
       return;
     }
     const index = chapters.findIndex((ch) => ch.id === openChapterId);
     if (index === -1) {
       setOpenChapter(null);
-      setOpenSection(null);
       window.scrollTo({ top: 0, left: 0 });
       return;
     }
     setOpenChapter(openChapterId);
+  }, [openChapterId, chapters]);
 
-    const set = sectionSets[index];
-    if (!set) {
-      setOpenSection(null);
-      return;
-    }
-    const requested =
-      (openSectionId ? findSectionById(set, openSectionId) : null) ??
-      (openLessonId ? findSectionByLesson(set, openLessonId) : null);
-    // 只有单一小章的专题没有选择成本，展开时直接显示它的练习。
-    setOpenSection(
-      requested?.id ?? (set.sections.length === 1 ? set.sections[0]!.id : null)
-    );
-  }, [openChapterId, openSectionId, openLessonId, chapters, sectionSets]);
-
-  // 返回主页后只定位一次:优先刚做过的关卡,其次小章,最后章节卡片。
-  // 用户手动折叠后再展开、或同一目标重复渲染,都不会再次拉动页面。
+  // 返回主页后只定位一次:优先刚做过的关卡,其次小节,最后章节卡片。
+  // 小节现在随大章一起展开,不再需要先打开小节再重试。
   useEffect(() => {
     if (!openChapterId || openChapter !== openChapterId) return;
     const behavior = prefersReducedMotion() ? "auto" : "smooth";
@@ -120,16 +104,6 @@ export function HomeView({
       ? (openSectionId ? findSectionById(set, openSectionId) : null) ??
         (openLessonId ? findSectionByLesson(set, openLessonId) : null)
       : null;
-
-    if (
-      requestedSection &&
-      openSection !== requestedSection.id &&
-      handledOpenSection.current !== requestedSection.id &&
-      handledOpenLesson.current !== openLessonId
-    ) {
-      setOpenSection(requestedSection.id);
-      return;
-    }
 
     if (openLessonId && handledOpenLesson.current !== openLessonId) {
       const item = lessonRefs.current[openLessonId];
@@ -142,7 +116,7 @@ export function HomeView({
         focusQuietly(item);
         return;
       }
-      // 目标关卡尚未渲染:先展开小章,不写 handled,后续渲染仍可重试。
+      // 目标关卡不存在时继续按小节/章节回退,不写 handled,后续仍可重试。
     }
 
     if (requestedSection && handledOpenSection.current !== requestedSection.id) {
@@ -151,7 +125,7 @@ export function HomeView({
         sectionCard.scrollIntoView?.({ block: "start", behavior });
         handledOpenChapter.current = openChapterId;
         handledOpenSection.current = requestedSection.id;
-        focusQuietly(sectionToggleRefs.current[requestedSection.id] ?? null);
+        focusQuietly(sectionHeadingRefs.current[requestedSection.id] ?? null);
         return;
       }
     }
@@ -167,7 +141,6 @@ export function HomeView({
     openSectionId,
     openLessonId,
     openChapter,
-    openSection,
     chapters,
     sectionSets,
   ]);
@@ -201,15 +174,8 @@ export function HomeView({
     playableQuestionIds.has(qid)
   ).length;
 
-  const toggleChapter = (chapterId: string, chapterIndex: number) => {
-    const next = openChapter === chapterId ? null : chapterId;
-    setOpenChapter(next);
-    if (next === openChapter) return;
-    // 多小章专题先展示紧凑的小章选择；单一小章直接打开，少一次点击。
-    const set = sectionSets[chapterIndex];
-    setOpenSection(
-      set && set.sections.length === 1 ? set.sections[0]!.id : null
-    );
+  const toggleChapter = (chapterId: string) => {
+    setOpenChapter(openChapter === chapterId ? null : chapterId);
   };
 
   const renderLessonItem = (
@@ -246,7 +212,6 @@ export function HomeView({
 
   const renderSection = (ch: Chapter, section: LearningSection) => {
     const comprehensive = section.kind === "comprehensive";
-    const open = openSection === section.id;
     const { done, total } = sectionProgress(section, progress.lessons);
     const progressText =
       total > 0 ? `${done}/${total} 关` : comprehensive ? "暂无挑战" : "暂无练习";
@@ -258,7 +223,7 @@ export function HomeView({
     return (
       <div
         key={section.id}
-        className={`section-card${open ? " is-open" : ""}${
+        className={`section-card is-open${
           comprehensive ? " section-comprehensive" : ""
         }`}
         ref={(el) => {
@@ -266,25 +231,20 @@ export function HomeView({
         }}
       >
         <div className="section-head">
-          <button
-            className="section-toggle"
-            type="button"
-            aria-expanded={open}
-            aria-label={`${section.title}：${meta}${complete ? "，已完成" : ""}`}
+          <span className="section-rail" aria-hidden="true" />
+          <div
+            className="section-info"
+            tabIndex={-1}
             ref={(el) => {
-              sectionToggleRefs.current[section.id] = el;
+              sectionHeadingRefs.current[section.id] = el;
             }}
-            onClick={() => setOpenSection(open ? null : section.id)}
           >
-            <span className="section-rail" aria-hidden="true" />
-            <span className="section-info">
-              <span className="section-title">{section.title}</span>
-              <span className="section-meta">
-                {meta}
-                {complete ? " · 已完成" : ""}
-              </span>
+            <h3 className="section-title">{section.title}</h3>
+            <span className="section-meta">
+              {meta}
+              {complete ? " · 已完成" : ""}
             </span>
-          </button>
+          </div>
           {!comprehensive && (
             <button
               className="btn btn-cards section-cards"
@@ -298,24 +258,13 @@ export function HomeView({
               讲解
             </button>
           )}
-          <button
-            className="section-fold"
-            type="button"
-            aria-expanded={open}
-            aria-label={`${open ? "收起" : "展开"}：${section.title}`}
-            onClick={() => setOpenSection(open ? null : section.id)}
-          >
-            <PlusMinusIcon open={open} />
-          </button>
         </div>
-        {open && (
-          <div className="lesson-list">
-            {[...section.lessons, ...section.challenges].map((lesson) =>
-              renderLessonItem(ch, lesson, section.id)
-            )}
-            {total === 0 && <div className="section-empty">本节暂无练习</div>}
-          </div>
-        )}
+        <div className="lesson-list">
+          {[...section.lessons, ...section.challenges].map((lesson) =>
+            renderLessonItem(ch, lesson, section.id)
+          )}
+          {total === 0 && <div className="section-empty">本节暂无练习</div>}
+        </div>
       </div>
     );
   };
@@ -403,7 +352,7 @@ export function HomeView({
                     ref={(el) => {
                       toggleRefs.current[ch.id] = el;
                     }}
-                    onClick={() => toggleChapter(ch.id, index)}
+                    onClick={() => toggleChapter(ch.id)}
                   >
                     <span className="chapter-index" aria-hidden="true">
                       <small>CH.</small>
