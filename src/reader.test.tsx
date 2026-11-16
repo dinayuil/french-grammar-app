@@ -10,6 +10,8 @@ vi.mock("virtual:fge-content", async () => {
 import App from "./App";
 import { CHAPTERS } from "./content";
 import { ReaderView } from "./views/ReaderView";
+import { LocaleProvider } from "./i18n/LocaleProvider";
+import { UI_LOCALES } from "./i18n/types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -90,13 +92,15 @@ describe("ReaderView direct", () => {
   test("initialCardId 定位到第二张", () => {
     act(() =>
       root.render(
-        <ReaderView
-          chapter={chapter}
-          chapterNumber={1}
-          initialCardId={chapter.cards[1].id}
-          onBack={() => {}}
-          onPracticeChapter={() => {}}
-        />
+        <LocaleProvider supportedLocales={UI_LOCALES}>
+          <ReaderView
+            chapter={chapter}
+            chapterNumber={1}
+            initialCardId={chapter.cards[1].id}
+            onBack={() => {}}
+            onPracticeChapter={() => {}}
+          />
+        </LocaleProvider>
       )
     );
     expect($$(".reader").length).toBe(1);
@@ -109,12 +113,14 @@ describe("ReaderView direct", () => {
     const emptyChapter = { ...chapter, cards: [] };
     act(() =>
       root.render(
-        <ReaderView
-          chapter={emptyChapter}
-          chapterNumber={1}
-          onBack={onBack}
-          onPracticeChapter={() => {}}
-        />
+        <LocaleProvider supportedLocales={UI_LOCALES}>
+          <ReaderView
+            chapter={emptyChapter}
+            chapterNumber={1}
+            onBack={onBack}
+            onPracticeChapter={() => {}}
+          />
+        </LocaleProvider>
       )
     );
     expect($$(".reader-empty").length).toBe(1);
@@ -137,12 +143,14 @@ describe("ReaderView direct", () => {
     };
     act(() =>
       root.render(
-        <ReaderView
-          chapter={htmlChapter}
-          chapterNumber={1}
-          onBack={() => {}}
-          onPracticeChapter={() => {}}
-        />
+        <LocaleProvider supportedLocales={UI_LOCALES}>
+          <ReaderView
+            chapter={htmlChapter}
+            chapterNumber={1}
+            onBack={() => {}}
+            onPracticeChapter={() => {}}
+          />
+        </LocaleProvider>
       )
     );
     const body = container.querySelector(".card-body")!;
@@ -157,12 +165,14 @@ describe("ReaderView direct", () => {
     const onPracticeChapter = vi.fn();
     act(() =>
       root.render(
-        <ReaderView
-          chapter={chapter}
-          chapterNumber={1}
-          onBack={() => {}}
-          onPracticeChapter={onPracticeChapter}
-        />
+        <LocaleProvider supportedLocales={UI_LOCALES}>
+          <ReaderView
+            chapter={chapter}
+            chapterNumber={1}
+            onBack={() => {}}
+            onPracticeChapter={onPracticeChapter}
+          />
+        </LocaleProvider>
       )
     );
     click($$(".reader-practice")[0]!);
@@ -174,13 +184,15 @@ describe("ReaderView direct", () => {
     const onStudyTick = vi.fn();
     act(() =>
       root.render(
-        <ReaderView
-          chapter={chapter}
-          chapterNumber={1}
-          onBack={() => {}}
-          onPracticeChapter={() => {}}
-          onStudyTick={onStudyTick}
-        />
+        <LocaleProvider supportedLocales={UI_LOCALES}>
+          <ReaderView
+            chapter={chapter}
+            chapterNumber={1}
+            onBack={() => {}}
+            onPracticeChapter={() => {}}
+            onStudyTick={onStudyTick}
+          />
+        </LocaleProvider>
       )
     );
     act(() => vi.advanceTimersByTime(5000));

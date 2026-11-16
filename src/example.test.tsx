@@ -1,6 +1,7 @@
 import { createRoot, type Root } from "react-dom/client";
 import { act, useState } from "react";
 import { LessonView } from "./views/LessonView";
+import { LocaleProvider } from "./i18n/LocaleProvider";
 import { DEFAULT_PROGRESS } from "./storage";
 import { syntheticChapter } from "./test/fixtures";
 import type { Chapter, Lesson, Progress } from "./types";
@@ -19,15 +20,17 @@ let root: Root;
 function Harness() {
   const [progress, setProgress] = useState<Progress>(DEFAULT_PROGRESS);
   return (
-    <LessonView
-      chapter={chapter}
-      lesson={lesson}
-      progress={progress}
-      onProgress={setProgress}
-      onExit={() => {}}
-      onNextLesson={() => {}}
-      onFinish={() => {}}
-    />
+    <LocaleProvider supportedLocales={["zh-CN", "fr"]}>
+      <LessonView
+        chapter={chapter}
+        lesson={lesson}
+        progress={progress}
+        onProgress={setProgress}
+        onExit={() => {}}
+        onNextLesson={() => {}}
+        onFinish={() => {}}
+      />
+    </LocaleProvider>
   );
 }
 

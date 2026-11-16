@@ -484,6 +484,10 @@ describe("鸿蒙同步桥", () => {
 
   test("syncRequest 缺少 response 或状态非法 → 无效响应", async () => {
     installBridge(vi.fn<Invoke>(async () => '{"status":"ok"}'));
+    await expect(requestHarmonySync(request)).rejects.toMatchObject({
+      code: "native.unknown",
+      diagnostic: "鸿蒙桥返回了无效响应",
+    });
     await expect(requestHarmonySync(request)).rejects.toBeInstanceOf(
       HarmonyBridgeError
     );
@@ -507,5 +511,193 @@ describe("鸿蒙同步桥", () => {
     await expect(readHarmonySyncConfig()).rejects.toBeInstanceOf(
       HarmonyBridgeError
     );
+  });
+});
+
+describe("原生结构化错误协议", () => {
+  const syncConfig = {
+    url: "https://dav.example.com/progress",
+    username: "learner",
+    autoSync: true,
+  };
+  const shareFile = {
+    filename: "a.png",
+    mimeType: "image/png",
+    encoding: "base64" as const,
+    data: "QUJD",
+  };
+
+  test("同步 error 回复保留 code、params 与原始诊断", async () => {
+    installBridge(
+      vi.fn<Invoke>(async () =>
+        JSON.stringify({
+          status: "error",
+          code: "native.credentials_required",
+          params: { operation: "syncWriteConfig", status: 401 },
+          message: "更换同步地址或用户名时，请重新输入应用密码",
+        })
+      )
+    );
+
+    const result = writeHarmonySyncConfig(syncConfig);
+    await expect(result).rejects.toMatchObject({
+      name: "HarmonyBridgeError",
+      code: "native.credentials_required",
+      params: { operation: "syncWriteConfig", status: 401 },
+      diagnostic: "更换同步地址或用户名时，请重新输入应用密码",
+    });
+    await expect(result).rejects.toThrow("请重新输入应用密码");
+  });
+
+  test("分享 error 回复保留 code 与非敏感 params", async () => {
+    installBridge(
+      vi.fn<Invoke>(async () =>
+        JSON.stringify({
+          status: "error",
+          code: "native.file_failed",
+          params: { operation: "shareFile" },
+          message: "图片不是 PNG",
+        })
+      )
+    );
+
+    await expect(shareHarmonyFile(shareFile)).rejects.toMatchObject({
+      code: "native.file_failed",
+      params: { operation: "shareFile" },
+      diagnostic: "图片不是 PNG",
+    });
+  });
+
+  test("旧桥只返回 message 时使用 native.unknown 并保留诊断", async () => {
+    installBridge(
+      vi.fn<Invoke>(async () =>
+        JSON.stringify({ status: "error", message: "旧桥错误" })
+      )
+    );
+
+    await expect(shareHarmonyFile(shareFile)).rejects.toMatchObject({
+      code: "native.unknown",
+      diagnostic: "旧桥错误",
+    });
+    await expect(shareHarmonyFile(shareFile)).rejects.toThrow("旧桥错误");
+  });
+
+  test("未知 code 归为 native.unknown，诊断仍保留", async () => {
+    installBridge(
+      vi.fn<Invoke>(async () =>
+        JSON.stringify({
+          status: "error",
+          code: "native.future_code",
+          params: { operation: "shareFile" },
+          message: "未来错误",
+        })
+      )
+    );
+
+    await expect(shareHarmonyFile(shareFile)).rejects.toMatchObject({
+      code: "native.unknown",
+      diagnostic: "未来错误",
+    });
+  });
+
+  test("params 只保留非敏感字符串/数字并补上 operation", async () => {
+    installBridge(
+      vi.fn<Invoke>(async () =>
+        JSON.stringify({
+          status: "error",
+          code: "native.network_failed",
+          params: {
+            status: 503,
+            nested: { secret: true },
+            invalid: true,
+            "__proto__": "polluted",
+          },
+          message: "同步请求失败",
+        })
+      )
+    );
+
+    await expect(readHarmonySyncConfig()).rejects.toMatchObject({
+      code: "native.network_failed",
+      params: { status: 503, operation: "syncReadConfig" },
+      diagnostic: "同步请求失败",
+    });
+  });
+
+  test("error 缺少 message 时使用可知的默认提示且不伪造诊断", async () => {
+    installBridge(
+      vi.fn<Invoke>(async () =>
+        JSON.stringify({ status: "error", code: "native.file_failed" })
+      )
+    );
+
+    await expect(shareHarmonyFile(shareFile)).rejects.toMatchObject({
+      code: "native.file_failed",
+      params: { operation: "shareFile" },
+    });
+    await expect(shareHarmonyFile(shareFile)).rejects.toThrow(/分享/);
+  });
+
+  test("JS 侧前置校验使用 native.config_invalid", async () => {
+    const invoke = vi.fn<Invoke>(async () => '{"status":"ok"}');
+    installBridge(invoke);
+
+    await expect(
+      writeHarmonySyncConfig({
+        ...syncConfig,
+        url: "ftp://dav.example.com/progress",
+      })
+    ).rejects.toMatchObject({ code: "native.config_invalid" });
+
+    await expect(
+      requestHarmonySync({
+        method: "DELETE",
+        filename:
+          __FGE_EDITION__ === "internal"
+            ? "fge-progress-internal.json"
+            : "fge-progress-public.json",
+        headers: {},
+      } as never)
+    ).rejects.toMatchObject({ code: "native.config_invalid" });
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  test("没有鸿蒙桥时使用 native.unsupported", async () => {
+    await expect(shareHarmonyFile(shareFile)).rejects.toMatchObject({
+      code: "native.unsupported",
+    });
+  });
+
+  test("坏响应与桥抛错都归为 native.unknown 并保留可读诊断", async () => {
+    installBridge(vi.fn<Invoke>(async () => "oops"));
+    await expect(readHarmonySyncConfig()).rejects.toMatchObject({
+      code: "native.unknown",
+      diagnostic: "鸿蒙桥返回了无效响应",
+    });
+
+    installBridge(
+      vi.fn<Invoke>(async () => {
+        throw new Error("bridge down");
+      })
+    );
+    await expect(readHarmonySyncConfig()).rejects.toMatchObject({
+      code: "native.unknown",
+      diagnostic: "bridge down",
+    });
+
+    installBridge(
+      vi.fn<Invoke>(async () => {
+        throw {
+          code: "native.network_failed",
+          params: { operation: "syncRequest" },
+          message: "socket closed",
+        };
+      })
+    );
+    await expect(readHarmonySyncConfig()).rejects.toMatchObject({
+      code: "native.network_failed",
+      params: { operation: "syncRequest" },
+      diagnostic: "socket closed",
+    });
   });
 });

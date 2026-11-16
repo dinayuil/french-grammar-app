@@ -573,10 +573,12 @@ describe("contentPlugin", () => {
     ]);
     expect(result.code.startsWith("export const CHAPTERS = ")).toBe(true);
     expect(result.code).not.toMatch(/\bimport\s|\brequire\s*\(|\beval\s*\(/);
-    const payload = result.code
-      .replace(/^export const CHAPTERS = /, "")
-      .replace(/;\s*$/, "");
-    expect(JSON.parse(payload)).toEqual([chapter]);
+    const match = result.code.match(
+      /^export const CHAPTERS = ([\s\S]*?);\nexport const SUPPORTED_LOCALES = (.*);$/
+    );
+    expect(match).toBeTruthy();
+    expect(JSON.parse(match![1])).toEqual([chapter]);
+    expect(JSON.parse(match![2])).toEqual(["zh-CN"]);
   });
 
   it("rejects malformed required text before emitting the virtual module", () => {

@@ -1,4 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
+import { sharingFr } from "../i18n/sharing.fr";
+import { sharingZhCN } from "../i18n/sharing.zh-CN";
+import type { UiLocale } from "../i18n/types";
 import { DEFAULT_PROGRESS, shiftDate } from "../storage";
 import type { DayRecord, Progress } from "../types";
 import {
@@ -11,6 +14,7 @@ import {
 } from "./statsCard";
 
 const DATE = "2026-11-04";
+const CJK = /[\u3400-\u9fff]/;
 const CHART_TOP = 880;
 const CHART_LABEL_Y = 1182;
 const TIME_CHART_TOP = 828;
@@ -80,6 +84,7 @@ interface RecordedText {
   y: number;
   font: string;
   style: string;
+  align: string;
 }
 
 interface RecordedRect {
@@ -96,6 +101,7 @@ interface RecordedRoundRect extends RecordedRect {
 
 interface FakeOptions {
   withRoundRect?: boolean;
+  locale?: UiLocale;
 }
 
 /** 测试自己的字宽模型:与实现无关,用于验证缩放后的文字确实放得下。 */
@@ -111,6 +117,11 @@ function testTextWidth(text: string, font: string): number {
 function fontSizeOf(font: string): number {
   const match = /(\d+(?:\.\d+)?)px/.exec(font);
   return match ? Number(match[1]) : 0;
+}
+
+/** Intl 法语单位会插入 U+00A0 / U+202F，断言时按普通空白比较。 */
+function normalizeSpaces(text: string): string {
+  return text.replace(/[\s\u00a0\u202f]+/g, " ").trim();
 }
 
 /**
@@ -139,6 +150,7 @@ function fakeCtx(options: FakeOptions = {}) {
         y,
         font: String(ctx.font),
         style: String(ctx.fillStyle),
+        align: String(ctx.textAlign),
       });
     },
     measureText(text: string) {
@@ -189,14 +201,15 @@ function fakeCtx(options: FakeOptions = {}) {
 }
 
 function drawCard(progress: Progress, options: FakeOptions = {}) {
-  const data = buildStatsCardData(progress, DATE);
-  const fake = fakeCtx(options);
+  const { locale = "zh-CN", ...fakeOptions } = options;
+  const data = buildStatsCardData(progress, DATE, locale);
+  const fake = fakeCtx(fakeOptions);
   drawStatsCard(fake.ctx, data);
   return { ...fake, data };
 }
 
-function drawWeek(progress: Progress = weekProgress()) {
-  return drawCard(progress);
+function drawWeek(progress: Progress = weekProgress(), locale: UiLocale = "zh-CN") {
+  return drawCard(progress, { locale });
 }
 
 function textAt(texts: RecordedText[], text: string, y?: number): RecordedText {
@@ -205,11 +218,36 @@ function textAt(texts: RecordedText[], text: string, y?: number): RecordedText {
   return found;
 }
 
+interface TextBounds {
+  left: number;
+  right: number;
+  width: number;
+}
+
+/** 按测试字宽模型还原文字占位，用于检查标题、图例与长句不越界或重叠。 */
+function boundsOf(item: RecordedText): TextBounds {
+  const width = testTextWidth(item.text, item.font);
+  if (item.align === "center") {
+    return { left: item.x - width / 2, right: item.x + width / 2, width };
+  }
+  if (item.align === "right") {
+    return { left: item.x - width, right: item.x, width };
+  }
+  return { left: item.x, right: item.x + width, width };
+}
+
+function expectFits(item: RecordedText, maxWidth: number): void {
+  expect(testTextWidth(item.text, item.font), item.text).toBeLessThanOrEqual(
+    maxWidth + 0.5
+  );
+}
+
 describe("buildStatsCardData", () => {
   test("汇总今日 XP、目标百分比、7 天顺序、等级与连击", () => {
     const data = buildStatsCardData(weekProgress(), DATE);
 
     expect(data.date).toBe(DATE);
+    expect(data.locale).toBe("zh-CN");
     expect(data.dateLabel).toBe("2026年11月4日");
     expect(data.todayXp).toBe(42);
     expect(data.goal).toBe(30);
@@ -226,7 +264,7 @@ describe("buildStatsCardData", () => {
     });
     expect(data.days[6]).toMatchObject({
       date: DATE,
-      label: "今天",
+      label: "11/4",
       xp: 42,
       isToday: true,
     });
@@ -301,7 +339,7 @@ describe("buildStatsCardData 分享内容与学习时长", () => {
     });
     expect(data.days[6]).toMatchObject({
       date: DATE,
-      label: "今天",
+      label: "11/4",
       readSeconds: 600,
       practiceSeconds: 900,
       studySeconds: 1500,
@@ -331,6 +369,52 @@ describe("buildStatsCardData 分享内容与学习时长", () => {
     expect(data.maxStudy).toBe(1);
     expect(data.days.every((d) => d.studySeconds === 0)).toBe(true);
     expect(() => drawStatsCard(fakeCtx().ctx, data)).not.toThrow();
+  });
+
+  test("locale 写入数据，法语长日期与短日期用 Intl，数值事实不变", () => {
+    const zh = buildStatsCardData(studyWeekProgress(), DATE);
+    const fr = buildStatsCardData(studyWeekProgress(), DATE, "fr");
+
+    expect(fr.locale).toBe("fr");
+    expect(fr.dateLabel).toBe("4 novembre 2026");
+    expect(fr.days[0].label).toBe("29/10");
+    expect(fr.days[6].label).toBe("04/11");
+
+    expect(fr.date).toBe(zh.date);
+    expect(fr.mode).toBe(zh.mode);
+    expect(fr.todayXp).toBe(zh.todayXp);
+    expect(fr.goal).toBe(zh.goal);
+    expect(fr.goalPercent).toBe(zh.goalPercent);
+    expect(fr.streak).toBe(zh.streak);
+    expect(fr.level).toBe(zh.level);
+    expect(fr.totalXp).toBe(zh.totalXp);
+    expect(fr.todayRead).toBe(zh.todayRead);
+    expect(fr.todayPractice).toBe(zh.todayPractice);
+    expect(fr.todayStudy).toBe(zh.todayStudy);
+    expect(fr.studyRead).toBe(zh.studyRead);
+    expect(fr.studyPractice).toBe(zh.studyPractice);
+    expect(fr.studyTotal).toBe(zh.studyTotal);
+    expect(fr.maxXp).toBe(zh.maxXp);
+    expect(fr.maxStudy).toBe(zh.maxStudy);
+    expect(fr.days.map(({ label: _label, ...dayData }) => dayData)).toEqual(
+      zh.days.map(({ label: _label, ...dayData }) => dayData)
+    );
+  });
+
+  test("没有 locale 的旧中文合成数据继续按中文绘制", () => {
+    const data = buildStatsCardData(weekProgress(), DATE); // 中文日期标签
+    const { locale: _locale, ...legacy } = data;
+    // 旧夹具的今天标签就是“今天”文字，不含新 locale 字段。
+    legacy.days = legacy.days.map((day) =>
+      day.isToday ? { ...day, label: "今天" } : day
+    );
+    const fake = fakeCtx();
+
+    drawStatsCard(fake.ctx, legacy);
+
+    expect(fake.texts.map((item) => item.text)).toContain("法语语法练习");
+    expect(fake.texts.map((item) => item.text)).toContain("2026年11月4日");
+    expect(fake.texts.map((item) => item.text)).toContain("今天");
   });
 });
 
@@ -585,6 +669,216 @@ describe("drawStatsCard 视觉", () => {
       expect(() => drawStatsCard(ctx, data)).not.toThrow();
       expect(arcToCalls()).toBeGreaterThan(0);
       expect(roundRects).toHaveLength(0);
+    }
+  });
+});
+
+describe("drawStatsCard 法语", () => {
+  test("xp 模式品牌、日期、目标、指标、图例与页脚全部法语且无中文", () => {
+    const { texts } = drawCard(weekProgress(), { locale: "fr" });
+
+    expect(textAt(texts, "Exercices de grammaire française", 130).style).toBe(
+      "#1b3578"
+    );
+    expect(textAt(texts, "4 novembre 2026", 170).style).toBe("#5f6b7c");
+    expect(textAt(texts, "XP du jour", 450).style).toBe("#5f6b7c");
+    expect(textAt(texts, "Objectif 30 XP · 100 % atteint", 596).style).toBe(
+      "#7a5200"
+    );
+    expect(textAt(texts, "Jours de série", 760).style).toBe("#5f6b7c");
+    expect(textAt(texts, "Niveau", 760)).toBeDefined();
+    expect(textAt(texts, "XP cumulés", 760)).toBeDefined();
+    expect(textAt(texts, "Auj.", 1182).style).toBe("#1c2433");
+    expect(
+      textAt(texts, "Chaque jour, un peu de grammaire française", 1236).style
+    ).toBe("#5f6b7c");
+
+    const allText = texts.map((item) => item.text).join("\n");
+    expect(allText).not.toMatch(CJK);
+    expect(allText).toContain("française");
+    expect(allText).toContain("série");
+
+    expectFits(textAt(texts, "Exercices de grammaire française", 130), 920);
+    expectFits(textAt(texts, "4 novembre 2026", 170), 920);
+    expectFits(textAt(texts, "Objectif 30 XP · 100 % atteint", 596), 920);
+    expectFits(
+      textAt(texts, "Chaque jour, un peu de grammaire française", 1236),
+      920
+    );
+  });
+
+  test("xp 模式无目标与空周使用法语提示", () => {
+    const noGoal = drawCard(weekProgress({ dailyGoal: 0 }), { locale: "fr" });
+    expect(textAt(noGoal.texts, "Aucun objectif quotidien", 596)).toBeDefined();
+
+    const empty = drawCard(weekProgress({ days: {} }), { locale: "fr" });
+    expect(empty.texts.map((item) => item.text)).toContain(
+      "Pas encore de points cette semaine"
+    );
+    expect(empty.texts.map((item) => item.text).join("\n")).not.toMatch(CJK);
+  });
+
+  test("time 模式今日时长、分项、累计、标题与图例全部法语且不越界", () => {
+    const { texts, roundRects } = drawCard(studyWeekProgress(), {
+      locale: "fr",
+    });
+
+    const hero = textAt(texts, "25 min", 400);
+    expect(fontSizeOf(hero.font)).toBeGreaterThanOrEqual(120);
+    expect(hero.font).toContain("Iowan Old Style");
+    expect(hero.style).toBe("#1b3578");
+
+    expect(textAt(texts, "Temps d’étude aujourd’hui", 468).style).toBe("#5f6b7c");
+    expect(textAt(texts, "Cours 10 min · Exercices 15 min", 550).style).toBe(
+      "#5f6b7c"
+    );
+    expect(textAt(texts, "Temps d’étude cumulé 2 h 47 min", 648).style).toBe(
+      "#1b3578"
+    );
+    expect(
+      textAt(texts, "Cours 1 h 26 min · Exercices 1 h 21 min", 698).style
+    ).toBe("#5f6b7c");
+
+    const title = textAt(texts, "Temps d’étude (7 jours, min)", 784);
+    expect(title.style).toBe("#1c2433");
+    expect(textAt(texts, "Cours", 784)).toBeDefined();
+    expect(textAt(texts, "Exercices", 784)).toBeDefined();
+    expect(textAt(texts, "Auj.", 1092)).toBeDefined();
+
+    const allText = texts.map((item) => item.text).join("\n");
+    expect(allText).not.toMatch(CJK);
+    expect(allText).not.toContain("XP");
+    expect(allText).not.toContain("Objectif");
+    expect(allText).not.toContain("Niveau");
+
+    // 标题与右侧图例同一基线，但按实际字宽留出间距，不互相覆盖。
+    const titleBounds = boundsOf(title);
+    const readLabelBounds = boundsOf(textAt(texts, "Cours", 784));
+    expect(titleBounds.right + 24).toBeLessThanOrEqual(readLabelBounds.left);
+    expect(titleBounds.left).toBeGreaterThanOrEqual(120);
+    expect(titleBounds.right).toBeLessThanOrEqual(980);
+
+    expectFits(hero, 920);
+    expectFits(textAt(texts, "Cours 10 min · Exercices 15 min", 550), 920);
+    expectFits(textAt(texts, "Temps d’étude cumulé 2 h 47 min", 648), 920);
+    expectFits(
+      textAt(texts, "Cours 1 h 26 min · Exercices 1 h 21 min", 698),
+      920
+    );
+    expectFits(title, 860);
+
+    const valueLabels = texts.filter(
+      (item) => item.y > TIME_CHART_TOP - 12 && item.y <= TIME_CHART_BOTTOM
+    );
+    expect(valueLabels.length).toBeGreaterThan(0);
+    for (const label of valueLabels) {
+      expectFits(label, 100);
+    }
+
+    const panel = roundRects.find(
+      (rect) => rect.style === "#ffffff" && rect.width > 900 && rect.height > 350
+    );
+    expect(panel).toBeDefined();
+  });
+
+  test("time 模式空周使用法语学习记录提示", () => {
+    const { texts } = drawCard(
+      progressWith({ xp: 99999, shareCardContent: "time", days: { [DATE]: day(500) } }),
+      { locale: "fr" }
+    );
+
+    expect(textAt(texts, "0 min", 400)).toBeDefined();
+    expect(textAt(texts, "Temps d’étude cumulé 0 min", 648)).toBeDefined();
+    expect(texts.map((item) => item.text)).toContain(
+      "Pas encore de temps d’étude cette semaine"
+    );
+    expect(texts.map((item) => item.text).join("\n")).not.toMatch(CJK);
+  });
+
+  test("both 模式两套主视觉、目标与两张图标题全部法语", () => {
+    const { texts, roundRects } = drawCard(
+      studyWeekProgress({ shareCardContent: "both" }),
+      { locale: "fr" }
+    );
+
+    expect(textAt(texts, "42", 392).x).toBe(300);
+    expect(textAt(texts, "25 min", 392).x).toBe(780);
+    expect(textAt(texts, "XP du jour", 452)).toBeDefined();
+    expect(textAt(texts, "Temps d’étude aujourd’hui", 452)).toBeDefined();
+    expect(textAt(texts, "Objectif 60 XP · 70 % atteint", 578).style).toBe(
+      "#5f6b7c"
+    );
+    expect(textAt(texts, "XP des 7 derniers jours", 668).style).toBe("#1c2433");
+    expect(textAt(texts, "Temps d’étude (7 jours, min)", 936).style).toBe(
+      "#1c2433"
+    );
+    expect(textAt(texts, "Cours", 936)).toBeDefined();
+    expect(textAt(texts, "Exercices", 936)).toBeDefined();
+    expect(textAt(texts, "Auj.", 1128)).toBeDefined();
+
+    const allText = texts.map((item) => item.text).join("\n");
+    expect(allText).not.toMatch(CJK);
+
+    const panels = roundRects.filter(
+      (rect) => rect.style === "#ffffff" && rect.width > 900
+    );
+    expect(panels).toHaveLength(2);
+
+    for (const label of texts.filter(
+      (item) => item.y > BOTH_XP_CHART_TOP - 12 && item.y <= BOTH_XP_CHART_BOTTOM
+    )) {
+      expectFits(label, 100);
+    }
+    for (const label of texts.filter(
+      (item) =>
+        item.y > BOTH_STUDY_CHART_TOP - 12 && item.y <= BOTH_STUDY_CHART_BOTTOM
+    )) {
+      expectFits(label, 100);
+    }
+  });
+
+  test("both 模式全零使用法语空状态", () => {
+    const { texts } = drawCard(progressWith({ days: {} }), { locale: "fr" });
+
+    expect(textAt(texts, "0", 392)).toBeDefined();
+    expect(textAt(texts, "0 min", 392)).toBeDefined();
+    expect(textAt(texts, "Objectif 30 XP · 0 % atteint", 578)).toBeDefined();
+    expect(texts.map((item) => item.text)).toContain(
+      "Pas encore de points cette semaine"
+    );
+    expect(texts.map((item) => item.text)).toContain(
+      "Pas encore de temps d’étude cette semaine"
+    );
+    expect(texts.map((item) => item.text).join("\n")).not.toMatch(CJK);
+  });
+
+  test("法语超长时长与数值按测量收缩，标签仍在卡片内", () => {
+    const progress = studyWeekProgress({
+      days: {
+        ...studyWeekProgress().days,
+        [DATE]: studyDay(42, 123456789, 987654321),
+      },
+    });
+    const { texts } = drawCard(progress, { locale: "fr" });
+
+    const hero = texts.find(
+      (item) => item.y === 400 && normalizeSpaces(item.text).includes("h 59 min")
+    );
+    expect(hero).toBeDefined();
+    expectFits(hero!, 920);
+
+    const total = texts.find(
+      (item) => item.y === 648 && normalizeSpaces(item.text).includes("cumulé")
+    );
+    expect(total).toBeDefined();
+    expectFits(total!, 920);
+
+    const valueLabels = texts.filter(
+      (item) => item.y > TIME_CHART_TOP - 12 && item.y <= TIME_CHART_BOTTOM
+    );
+    expect(valueLabels.length).toBeGreaterThan(0);
+    for (const label of valueLabels) {
+      expectFits(label, 100);
     }
   });
 });
@@ -861,13 +1155,59 @@ describe("drawStatsCard 都有模式", () => {
   });
 });
 
+describe("sharing 文案域", () => {
+  test("中法键与占位符一致，法语非空且无中文", () => {
+    expect(Object.keys(sharingFr).sort()).toEqual(Object.keys(sharingZhCN).sort());
+
+    const placeholders = (text: string) =>
+      [...text.matchAll(/\{([A-Za-z0-9_]+)\}/g)]
+        .map((match) => match[1] as string)
+        .sort();
+
+    for (const key of Object.keys(sharingZhCN) as (keyof typeof sharingZhCN)[]) {
+      expect(sharingZhCN[key].trim(), key).not.toBe("");
+      expect(sharingFr[key].trim(), key).not.toBe("");
+      expect(sharingFr[key], key).not.toMatch(CJK);
+      expect(placeholders(sharingFr[key]), key).toEqual(
+        placeholders(sharingZhCN[key])
+      );
+    }
+  });
+});
+
 describe("statsCardFilename", () => {
-  test("按日期生成固定 PNG 文件名", () => {
+  test("按日期生成固定 PNG 文件名，法语带语言标记", () => {
     expect(statsCardFilename("2026-11-04")).toBe("fge-stats-2026-11-04.png");
+    expect(statsCardFilename("2026-11-04", "fr")).toBe(
+      "fge-stats-fr-2026-11-04.png"
+    );
   });
 });
 
 describe("createStatsCardCanvas", () => {
+  test("画布角色与无障碍名称随当前语言", () => {
+    const spy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(fakeCtx().ctx);
+
+    try {
+      const frCanvas = createStatsCardCanvas(
+        buildStatsCardData(weekProgress(), DATE, "fr")
+      );
+      expect(frCanvas.getAttribute("role")).toBe("img");
+      expect(frCanvas.getAttribute("aria-label")).toBe(
+        "Partager l’image du bilan du jour"
+      );
+
+      const zhCanvas = createStatsCardCanvas(
+        buildStatsCardData(weekProgress(), DATE)
+      );
+      expect(zhCanvas.getAttribute("aria-label")).toBe("分享今日打卡图片");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   test("2D 上下文不可用时抛出明确错误", () => {
     const data = buildStatsCardData(weekProgress(), DATE);
     const spy = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);

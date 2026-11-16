@@ -1,4 +1,5 @@
 import type { ProgressBackup } from "../backup/progressBackup";
+import type { UserFacingError } from "../i18n/errors";
 
 /** 用户可编辑的同步配置;密码永远不在这里。 */
 export interface SyncSettings {
@@ -97,7 +98,12 @@ export type SyncStatus =
 export interface SyncSnapshot {
   status: SyncStatus;
   config: SyncConfig | null;
+  /** 旧版兼容字段:中文可读诊断;界面优先使用 error/notice 按当前语言格式化。 */
   message: string;
+  /** 结构化错误;失败时由界面按当前 locale 即时格式化。 */
+  error?: UserFacingError | null;
+  /** 结构化非错误提示(同步中、成功、冲突等),同样按当前 locale 格式化。 */
+  notice?: UserFacingError | null;
   lastSyncedAt: string | null;
   conflict: SyncConflict | null;
 }

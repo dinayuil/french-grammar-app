@@ -1,3 +1,33 @@
+/**
+ * 展示字段的语言覆盖。键必须是已注册的内容语言（首期仅 `fr`），
+ * 原字段始终代表中文；评分字段、ID、题型和来源不可覆盖。
+ */
+export interface QuestionLocaleFields {
+  prompt?: string;
+  example?: string;
+  explain?: string;
+  /** 该语言的句子译文；法语模式仍按显示策略隐藏 */
+  translation?: string;
+  /** 仅 choice 可用：展示选项，长度与顺序必须与 base.options 一致 */
+  options?: string[];
+}
+
+export interface CardLocaleFields {
+  title?: string;
+  body?: string;
+}
+
+export interface LessonLocaleFields {
+  title?: string;
+}
+
+export interface ChapterLocaleFields {
+  /** 法语章名继续使用 titleFr，不允许 `locales.fr.title` */
+  title?: string;
+  /** 小章标题映射，键为 app 注册的小章 key */
+  sectionTitles?: Record<string, string>;
+}
+
 export interface BaseQuestion {
   id: string;
   prompt: string;
@@ -6,6 +36,8 @@ export interface BaseQuestion {
   translation?: string;
   /** 题目组开头的范例;显示在题干上方 */
   example?: string;
+  /** 按语言覆盖展示文案；键在加载/构建时校验 */
+  locales?: Record<string, QuestionLocaleFields>;
 }
 
 export interface ChoiceQuestion extends BaseQuestion {
@@ -14,6 +46,11 @@ export interface ChoiceQuestion extends BaseQuestion {
   answer: number;
   /** 其他合法答案下标:与 answer 同等有效(判分通过、标绿/✓、不算错) */
   alternatives?: number[];
+  /**
+   * 补全时只填的目标空位（从 1 开始）。仅 choice 可用；若原题干带
+   * `(第N空)` 兼容标记，必须与其一致。评分仍使用 answer 下标。
+   */
+  blankTarget?: number;
 }
 
 export interface LettersQuestion extends BaseQuestion {
@@ -43,12 +80,16 @@ export interface Lesson {
   /** 题目来源(教材页码、练习编号或“原创测试”),可回溯 */
   source: string;
   questions: Question[];
+  /** 按语言覆盖展示标题；来源不可覆盖 */
+  locales?: Record<string, LessonLocaleFields>;
 }
 
 export interface Card {
   id: string;
   title: string;
   body: string;
+  /** 按语言覆盖讲解卡片标题与正文 */
+  locales?: Record<string, CardLocaleFields>;
 }
 
 export interface Chapter {
@@ -58,6 +99,8 @@ export interface Chapter {
   cards: Card[];
   lessons: Lesson[];
   challenges: Lesson[];
+  /** 按语言覆盖章标题（法语除外）与小章标题 */
+  locales?: Record<string, ChapterLocaleFields>;
 }
 
 export interface DayRecord {

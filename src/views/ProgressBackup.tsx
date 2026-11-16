@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { formatUserError, type UserFacingError } from "../i18n/errors";
+import { useLocale } from "../i18n/LocaleProvider";
 import type { Progress } from "../types";
 import {
+  BackupError,
   exportBackup,
   isBackupCancelled,
   loadRecoveryBackup,
@@ -24,11 +27,11 @@ interface Preview {
 
 const MAX_BACKUP_BYTES = 5 * 1024 * 1024;
 
-const BUSY_TEXT: Record<Exclude<Busy, null>, string> = {
-  export: "正在导出备份…",
-  import: "正在读取备份文件…",
-  restore: "正在恢复学习进度…",
-};
+const BUSY_KEY = {
+  export: "backup.busy.export",
+  import: "backup.busy.import",
+  restore: "backup.busy.restore",
+} as const;
 
 function countCompletedLessons(progress: Progress): number {
   return Object.values(progress.lessons).filter((record) => record.completed).length;
@@ -43,10 +46,18 @@ function displayDate(exportedAt: string): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-function errorText(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  if (typeof error === "string" && error.trim()) return error;
-  return fallback;
+/**
+ * 已知业务错误保留其结构化码；旧/未知异常只保留诊断，主提示使用当前操作
+ * 对应的本地化通用文案，避免把中文原文当作界面主文案。
+ */
+function panelError(error: unknown, fallbackCode: string): UserFacingError {
+  if (error instanceof BackupError) {
+    return error.userError;
+  }
+  const formatted = formatUserError(error, "zh-CN");
+  return formatted.diagnostic
+    ? { code: fallbackCode, diagnostic: formatted.diagnostic }
+    : { code: fallbackCode };
 }
 
 function probeRecovery(): boolean {
@@ -62,10 +73,11 @@ function probeRecovery(): boolean {
  * 恢复与回退都走 restoreBackup,由核心模块负责先写入并保留被替换记录。
  */
 export function ProgressBackup({ progress, onChange }: Props) {
+  const { locale, t } = useLocale();
   const [busy, setBusy] = useState<Busy>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [status, setStatus] = useState("");
-  const [error, setError] = useState("");
+  const [status, setStatus] = useState<UserFacingError | null>(null);
+  const [error, setError] = useState<UserFacingError | null>(null);
   const [recoveryAvailable, setRecoveryAvailable] = useState(false);
   const mountedRef = useRef(true);
 
@@ -79,19 +91,19 @@ export function ProgressBackup({ progress, onChange }: Props) {
 
   const handleExport = async () => {
     if (busy) return;
-    setError("");
-    setStatus("");
+    setError(null);
+    setStatus(null);
     setBusy("export");
     try {
-      await exportBackup(progress);
+      await exportBackup(progress, locale);
       if (!mountedRef.current) return;
-      setStatus("备份文件已生成。");
+      setStatus({ code: "backup.status.exported" });
     } catch (exportError) {
       if (!mountedRef.current) return;
       if (isBackupCancelled(exportError)) {
-        setStatus("已取消导出。");
+        setStatus({ code: "backup.status.cancelled" });
       } else {
-        setError(`导出失败：${errorText(exportError, "请重试。")}`);
+        setError(panelError(exportError, "backup.error.export_failed"));
       }
     } finally {
       if (mountedRef.current) setBusy(null);
@@ -107,11 +119,14 @@ export function ProgressBackup({ progress, onChange }: Props) {
     if (!file || busy) return;
 
     setPreview(null);
-    setError("");
-    setStatus("");
+    setError(null);
+    setStatus(null);
 
     if (file.size > MAX_BACKUP_BYTES) {
-      setError("文件超过 5 MB，无法导入。");
+      setError({
+        code: "backup.error.too_large",
+        params: { limit: MAX_BACKUP_BYTES / 1024 / 1024 },
+      });
       return;
     }
 
@@ -121,7 +136,9 @@ export function ProgressBackup({ progress, onChange }: Props) {
       try {
         text = await file.text();
       } catch {
-        if (mountedRef.current) setError("读取备份文件失败，请重试。");
+        if (mountedRef.current) {
+          setError({ code: "backup.error.file_read_failed" });
+        }
         return;
       }
       if (!mountedRef.current) return;
@@ -130,10 +147,10 @@ export function ProgressBackup({ progress, onChange }: Props) {
         const backup = parseBackup(text);
         if (!mountedRef.current) return;
         setPreview({ backup, source: "file" });
-        setStatus("备份已读取，请确认是否恢复。");
+        setStatus({ code: "backup.status.import_ready" });
       } catch (parseError) {
         if (!mountedRef.current) return;
-        setError(errorText(parseError, "备份文件无法识别，请检查后重试。"));
+        setError(panelError(parseError, "backup.error.invalid_backup"));
       }
     } finally {
       if (mountedRef.current) setBusy(null);
@@ -142,18 +159,18 @@ export function ProgressBackup({ progress, onChange }: Props) {
 
   const handleRecovery = () => {
     if (busy) return;
-    setError("");
-    setStatus("");
+    setError(null);
+    setStatus(null);
     try {
       const backup = loadRecoveryBackup();
       if (!backup) {
         setRecoveryAvailable(false);
-        setError("没有可恢复的上次导入前记录。");
+        setError({ code: "backup.error.no_recovery" });
         return;
       }
       setPreview({ backup, source: "recovery" });
     } catch {
-      setError("读取上次导入前的记录失败，请重试。");
+      setError({ code: "backup.error.recovery_read_failed" });
     }
   };
 
@@ -161,8 +178,8 @@ export function ProgressBackup({ progress, onChange }: Props) {
     if (!preview || busy) return;
     const { backup, source } = preview;
 
-    setError("");
-    setStatus("");
+    setError(null);
+    setStatus(null);
     setBusy("restore");
 
     try {
@@ -170,7 +187,7 @@ export function ProgressBackup({ progress, onChange }: Props) {
       restoreBackup(backup, progress);
     } catch (restoreError) {
       setBusy(null);
-      setError(`恢复失败：${errorText(restoreError, "现有学习记录未被替换，请重试。")}`);
+      setError(panelError(restoreError, "backup.error.restore_failed"));
       return;
     }
 
@@ -187,32 +204,31 @@ export function ProgressBackup({ progress, onChange }: Props) {
     setPreview(null);
     setRecoveryAvailable(probeRecovery());
     if (extraSaveFailed) {
-      setStatus("已恢复学习进度；但后续自动保存失败，之后的学习记录可能无法保存。");
+      setStatus({ code: "backup.status.extra_save_failed" });
     } else if (source === "recovery") {
-      setStatus("已恢复上次导入前的学习记录。");
+      setStatus({ code: "backup.status.restored_recovery" });
     } else {
-      setStatus("已恢复学习进度。");
+      setStatus({ code: "backup.status.restored" });
     }
   };
 
   const handleCancel = () => {
     if (busy) return;
     setPreview(null);
-    setError("");
-    setStatus("");
+    setError(null);
+    setStatus(null);
   };
 
   const date = preview ? displayDate(preview.backup.exportedAt) : "";
   const completed = preview ? countCompletedLessons(preview.backup.progress) : 0;
+  const formattedError = error ? formatUserError(error, locale) : null;
 
   return (
     <section className="backup-panel" aria-labelledby="backup-panel-title">
       <h2 className="settings-title backup-title" id="backup-panel-title">
-        学习进度备份
+        {t("backup.title")}
       </h2>
-      <p className="backup-intro">
-        把学习记录和练习设置保存为 JSON 文件，可在其他设备导入恢复。
-      </p>
+      <p className="backup-intro">{t("backup.intro")}</p>
 
       <div className="backup-actions">
         <button
@@ -222,16 +238,16 @@ export function ProgressBackup({ progress, onChange }: Props) {
           disabled={busy !== null}
           aria-busy={busy === "export" ? "true" : undefined}
         >
-          {busy === "export" ? "正在导出…" : "导出备份"}
+          {busy === "export" ? t("backup.exporting") : t("backup.export")}
         </button>
         <label
           className={`btn btn-secondary backup-file-btn${busy !== null ? " is-disabled" : ""}`}
           aria-disabled={busy !== null ? "true" : undefined}
         >
-          {busy === "import" ? "正在读取…" : "导入备份"}
+          {busy === "import" ? t("backup.importing") : t("backup.import")}
           <input
             type="file"
-            aria-label="选择学习进度备份文件"
+            aria-label={t("backup.choose_file")}
             className="backup-file-input"
             accept=".json,application/json"
             onChange={handleFileChange}
@@ -239,7 +255,7 @@ export function ProgressBackup({ progress, onChange }: Props) {
           />
         </label>
       </div>
-      <p className="backup-hint">仅支持本应用导出的 .json 备份，文件不超过 5 MB。</p>
+      <p className="backup-hint">{t("backup.hint")}</p>
 
       {recoveryAvailable && !preview && (
         <button
@@ -248,17 +264,25 @@ export function ProgressBackup({ progress, onChange }: Props) {
           onClick={handleRecovery}
           disabled={busy !== null}
         >
-          恢复上次导入前的记录
+          {t("backup.recovery_button")}
         </button>
       )}
 
-      {error ? (
-        <p className="backup-status backup-error" role="alert">
-          {error}
-        </p>
+      {formattedError ? (
+        <div className="backup-status backup-error" role="alert">
+          <span>{formattedError.message}</span>
+          {formattedError.diagnostic && (
+            <details className="backup-error-details">
+              <summary>{t("errors.details")}</summary>
+              <span>{formattedError.diagnostic}</span>
+            </details>
+          )}
+        </div>
       ) : busy || status ? (
         <p className="backup-status" role="status" aria-live="polite">
-          {busy ? BUSY_TEXT[busy] : status}
+          {busy
+            ? t(BUSY_KEY[busy])
+            : formatUserError(status, locale).message}
         </p>
       ) : null}
 
@@ -267,25 +291,27 @@ export function ProgressBackup({ progress, onChange }: Props) {
           className={`backup-preview${preview.source === "recovery" ? " is-recovery" : ""}`}
         >
           <div className="backup-preview-title">
-            {preview.source === "recovery" ? "上次导入前的学习记录" : "备份内容确认"}
+            {preview.source === "recovery"
+              ? t("backup.preview.recovery_title")
+              : t("backup.preview.title")}
           </div>
           <dl className="backup-summary">
             <div>
-              <dt>导出日期</dt>
+              <dt>{t("backup.preview.date")}</dt>
               <dd>{date}</dd>
             </div>
             <div>
-              <dt>累计 XP</dt>
+              <dt>{t("backup.preview.xp")}</dt>
               <dd>{preview.backup.progress.xp} XP</dd>
             </div>
             <div>
-              <dt>已完成关卡</dt>
-              <dd>{completed} 个</dd>
+              <dt>{t("backup.preview.lessons")}</dt>
+              <dd>
+                {t("backup.preview.lessons_value", { count: completed })}
+              </dd>
             </div>
           </dl>
-          <p className="backup-warning">
-            恢复将替换当前学习记录，并覆盖每日目标、音效、翻译和分享卡设置。主题设置不会迁移。
-          </p>
+          <p className="backup-warning">{t("backup.preview.warning")}</p>
           <div className="backup-preview-actions">
             <button
               type="button"
@@ -294,7 +320,9 @@ export function ProgressBackup({ progress, onChange }: Props) {
               disabled={busy !== null}
               aria-busy={busy === "restore" ? "true" : undefined}
             >
-              {busy === "restore" ? "正在恢复…" : "确认恢复"}
+              {busy === "restore"
+                ? t("backup.preview.restoring")
+                : t("backup.preview.confirm")}
             </button>
             <button
               type="button"
@@ -302,7 +330,7 @@ export function ProgressBackup({ progress, onChange }: Props) {
               onClick={handleCancel}
               disabled={busy !== null}
             >
-              取消
+              {t("common.cancel")}
             </button>
           </div>
         </div>

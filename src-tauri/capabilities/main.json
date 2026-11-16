@@ -1,7 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "主窗口：仅核心默认能力与标题栏主题同步；同步请求使用应用自身的窄接口命令。",
+  "description": "主窗口：仅核心默认能力、标题栏主题与运行时窗口标题同步；同步请求使用应用自身的窄接口命令。",
   "windows": ["main"],
-  "permissions": ["core:default", "core:window:allow-set-theme"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-theme",
+    "core:window:allow-set-title"
+  ]
 }

@@ -1,11 +1,16 @@
 import type { Card, Chapter } from "../types";
 import { cardBodyToText } from "../content/cardHtml";
+import type { ChapterDisplay } from "../content/localize";
 
 export interface SearchEntry {
   chapter: Chapter;
   chapterIndex: number;
   card: Card;
   cardIndex: number;
+  /** 当前语言下用于展示与高亮的标题 */
+  displayTitle: string;
+  /** 当前语言下用于展示摘要的正文 */
+  displayBody: string;
   normalizedTitle: string;
   normalizedBody: string;
 }
@@ -78,18 +83,27 @@ function queryTerms(query: string): string[] {
     .filter((term) => term.length > 0);
 }
 
-export function buildSearchIndex(chapters: Chapter[]): SearchEntry[] {
+export function buildSearchIndex(
+  chapters: Chapter[],
+  displays?: readonly ChapterDisplay[]
+): SearchEntry[] {
   const entries: SearchEntry[] = [];
 
   chapters.forEach((chapter, chapterIndex) => {
+    const display = displays?.[chapterIndex];
     chapter.cards.forEach((card, cardIndex) => {
+      const cardDisplay = display?.cards[cardIndex];
+      const displayTitle = cardDisplay?.title ?? card.title;
+      const displayBody = cardDisplay?.body ?? card.body;
       entries.push({
         chapter,
         chapterIndex,
         card,
         cardIndex,
-        normalizedTitle: normalizeText(card.title),
-        normalizedBody: normalizeText(cardBodyToText(card.body)),
+        displayTitle,
+        displayBody,
+        normalizedTitle: normalizeText(displayTitle),
+        normalizedBody: normalizeText(cardBodyToText(displayBody)),
       });
     });
   });
@@ -114,7 +128,7 @@ export function searchEntries(
     )
     .map((entry) => ({
       ...entry,
-      summary: cardSummary(entry.card.body, query, 60),
+      summary: cardSummary(entry.displayBody, query, 60),
     }));
 }
 

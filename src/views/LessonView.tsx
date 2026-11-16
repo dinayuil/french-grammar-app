@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Chapter, Lesson, Progress, Question } from "../types";
 import { judge, applyAnswer, applyLessonComplete, starsFor, streakFor, levelFor } from "../engine";
 import type { StudyKind } from "../engine";
@@ -11,6 +11,14 @@ import { LettersQuestion } from "../components/LettersQuestion";
 import { TilesQuestion } from "../components/TilesQuestion";
 import { Settlement } from "../components/Settlement";
 import { completedQuestion } from "../answerFill";
+import {
+  localizeLesson,
+  localizeQuestion,
+  translationForDisplay,
+  type QuestionDisplay,
+} from "../content/localize";
+import { useLocale } from "../i18n/LocaleProvider";
+import { formatNumber } from "../i18n/format";
 import type { ChoiceQuestion as CQ, LettersQuestion as LQ, TilesQuestion as TQ } from "../types";
 
 type Phase = "quiz" | "settlement" | "redo";
@@ -46,6 +54,7 @@ export function LessonView({
   onStudyTick,
   nextLessonId,
 }: Props) {
+  const { locale, t } = useLocale();
   const [phase, setPhase] = useState<Phase>("quiz");
   const [qIndex, setQIndex] = useState(0);
   const [xpStart] = useState(() => progress.xp);
@@ -63,6 +72,19 @@ export function LessonView({
   const [redoGains, setRedoGains] = useState<Record<string, number>>({});
 
   useStudyTimer((s) => onStudyTick?.("practice", s));
+
+  // 只解析当前语言的展示模型；基础关卡和题目身份始终保留，切换语言不重挂载。
+  const lessonDisplay = useMemo(
+    () => localizeLesson(lesson, locale),
+    [lesson, locale]
+  );
+  const displayById = useMemo(() => {
+    const map = new Map<string, QuestionDisplay>();
+    for (const display of lessonDisplay.questions) {
+      map.set(display.base.id, display);
+    }
+    return map;
+  }, [lessonDisplay]);
 
   const allLessons = [...chapter.lessons, ...chapter.challenges];
   const hasNext =
@@ -82,7 +104,7 @@ export function LessonView({
   };
 
   if (phase === "settlement") {
-    const t = today();
+    const date = today();
     return (
       <Settlement
         lesson={lesson}
@@ -90,7 +112,7 @@ export function LessonView({
         xpGained={progress.xp - xpStart}
         stars={sessionStars}
         wrongQids={wrongQids}
-        streak={streakFor(progress.days, progress.dailyGoal, t)}
+        streak={streakFor(progress.days, progress.dailyGoal, date)}
         onRedo={() => {
           setRedoQueue([...wrongQids]);
           setRedoIdx(0);
@@ -107,18 +129,36 @@ export function LessonView({
   const currentQ: Question = isRedo
     ? lesson.questions.find((q) => q.id === currentQid)!
     : lesson.questions[qIndex];
+  const currentDisplay =
+    displayById.get(currentQ.id) ?? localizeQuestion(currentQ, locale);
   const judged = isRedo
     ? redoResults[currentQid] !== undefined
     : results[currentQid] !== undefined;
   const lastPosition = isRedo
     ? redoIdx === redoQueue.length - 1
     : qIndex === lesson.questions.length - 1;
-  const completed = judged ? completedQuestion(currentQ) : null;
-  const showTranslation =
-    !!currentQ.translation &&
-    progress.translationEnabled &&
-    (progress.translationTiming === "before" || judged);
+  // 判分后的补全文字使用当前语言的展示题干，但答案仍来自原题目。
+  const completed = judged
+    ? completedQuestion(currentQ, currentDisplay.prompt)
+    : null;
+  const translation = translationForDisplay(
+    currentDisplay,
+    {
+      enabled: progress.translationEnabled,
+      timing: progress.translationTiming,
+    },
+    judged
+  );
   const judgedCorrect = (isRedo ? redoResults : results)[currentQid] === true;
+  // 判分前提示目标空位；中文旧题干仍含兼容标记时不重复提示。
+  const blankHint =
+    !judged &&
+    currentDisplay.blankTarget !== null &&
+    !/\(第\d+空\)/.test(currentDisplay.prompt)
+      ? currentDisplay.blankTarget
+      : null;
+  const totalQuestions = isRedo ? redoQueue.length : lesson.questions.length;
+  const position = isRedo ? redoIdx + 1 : qIndex + 1;
 
   const submit = () => {
     if (judged) return;
@@ -190,7 +230,9 @@ export function LessonView({
   return (
     <div className="lesson">
       <div className="lesson-header">
-        <button className="btn btn-ghost" onClick={onExit}>✕</button>
+        <button className="btn btn-ghost" aria-label={t("lesson.exit")} onClick={onExit}>
+          ✕
+        </button>
         <div className="lesson-progress-track">
           <div
             className="lesson-progress-fill"
@@ -201,24 +243,40 @@ export function LessonView({
             }}
           />
         </div>
-        <span className="lesson-counter">
-          {isRedo ? redoIdx + 1 : qIndex + 1}/
-          {isRedo ? redoQueue.length : lesson.questions.length}
+        <span
+          className="lesson-counter"
+          aria-label={t("lesson.progress", {
+            current: formatNumber(locale, position),
+            total: formatNumber(locale, totalQuestions),
+          })}
+        >
+          {position}/{totalQuestions}
         </span>
       </div>
 
       <div className="quiz-question">
-        {currentQ.example && (
+        {currentDisplay.example && (
           <div className="quiz-example">
-            <span className="quiz-example-label">范例</span>
-            {currentQ.example}
+            <span className="quiz-example-label">{t("question.example")}</span>
+            {currentDisplay.example}
           </div>
         )}
-        <div className="quiz-prompt">{completed ? completed.prompt : currentQ.prompt}</div>
+        <div className="quiz-prompt">
+          {completed ? completed.prompt : currentDisplay.prompt}
+          {blankHint !== null && (
+            <span className="quiz-blank-hint">
+              {" "}
+              {t("question.blankHint", {
+                count: formatNumber(locale, blankHint),
+              })}
+            </span>
+          )}
+        </div>
         {completed?.target && <div className="quiz-target">{completed.target}</div>}
-        {showTranslation && <div className="quiz-translation">{currentQ.translation}</div>}
+        {translation && <div className="quiz-translation">{translation}</div>}
         <QuestionBody
           q={currentQ}
+          display={currentDisplay}
           responses={isRedo ? redoResponses : responses}
           setResponses={isRedo ? setRedoResponses : setResponses}
           judged={judged}
@@ -235,10 +293,12 @@ export function LessonView({
           <>
             <div className="feedback-head">
               {judgedCorrect
-                ? `✓ 正确${(isRedo ? redoGains : gains)[currentQid] > 0 ? ` +${(isRedo ? redoGains : gains)[currentQid]} XP` : ""}`
-                : "✗ 答错了"}
+                ? `${t("question.correct")}${(isRedo ? redoGains : gains)[currentQid] > 0 ? ` +${formatNumber(locale, (isRedo ? redoGains : gains)[currentQid])} XP` : ""}`
+                : t("question.incorrect")}
             </div>
-            {currentQ.explain && <div className="explain">{currentQ.explain}</div>}
+            {currentDisplay.explain && (
+              <div className="explain">{currentDisplay.explain}</div>
+            )}
           </>
         )}
       </div>
@@ -246,7 +306,7 @@ export function LessonView({
       <div className="quiz-footer">
         {judged ? (
           <button className="btn btn-primary btn-wide" onClick={advance}>
-            继续
+            {t("common.continue")}
           </button>
         ) : (
           <button
@@ -254,7 +314,7 @@ export function LessonView({
             disabled={empty((isRedo ? redoResponses : responses)[currentQid])}
             onClick={submit}
           >
-            检查
+            {t("common.check")}
           </button>
         )}
       </div>
@@ -275,11 +335,13 @@ function empty(v: Response | undefined): boolean {
 
 function QuestionBody({
   q,
+  display,
   responses,
   setResponses,
   judged,
 }: {
   q: Question;
+  display: QuestionDisplay;
   responses: Record<string, Response>;
   setResponses: (r: Record<string, Response>) => void;
   judged: boolean;
@@ -290,6 +352,7 @@ function QuestionBody({
       <ChoiceQuestion
         key={q.id}
         q={q as CQ}
+        displayOptions={display.options}
         response={(responses[q.id] as number) ?? null}
         onResponse={(n) => set(n)}
         disabled={judged}

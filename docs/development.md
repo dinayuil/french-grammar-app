@@ -56,6 +56,38 @@ npm run check:public -- --public "$env:FGE_PUBLIC_CONTENT_DIR"
 
 题库内容与覆盖范围以题库仓库的 `manifest.json` 和 README 为准。加载器支持合法空库：空库下不能开始练习，统计和设置仍可使用。真实公开题库的集成测试要求非空，空状态由独立测试夹具覆盖。
 
+## 多语言维护
+
+课程目标语言固定为法语；界面和辅助学习内容首期注册 `zh-CN`、`fr`。语言偏好使用独立本地存储，不属于 `Progress`、备份或 WebDAV 同步数据。不要通过改变 WebView 来源或进度存储键实现语言切换。
+
+职责划分：
+
+- `src/i18n/types.ts` 维护界面和内容覆盖语言注册表。
+- `src/i18n/zh-CN.ts`、`fr.ts` 聚合类型化消息目录；reading、practice、sharing 域文件分别维护对应文案。新增键须同时提供两种语言，使用同名 `{name}` 插值参数。
+- `src/i18n/messages.ts` 提供 `t` 与目录完整性检查；`format.ts` 维护日期、数字和学习时长，原 `formatStudyDuration.ts` 仅保留兼容入口。
+- `src/i18n/LocaleProvider.tsx` 提供当前语言，`LanguageMenu` 只切换此偏好，不切换路由或保存学习进度。
+- `src/content/localize.ts` 解析只读展示模型；评分、错题和进度仍持有原实体与稳定 ID。本地化选项仅用于显示，不能成为判分答案。
+
+内容在所属内容仓库新增 `locales.fr`，不放进应用文案目录。保留全部原始字段和中文 `translation`，法语模式由统一策略隐藏句子译文；讲解 `body`、解析 `explain` 仍需完整法语内容。章节法语标题使用现有 `titleFr`，不重复写 `locales.fr.title`。公开小章标题通过 `locales.fr.sectionTitles[sectionKey]` 对应 app 的既有普通小章 key，综合区默认标签来自 UI 文案。
+
+每版 manifest 的 `supportedLocales` 决定可选语言，缺省仅中文。纯法语基础字段可以在 `localizationSharedFields.fr` 中按实体 ID 显式裁定复用；复用不能与同字段覆盖并存，不能把含中文内容当作法语复用。`collectLocalizationGaps` 报告未覆盖且未裁定的字段；声明 `fr` 后构建要求零缺项。UI 消息目录无论版本均须键、非空文案和插值参数一致，构建会执行同一校验。
+
+翻译题干时保留 `___`、`...` 的数量与顺序及字母题补全锚点。旧 `(第N空)` 只用于兼容读取；对应 choice 题可用一致的顶层 `blankTarget` 明确目标空位，法语展示不保留中文标记。任何语言都不能改变原 ID、答案、可接受答案、题型、顺序、归属和选项下标。
+
+新增语言时先扩注册表、消息目录和内容覆盖，再通过完整性门槛加入 manifest；不要仅加语言按钮或将中文回退当作完成。未完成语言包不向用户提供选项。暂时不可用的已存语言在当前版本回退中文，原偏好保留。
+
+错误使用稳定 `code`、非敏感 `params` 与独立诊断信息；主提示按当前语言即时格式化，不通过匹配中文异常推断错误类型。应用可控的原生保存对话框标题由 JS 传入；操作系统控制的系统界面语言仍由系统决定。Android 与鸿蒙目前仅声明系统自动授予的网络权限，没有另加权限说明弹窗。
+
+常用聚焦验证（完整验收仍运行下节的无参数测试与构建）：
+
+```powershell
+npm test -- src/i18n/messages.test.ts src/content/localizationCoverage.test.ts
+npm test -- src/locale-app.test.tsx src/locale-learning.test.tsx src/locale-reading.test.tsx
+npm test -- src/share/statsCard.test.ts src/share/shareStats.test.ts
+```
+
+内部版本使用对应的 `test:internal`、`build:internal` 脚本，在自己的内容根独立验收语言覆盖。翻译还需核对教学含义、例外、反例与例句；结构、覆盖和字符检查不等于专业人工法语审校。
+
 ## 日常命令
 
 从应用目录执行：

@@ -1,6 +1,7 @@
 import { createRoot, type Root } from "react-dom/client";
 import { act } from "react";
 import { LettersQuestion } from "./components/LettersQuestion";
+import { LocaleProvider } from "./i18n/LocaleProvider";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -38,7 +39,11 @@ function click(el: Element) {
 
 function render(resp = "", onResponse: (s: string) => void = () => {}, disabled = false) {
   act(() => {
-    root.render(<LettersQuestion q={q} response={resp} onResponse={onResponse} disabled={disabled} />);
+    root.render(
+      <LocaleProvider supportedLocales={["zh-CN", "fr"]}>
+        <LettersQuestion q={q} response={resp} onResponse={onResponse} disabled={disabled} />
+      </LocaleProvider>
+    );
   });
 }
 

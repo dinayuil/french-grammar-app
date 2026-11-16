@@ -2,8 +2,22 @@ import { reviewQueue } from "../engine";
 import { CHAPTERS } from "./index";
 import type { Lesson, MistakeInfo, Progress, Question } from "../types";
 
-/** 从进度里的错题清单组装一关:错得最久的优先,每关最多 10 题;无错题返回 null。 */
-export function buildReviewLesson(progress: Progress): Lesson | null {
+export interface ReviewLessonLabels {
+  title: string;
+  source: string;
+}
+
+/**
+ * 从进度里的错题清单组装一关:错得最久的优先,每关最多 10 题;无错题返回 null。
+ *
+ * 队列只保存基础题目身份，不解析也不冻结任何语言的展示文案；视图渲染时
+ * 再按当前 locale 解析题干、选项、解析和译文。labels 只用于应用生成关卡
+ * 的标题/来源元数据，切换语言后由调用方以当前语言重新覆盖。
+ */
+export function buildReviewLesson(
+  progress: Progress,
+  labels: ReviewLessonLabels
+): Lesson | null {
   const index = new Map<string, Question>();
   for (const ch of CHAPTERS) {
     for (const l of [...ch.lessons, ...ch.challenges]) {
@@ -23,9 +37,9 @@ export function buildReviewLesson(progress: Progress): Lesson | null {
   if (questions.length === 0) return null;
   return {
     id: "review",
-    title: "错题回顾",
+    title: labels.title,
     kind: "lesson",
-    source: "错题本",
+    source: labels.source,
     questions,
   };
 }

@@ -2,6 +2,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { StatsView } from "./views/StatsView";
+import { LocaleProvider } from "./i18n/LocaleProvider";
 import { today } from "./storage";
 import type { Progress } from "./types";
 
@@ -34,7 +35,13 @@ const base: Progress = {
 };
 
 function render(progress: Progress) {
-  act(() => root.render(<StatsView progress={progress} />));
+  act(() =>
+    root.render(
+      <LocaleProvider supportedLocales={["zh-CN", "fr"]}>
+        <StatsView progress={progress} />
+      </LocaleProvider>
+    )
+  );
 }
 
 describe("StatsView 学习时长", () => {
@@ -66,7 +73,9 @@ describe("StatsView 学习时长", () => {
     expect(segs[0].classList.contains("study-practice")).toBe(true);
     expect(segs[1].classList.contains("study-read")).toBe(true);
 
-    expect(container.textContent).toContain("累计学习时长 15 分（看讲解 10 分 / 做练习 5 分）");
+    expect(container.textContent).toContain(
+      "累计学习时长 15 分（看讲解 10 分 / 做练习 5 分）"
+    );
   });
 
   test("全为 0 时不显示柱顶数字、不报错", () => {

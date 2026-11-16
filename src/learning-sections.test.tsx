@@ -12,6 +12,8 @@ import { STORAGE_KEY } from "./config";
 import { DEFAULT_PROGRESS } from "./storage";
 import { HomeView } from "./views/HomeView";
 import { sectionedChapters, sectionedMap } from "./test/sectionFixtures";
+import { LocaleProvider } from "./i18n/LocaleProvider";
+import { UI_LOCALES } from "./i18n/types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -168,15 +170,17 @@ describe("小节与综合挑战点击", () => {
     const onOpenLesson = vi.fn();
     act(() =>
       root.render(
-        <HomeView
-          chapters={sectionedChapters}
-          progress={DEFAULT_PROGRESS}
-          openChapterId={sectionedChapters[0]!.id}
-          onOpenLesson={onOpenLesson}
-          onOpenCards={() => {}}
-          onOpenReview={() => {}}
-          sectionMap={sectionedMap}
-        />
+        <LocaleProvider supportedLocales={UI_LOCALES}>
+          <HomeView
+            chapters={sectionedChapters}
+            progress={DEFAULT_PROGRESS}
+            openChapterId={sectionedChapters[0]!.id}
+            onOpenLesson={onOpenLesson}
+            onOpenCards={() => {}}
+            onOpenReview={() => {}}
+            sectionMap={sectionedMap}
+          />
+        </LocaleProvider>
       )
     );
 

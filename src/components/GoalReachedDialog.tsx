@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { Progress } from "../types";
 import type { ShareResult } from "../share/shareStats";
+import { useLocale } from "../i18n/LocaleProvider";
+import {
+  formatUserError,
+  normalizeUserFacingError,
+  type UserFacingError,
+} from "../i18n/errors";
+import { formatNumber } from "../i18n/format";
 
 interface Props {
   progress: Progress;
@@ -13,17 +20,7 @@ interface Props {
 type ShareStatus = "idle" | "downloaded" | "cancelled" | "error";
 
 const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-function detailFor(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === "string" && error) return error;
-  return "请重试";
-}
-
-function failureText(detail: string): string {
-  return detail.includes("分享失败") ? detail : `分享失败：${detail || "请重试"}`;
-}
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
 
 export function GoalReachedDialog({
   progress,
@@ -31,6 +28,7 @@ export function GoalReachedDialog({
   onClose,
   returnFocusTo,
 }: Props) {
+  const { locale, t } = useLocale();
   const dialogRef = useRef<HTMLDivElement>(null);
   const primaryRef = useRef<HTMLButtonElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
@@ -39,7 +37,8 @@ export function GoalReachedDialog({
   const aliveRef = useRef(true);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<ShareStatus>("idle");
-  const [message, setMessage] = useState("");
+  // 只保存原始结构化错误，主提示与详情在渲染时按当前语言生成。
+  const [shareError, setShareError] = useState<UserFacingError | null>(null);
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -113,7 +112,7 @@ export function GoalReachedDialog({
     if (busy) return;
     setBusy(true);
     setStatus("idle");
-    setMessage("");
+    setShareError(null);
 
     try {
       const result = await onShare();
@@ -126,21 +125,35 @@ export function GoalReachedDialog({
       }
       if (result.status === "downloaded") {
         setStatus("downloaded");
-        setMessage("图片已保存到本地，可手动分享");
       } else if (result.status === "cancelled") {
         setStatus("cancelled");
-        setMessage("已取消");
       } else {
         setStatus("error");
-        setMessage(failureText(result.message));
+        setShareError(
+          result.error ?? normalizeUserFacingError(result.message)
+        );
       }
     } catch (error) {
       if (!aliveRef.current) return;
       setStatus("error");
-      setMessage(failureText(detailFor(error)));
+      setShareError(normalizeUserFacingError(error));
     }
     if (aliveRef.current) setBusy(false);
   };
+
+  const formattedError =
+    status === "error" && shareError
+      ? formatUserError(shareError, locale)
+      : null;
+
+  const message =
+    status === "downloaded"
+      ? t("goal.downloaded")
+      : status === "cancelled"
+        ? t("goal.cancelled")
+        : status === "error"
+          ? (formattedError?.message ?? t("stats.retry"))
+          : "";
 
   return (
     <div
@@ -158,10 +171,10 @@ export function GoalReachedDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <h2 className="goal-dialog-title" id="reminder-title">
-          今日目标达成 🎉
+          {t("goal.title")}
         </h2>
         <p className="goal-dialog-body">
-          已完成今日 {progress.dailyGoal} XP 目标，分享打卡记录鼓励自己吧！
+          {t("goal.body", { goal: formatNumber(locale, progress.dailyGoal) })}
         </p>
         <div className="goal-dialog-actions">
           <button
@@ -171,10 +184,14 @@ export function GoalReachedDialog({
             disabled={busy}
             onClick={handleShare}
           >
-            {busy ? "生成中…" : status === "error" ? "重试" : "分享打卡"}
+            {busy
+              ? t("goal.busy")
+              : status === "error"
+                ? t("goal.retry")
+                : t("goal.share")}
           </button>
           <button className="btn btn-secondary" onClick={onClose}>
-            稍后再说
+            {t("goal.later")}
           </button>
         </div>
         <div
@@ -183,12 +200,18 @@ export function GoalReachedDialog({
           aria-live="polite"
           aria-atomic="true"
         >
-          {message}
+          <span>{message}</span>
+          {formattedError?.diagnostic && (
+            <details className="goal-dialog-details">
+              <summary>{t("errors.details")}</summary>
+              <span>{formattedError.diagnostic}</span>
+            </details>
+          )}
         </div>
         <button
           className="goal-dialog-close"
           type="button"
-          aria-label="关闭"
+          aria-label={t("common.close")}
           onClick={onClose}
         >
           ✕

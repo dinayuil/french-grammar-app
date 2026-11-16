@@ -1,7 +1,8 @@
 import { createRoot, type Root } from "react-dom/client";
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { DEFAULT_PROGRESS } from "../storage";
+import { LocaleProvider, useLocale } from "../i18n/LocaleProvider";
 import type { Progress } from "../types";
 import type { ProgressBackup } from "../backup/progressBackup";
 
@@ -61,6 +62,7 @@ const RECOVERY: ProgressBackup = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  localStorage.clear();
   backupMocks.isBackupCancelled.mockReturnValue(false);
   backupMocks.loadRecoveryBackup.mockReturnValue(null);
   container = document.createElement("div");
@@ -95,9 +97,42 @@ async function flushAsync() {
   });
 }
 
-function renderPanel(onChange: (progress: Progress) => void = vi.fn()) {
+function LocaleButtons() {
+  const { setLocale } = useLocale();
+  return (
+    <div>
+      <button type="button" data-testid="locale-fr" onClick={() => setLocale("fr")}>
+        fr
+      </button>
+      <button
+        type="button"
+        data-testid="locale-zh"
+        onClick={() => setLocale("zh-CN")}
+      >
+        zh
+      </button>
+    </div>
+  );
+}
+
+function tree(panel: ReactNode, controls = false) {
+  return (
+    <LocaleProvider supportedLocales={["zh-CN", "fr"]}>
+      {panel}
+      {controls ? <LocaleButtons /> : null}
+    </LocaleProvider>
+  );
+}
+
+function renderPanel(
+  onChange: (progress: Progress) => void = vi.fn(),
+  options: { locale?: "zh-CN" | "fr"; controls?: boolean } = {}
+) {
+  if (options.locale) localStorage.setItem("fge:ui-locale:v1", options.locale);
   act(() =>
-    root.render(<ProgressBackupPanel progress={CURRENT} onChange={onChange} />)
+    root.render(
+      tree(<ProgressBackupPanel progress={CURRENT} onChange={onChange} />, options.controls)
+    )
   );
   return { onChange };
 }
@@ -143,7 +178,7 @@ describe("学习进度备份", () => {
     const button = $(".backup-export") as HTMLButtonElement;
     click(button);
 
-    expect(backupMocks.exportBackup).toHaveBeenCalledWith(CURRENT);
+    expect(backupMocks.exportBackup).toHaveBeenCalledWith(CURRENT, "zh-CN");
     expect(button.disabled).toBe(true);
     expect(button.getAttribute("aria-busy")).toBe("true");
     expect(($('input[type="file"]') as HTMLInputElement).disabled).toBe(true);
@@ -283,6 +318,7 @@ describe("学习进度备份", () => {
     chooseFile({ size: 100, text: async () => "{}" });
     await flushAsync();
 
+    expect(alertText()).toContain("备份文件无法识别");
     expect(alertText()).toContain("备份版本不受支持");
     expect(backupMocks.restoreBackup).not.toHaveBeenCalled();
     expect(onChange).not.toHaveBeenCalled();
@@ -360,9 +396,89 @@ describe("学习进度备份", () => {
     expect(onChange).toHaveBeenCalledWith(RECOVERY.progress);
   });
 
+  test("法语界面显示法语标题、按钮、预览摘要和错误详情", async () => {
+    backupMocks.parseBackup.mockReturnValue(BACKUP);
+    renderPanel(vi.fn(), { locale: "fr" });
+
+    expect(container.textContent).toContain("Sauvegarde de la progression");
+    expect(container.textContent).toContain("Exporter la sauvegarde");
+    expect(container.textContent).toContain("Importer une sauvegarde");
+
+    chooseFile({ size: 2048, text: async () => "{}" });
+    await flushAsync();
+
+    const preview = readPreview();
+    expect(preview.textContent).toContain("Date d'exportation");
+    expect(preview.textContent).toContain("420 XP");
+    expect(preview.textContent).toContain("2 leçons");
+    expect(preview.textContent).toContain("objectif quotidien");
+    expect(preview.textContent).toContain("thème");
+    expect($('[role="status"]')?.textContent).toContain("Sauvegarde lue");
+  });
+
+  test("旧错误字符串以当前语言通用主提示显示，原文只出现在技术详情", async () => {
+    backupMocks.exportBackup.mockRejectedValue("云存储写入失败");
+    renderPanel(vi.fn(), { locale: "fr" });
+
+    click($(".backup-export") as HTMLButtonElement);
+    await flushAsync();
+
+    const alert = alertText();
+    expect(alert).toContain("Échec de l'exportation");
+    expect(alert).toContain("Détails techniques");
+    expect(alert).toContain("云存储写入失败");
+    expect(alert).not.toMatch(/操作失败/);
+  });
+
+  test("异步操作失败后切换语言，错误提示随当前语言更新", async () => {
+    backupMocks.exportBackup.mockRejectedValue(new Error("quota"));
+    renderPanel(vi.fn(), { controls: true });
+
+    click($(".backup-export") as HTMLButtonElement);
+    await flushAsync();
+    expect(alertText()).toContain("导出失败");
+
+    click($('[data-testid="locale-fr"]') as HTMLButtonElement);
+    expect(alertText()).toContain("Échec de l'exportation");
+    expect(alertText()).not.toContain("导出失败");
+
+    click($('[data-testid="locale-zh"]') as HTMLButtonElement);
+    expect(alertText()).toContain("导出失败");
+  });
+
+  test("导出时把当前界面语言传给备份服务", async () => {
+    backupMocks.exportBackup.mockResolvedValue(undefined);
+    renderPanel(vi.fn(), { locale: "fr" });
+
+    click($(".backup-export") as HTMLButtonElement);
+    await flushAsync();
+
+    expect(backupMocks.exportBackup).toHaveBeenCalledWith(CURRENT, "fr");
+  });
+
+  test("导入备份不改变当前界面语言", async () => {
+    backupMocks.parseBackup.mockReturnValue(BACKUP);
+    renderPanel(vi.fn(), { locale: "fr" });
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+
+    chooseFile({ size: 2048, text: async () => "{}" });
+    await flushAsync();
+    click(buttonByText("Confirmer la restauration"));
+
+    expect(alertText()).toBe("");
+    expect(container.textContent).toContain("Progression restaurée");
+    expect(document.documentElement.lang).toBe("fr");
+    expect(
+      setItem.mock.calls.some(([key]) => key === "fge:ui-locale:v1")
+    ).toBe(false);
+    setItem.mockRestore();
+  });
+
   test("设置页把学习进度备份放在危险操作之前", () => {
     act(() =>
-      root.render(<SettingsView progress={CURRENT} onChange={() => {}} />)
+      root.render(
+        tree(<SettingsView progress={CURRENT} onChange={() => {}} />)
+      )
     );
 
     const text = container.textContent ?? "";

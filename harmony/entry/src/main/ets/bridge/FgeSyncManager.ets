@@ -46,6 +46,42 @@ export interface HarmonySyncResponse {
   body: string;
 }
 
+export type NativeErrorCode =
+  | 'native.config_invalid'
+  | 'native.credentials_required'
+  | 'native.storage_failed'
+  | 'native.network_failed'
+  | 'native.file_failed'
+  | 'native.unsupported'
+  | 'native.unknown';
+
+/**
+ * 稳定错误码 + 非敏感参数 + 原始诊断。桥接层只转发这些字段,界面文案由
+ * JS 按当前语言生成;这里的中文 message 仅作兼容与诊断。
+ */
+export class NativeSyncError extends Error {
+  readonly code: NativeErrorCode;
+  readonly params: Record<string, string | number>;
+  readonly diagnostic: string;
+
+  constructor(
+    code: NativeErrorCode,
+    diagnostic: string,
+    params?: Record<string, string | number>
+  ) {
+    super(diagnostic);
+    this.name = 'NativeSyncError';
+    this.code = code;
+    this.diagnostic = diagnostic;
+    this.params = params === undefined ? {} : params;
+  }
+
+  withParam(name: string, value: string | number): NativeSyncError {
+    this.params[name] = value;
+    return this;
+  }
+}
+
 interface SyncRecord {
   url: string;
   username: string;
@@ -76,19 +112,23 @@ export class FgeSyncManager {
   }
 
   async readConfig(): Promise<HarmonySyncConfig | null> {
-    const context = this.requireContext();
-    const store = await preferences.getPreferences(context, SYNC_PREFS);
-    const record = this.readRecord(store);
-    if (record === null) {
-      return null;
+    try {
+      const context = this.requireContext();
+      const store = await preferences.getPreferences(context, SYNC_PREFS);
+      const record = this.readRecord(store);
+      if (record === null) {
+        return null;
+      }
+      const config: HarmonySyncConfig = {
+        url: record.url,
+        username: record.username,
+        autoSync: record.autoSync,
+        hasPassword: record.credential.length > 0,
+      };
+      return config;
+    } catch (error) {
+      throw this.storageError(error, '无法读取同步配置');
     }
-    const config: HarmonySyncConfig = {
-      url: record.url,
-      username: record.username,
-      autoSync: record.autoSync,
-      hasPassword: record.credential.length > 0,
-    };
-    return config;
   }
 
   writeConfig(
@@ -96,21 +136,36 @@ export class FgeSyncManager {
     password: string | null
   ): Promise<void> {
     return this.enqueueConfig(async () => {
-      await this.writeConfigLocked(configValue, password);
+      try {
+        await this.writeConfigLocked(configValue, password);
+      } catch (error) {
+        throw this.storageError(error, '无法保存同步配置');
+      }
     });
   }
 
   disconnect(): Promise<void> {
     return this.enqueueConfig(async () => {
-      await this.disconnectLocked();
+      try {
+        await this.disconnectLocked();
+      } catch (error) {
+        throw this.storageError(error, '无法断开同步');
+      }
     });
+  }
+
+  private storageError(error: Object, fallback: string): NativeSyncError {
+    if (error instanceof NativeSyncError) {
+      return error;
+    }
+    return new NativeSyncError('native.storage_failed', fallback);
   }
 
   async request(requestValue: Object): Promise<HarmonySyncResponse> {
     const context = this.requireContext();
     const record = this.asRecord(requestValue);
     if (record === null) {
-      throw new Error('同步请求无效');
+      throw new NativeSyncError('native.config_invalid', '同步请求无效');
     }
 
     const methodValue = record['method'];
@@ -122,20 +177,20 @@ export class FgeSyncManager {
       methodValue !== 'MKCOL' &&
       methodValue !== 'PROPFIND'
     ) {
-      throw new Error('同步请求方法无效');
+      throw new NativeSyncError('native.config_invalid', '同步请求方法无效');
     }
     if (
       typeof filenameValue !== 'string' ||
       typeof headerValue !== 'object' ||
       headerValue === null
     ) {
-      throw new Error('同步请求无效');
+      throw new NativeSyncError('native.config_invalid', '同步请求无效');
     }
     const method = methodValue as string;
     const filename = filenameValue as string;
     const headerRecord = this.asRecord(headerValue);
     if (headerRecord === null) {
-      throw new Error('同步请求无效');
+      throw new NativeSyncError('native.config_invalid', '同步请求无效');
     }
 
     const expectedFilename = this.filename(context);
@@ -144,19 +199,19 @@ export class FgeSyncManager {
       !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(filename) ||
       filename.indexOf('..') >= 0
     ) {
-      throw new Error('同步文件名无效');
+      throw new NativeSyncError('native.config_invalid', '同步文件名无效');
     }
 
     const bodyValue = record['body'];
     if (bodyValue !== undefined && typeof bodyValue !== 'string') {
-      throw new Error('同步请求体无效');
+      throw new NativeSyncError('native.config_invalid', '同步请求体无效');
     }
     const body = typeof bodyValue === 'string' ? bodyValue : '';
     if (method !== 'PUT' && method !== 'PROPFIND' && body.length > 0) {
-      throw new Error('同步请求不能携带请求体');
+      throw new NativeSyncError('native.config_invalid', '同步请求不能携带请求体');
     }
     if (new util.TextEncoder().encodeInto(body).length > MAX_SYNC_BYTES) {
-      throw new Error('同步请求超过大小上限');
+      throw new NativeSyncError('native.config_invalid', '同步请求超过大小上限');
     }
 
     const snapshot = await this.loadSnapshot(context);
@@ -177,12 +232,12 @@ export class FgeSyncManager {
     try {
       response = await client.request(target, options);
     } catch (error) {
-      throw new Error('同步请求失败，请检查网络或服务器');
+      throw new NativeSyncError('native.network_failed', '同步请求失败，请检查网络或服务器');
     } finally {
       client.destroy();
     }
     if (response === null) {
-      throw new Error('同步请求失败，请检查网络或服务器');
+      throw new NativeSyncError('native.network_failed', '同步请求失败，请检查网络或服务器');
     }
     return this.parseResponse(response);
   }
@@ -210,7 +265,7 @@ export class FgeSyncManager {
     const context = this.requireContext();
     const record = this.asRecord(configValue);
     if (record === null) {
-      throw new Error('同步配置无效');
+      throw new NativeSyncError('native.config_invalid', '同步配置无效');
     }
     const urlValue = record['url'];
     const usernameValue = record['username'];
@@ -220,7 +275,7 @@ export class FgeSyncManager {
       typeof usernameValue !== 'string' ||
       typeof autoValue !== 'boolean'
     ) {
-      throw new Error('同步配置无效');
+      throw new NativeSyncError('native.config_invalid', '同步配置无效');
     }
     const configUrl = urlValue.trim();
     const username = usernameValue;
@@ -251,18 +306,18 @@ export class FgeSyncManager {
     let credential = '';
     if (password !== null) {
       if (!sameTarget && previousHasPassword && password.length === 0) {
-        throw new Error('更换同步地址或用户名时，请重新输入应用密码');
+        throw new NativeSyncError('native.credentials_required', '更换同步地址或用户名时，请重新输入应用密码');
       }
       if (password.length > 0) {
         try {
           credential = await this.encryptPassword(password);
         } catch (error) {
-          throw new Error('无法保存同步配置');
+          throw new NativeSyncError('native.storage_failed', '无法保存同步配置');
         }
       }
     } else {
       if (!sameTarget && previousHasPassword) {
-        throw new Error('更换同步地址或用户名时，请重新输入应用密码');
+        throw new NativeSyncError('native.credentials_required', '更换同步地址或用户名时，请重新输入应用密码');
       }
       credential = sameTarget && previous !== null ? previous.credential : '';
     }
@@ -289,7 +344,7 @@ export class FgeSyncManager {
       } catch (rollbackError) {
         // 回滚失败时保留可读错误;调用方可能重新连接。
       }
-      throw new Error('无法保存同步配置');
+      throw new NativeSyncError('native.storage_failed', '无法保存同步配置');
     }
   }
 
@@ -300,7 +355,7 @@ export class FgeSyncManager {
       store.clearSync();
       await store.flush();
     } catch (error) {
-      throw new Error('无法断开同步');
+      throw new NativeSyncError('native.storage_failed', '无法断开同步');
     }
     try {
       await huks.deleteKeyItem(HUKS_ALIAS, { properties: [] });
@@ -310,23 +365,27 @@ export class FgeSyncManager {
   }
 
   private async loadSnapshot(context: common.UIAbilityContext): Promise<SyncSnapshot> {
-    const store = await preferences.getPreferences(context, SYNC_PREFS);
-    const record = this.readRecord(store);
-    if (record === null) {
-      throw new Error('尚未配置同步');
+    try {
+      const store = await preferences.getPreferences(context, SYNC_PREFS);
+      const record = this.readRecord(store);
+      if (record === null) {
+        throw new NativeSyncError('native.config_invalid', '尚未配置同步');
+      }
+      const normalizedUrl = this.normalizeBaseUrl(record.url);
+      const password =
+        record.credential.length === 0
+          ? ''
+          : await this.decryptPassword(record.credential);
+      const snapshot: SyncSnapshot = {
+        url: normalizedUrl,
+        username: record.username,
+        password: password,
+        filename: this.filename(context),
+      };
+      return snapshot;
+    } catch (error) {
+      throw this.storageError(error, '无法读取同步配置');
     }
-    const normalizedUrl = this.normalizeBaseUrl(record.url);
-    const password =
-      record.credential.length === 0
-        ? ''
-        : await this.decryptPassword(record.credential);
-    const snapshot: SyncSnapshot = {
-      url: normalizedUrl,
-      username: record.username,
-      password: password,
-      filename: this.filename(context),
-    };
-    return snapshot;
   }
 
   private readRecord(store: preferences.Preferences): SyncRecord | null {
@@ -389,7 +448,7 @@ export class FgeSyncManager {
         this.hasControl(value) ||
         (lower === 'depth' && (method !== 'PROPFIND' || value !== '0'))
       ) {
-        throw new Error('同步请求头无效');
+        throw new NativeSyncError('native.config_invalid', '同步请求头无效');
       }
       seen.push(lower);
       headers[name] = value;
@@ -433,14 +492,14 @@ export class FgeSyncManager {
   private parseResponse(response: http.HttpResponse): HarmonySyncResponse {
     const status = response.responseCode;
     if (typeof status !== 'number' || !Number.isInteger(status) || status < 100 || status > 599) {
-      throw new Error('同步响应无效');
+      throw new NativeSyncError('native.network_failed', '同步响应无效');
     }
     if (typeof response.result !== 'string') {
-      throw new Error('同步响应无效');
+      throw new NativeSyncError('native.network_failed', '同步响应无效');
     }
     const body = response.result;
     if (new util.TextEncoder().encodeInto(body).length > MAX_SYNC_BYTES) {
-      throw new Error('同步响应超过大小上限');
+      throw new NativeSyncError('native.network_failed', '同步响应超过大小上限');
     }
 
     const headers: Record<string, string> = {};
@@ -458,7 +517,7 @@ export class FgeSyncManager {
           value = rawValue.toString();
         }
         if (this.hasControl(name) || this.hasControl(value)) {
-          throw new Error('同步响应无效');
+          throw new NativeSyncError('native.network_failed', '同步响应无效');
         }
         headers[name] = value;
       }
@@ -492,26 +551,26 @@ export class FgeSyncManager {
       trimmed.length > MAX_URL_LENGTH ||
       this.hasControl(trimmed)
     ) {
-      throw new Error('同步地址无效');
+      throw new NativeSyncError('native.config_invalid', '同步地址无效');
     }
 
     let candidate: url.URL;
     try {
       candidate = new url.URL(trimmed);
     } catch (error) {
-      throw new Error('同步地址无效');
+      throw new NativeSyncError('native.config_invalid', '同步地址无效');
     }
     if (candidate.protocol !== 'https:' && candidate.protocol !== 'http:') {
-      throw new Error('同步地址必须使用 HTTP 或 HTTPS');
+      throw new NativeSyncError('native.config_invalid', '同步地址必须使用 HTTP 或 HTTPS');
     }
     if (candidate.host.length === 0 || candidate.hostname.length === 0) {
-      throw new Error('同步地址无效');
+      throw new NativeSyncError('native.config_invalid', '同步地址无效');
     }
     if (candidate.username.length > 0 || candidate.password.length > 0) {
-      throw new Error('同步地址不能包含账号信息');
+      throw new NativeSyncError('native.config_invalid', '同步地址不能包含账号信息');
     }
     if (candidate.search.length > 0 || candidate.hash.length > 0) {
-      throw new Error('同步地址不能包含查询或片段');
+      throw new NativeSyncError('native.config_invalid', '同步地址不能包含查询或片段');
     }
 
     const path = candidate.pathname;
@@ -533,7 +592,7 @@ export class FgeSyncManager {
 
   private validatePath(path: string): void {
     if (path.indexOf('\\') >= 0 || path.indexOf(' ') >= 0 || this.hasControl(path)) {
-      throw new Error('同步地址无效');
+      throw new NativeSyncError('native.config_invalid', '同步地址无效');
     }
     const lower = path.toLowerCase();
     if (
@@ -542,22 +601,22 @@ export class FgeSyncManager {
       lower.indexOf('%5c') >= 0 ||
       lower.indexOf('%00') >= 0
     ) {
-      throw new Error('同步地址无效');
+      throw new NativeSyncError('native.config_invalid', '同步地址无效');
     }
 
     let decoded = '';
     try {
       decoded = decodeURIComponent(path);
     } catch (error) {
-      throw new Error('同步地址无效');
+      throw new NativeSyncError('native.config_invalid', '同步地址无效');
     }
     if (decoded.indexOf('\\') >= 0 || this.hasControl(decoded)) {
-      throw new Error('同步地址无效');
+      throw new NativeSyncError('native.config_invalid', '同步地址无效');
     }
     const segments = decoded.split('/');
     for (const segment of segments) {
       if (segment === '.' || segment === '..') {
-        throw new Error('同步地址无效');
+        throw new NativeSyncError('native.config_invalid', '同步地址无效');
       }
     }
   }
@@ -570,18 +629,18 @@ export class FgeSyncManager {
     if (bundleName === 'com.fge.app') {
       return 'fge-progress-internal.json';
     }
-    throw new Error('未知应用版本');
+    throw new NativeSyncError('native.unsupported', '未知应用版本');
   }
 
   private validateUsername(username: string): void {
     if (username.length > 256 || username.indexOf(':') >= 0 || this.hasControl(username)) {
-      throw new Error('同步用户名无效');
+      throw new NativeSyncError('native.config_invalid', '同步用户名无效');
     }
   }
 
   private validatePassword(password: string): void {
     if (this.hasControl(password)) {
-      throw new Error('同步密码无效');
+      throw new NativeSyncError('native.config_invalid', '同步密码无效');
     }
   }
 
@@ -597,13 +656,13 @@ export class FgeSyncManager {
     try {
       combined = new util.Base64Helper().decodeSync(encoded);
     } catch (error) {
-      throw new Error('同步凭据不可用');
+      throw new NativeSyncError('native.credentials_required', '同步凭据不可用');
     }
     try {
       const plain = await this.decrypt(combined);
       return new util.TextDecoder().decodeToString(plain);
     } catch (error) {
-      throw new Error('同步凭据不可用');
+      throw new NativeSyncError('native.credentials_required', '同步凭据不可用');
     }
   }
 
@@ -657,7 +716,7 @@ export class FgeSyncManager {
     const handle = await huks.initSession(HUKS_ALIAS, options);
     const result = await huks.finishSession(handle.handle, options);
     if (result.outData === undefined || result.outData.length === 0) {
-      throw new Error('同步凭据加密失败');
+      throw new NativeSyncError('native.storage_failed', '同步凭据加密失败');
     }
     const combined = new Uint8Array(nonce.length + result.outData.length);
     combined.set(nonce, 0);
@@ -667,7 +726,7 @@ export class FgeSyncManager {
 
   private async decrypt(combined: Uint8Array): Promise<Uint8Array> {
     if (combined.length <= NONCE_BYTES + GCM_TAG_BYTES) {
-      throw new Error('同步凭据不可用');
+      throw new NativeSyncError('native.credentials_required', '同步凭据不可用');
     }
     const nonce = combined.slice(0, NONCE_BYTES);
     const payload = combined.slice(NONCE_BYTES);
@@ -684,7 +743,7 @@ export class FgeSyncManager {
     const handle = await huks.initSession(HUKS_ALIAS, options);
     const result = await huks.finishSession(handle.handle, options);
     if (result.outData === undefined || result.outData.length === 0) {
-      throw new Error('同步凭据不可用');
+      throw new NativeSyncError('native.credentials_required', '同步凭据不可用');
     }
     return result.outData;
   }
@@ -732,7 +791,7 @@ export class FgeSyncManager {
   private requireContext(): common.UIAbilityContext {
     const context = this.context;
     if (context === null) {
-      throw new Error('原生上下文不可用');
+      throw new NativeSyncError('native.unsupported', '原生上下文不可用');
     }
     return context;
   }

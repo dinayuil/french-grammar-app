@@ -9,6 +9,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import { validateChapter } from "../src/content/validate";
+import {
+  collectLocalizationGaps,
+  formatLocalizationGap,
+  type LocalizationGap,
+  type SectionKeyRegistry,
+  type SharedFieldRegistry,
+} from "../src/content/localizationCoverage";
+import { CONTENT_LOCALES, UI_LOCALES, type UiLocale } from "../src/i18n/types";
+import { assertMessageCatalogsComplete } from "../src/i18n/messages";
+import { SECTION_MAP } from "../src/learning/sections";
 import type { Chapter } from "../src/types";
 import { resolveEdition as resolveEditionFromScripts } from "../scripts/edition.mjs";
 import type { Edition as EditionFromScripts } from "../scripts/edition.mjs";
@@ -19,6 +29,8 @@ export { resolveEditionFromScripts as resolveEdition };
 export interface LoadedBank {
   chapters: Chapter[];
   files: string[];
+  /** manifest 声明的可用语言；旧 manifest 缺省仅 zh-CN。 */
+  supportedLocales: readonly UiLocale[];
 }
 
 interface Manifest {
@@ -27,11 +39,35 @@ interface Manifest {
   chapters: string[];
   expectedChapterCount: number;
   expectedQuestionCount: number;
+  supportedLocales?: UiLocale[];
+  localizationSharedFields?: Record<string, SharedFieldRegistry>;
 }
 
 const APP_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const VIRTUAL_MODULE_ID = "virtual:fge-content";
 const RESOLVED_VIRTUAL_MODULE_ID = `\0${VIRTUAL_MODULE_ID}`;
+
+/**
+ * app 已登记的小章 key 是内容元数据的唯一合法键集合。综合区标签来自
+ * UI 文案目录，不进入 sectionTitles；私有版不新增分区。
+ */
+const SECTION_KEYS: SectionKeyRegistry = Object.fromEntries(
+  Object.entries(SECTION_MAP).map(([chapterId, blueprint]) => [
+    chapterId,
+    blueprint.sections.map((section) => section.key),
+  ])
+);
+
+/** 可被 manifest 显式裁定复用的展示字段（不包含 source、ID 和评分字段）。 */
+const SHARED_FIELD_NAMES = new Set([
+  "title",
+  "body",
+  "prompt",
+  "example",
+  "explain",
+  "translation",
+  "options",
+]);
 
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -154,6 +190,81 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function validateSupportedLocales(value: unknown, errors: string[]): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value)) {
+    errors.push("supportedLocales 必须是数组");
+    return;
+  }
+  const allowed: readonly string[] = UI_LOCALES;
+  const seen = new Set<string>();
+  for (const raw of value) {
+    if (typeof raw !== "string" || !allowed.includes(raw)) {
+      errors.push(
+        `supportedLocales 含非法语言值 ${JSON.stringify(raw)}；只允许 ${UI_LOCALES.join(", ")}`
+      );
+      continue;
+    }
+    if (seen.has(raw)) {
+      errors.push(`supportedLocales 含重复语言值 ${JSON.stringify(raw)}`);
+      continue;
+    }
+    seen.add(raw);
+  }
+  if (!seen.has("zh-CN")) {
+    errors.push("supportedLocales 必须包含 zh-CN");
+  }
+}
+
+function validateLocalizationSharedFields(value: unknown, errors: string[]): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    errors.push("localizationSharedFields 必须是对象");
+    return;
+  }
+  const contentLocales: readonly string[] = CONTENT_LOCALES;
+  for (const [locale, entities] of Object.entries(value)) {
+    if (!contentLocales.includes(locale)) {
+      errors.push(
+        `localizationSharedFields.${locale}: 未注册的内容语言，只允许 ${CONTENT_LOCALES.join(", ")}`
+      );
+      continue;
+    }
+    if (!isRecord(entities)) {
+      errors.push(`localizationSharedFields.${locale} 必须是实体 ID 到字段数组的对象`);
+      continue;
+    }
+    for (const [entityId, fields] of Object.entries(entities)) {
+      if (!entityId.trim()) {
+        errors.push(`localizationSharedFields.${locale} 含空实体 ID`);
+        continue;
+      }
+      if (!Array.isArray(fields)) {
+        errors.push(
+          `localizationSharedFields.${locale}.${entityId}: 字段列表必须是数组`
+        );
+        continue;
+      }
+      const seen = new Set<string>();
+      for (const field of fields) {
+        if (typeof field !== "string" || !SHARED_FIELD_NAMES.has(field)) {
+          errors.push(
+            `localizationSharedFields.${locale}.${entityId}: 未知字段 ${JSON.stringify(field)}`
+          );
+          continue;
+        }
+        if (seen.has(field)) {
+          errors.push(
+            `localizationSharedFields.${locale}.${entityId}: 重复字段 ${JSON.stringify(field)}`
+          );
+          continue;
+        }
+        seen.add(field);
+      }
+    }
+  }
+}
+
 function validateManifest(value: unknown, edition: Edition): asserts value is Manifest {
   const location = "manifest.json";
   if (!isRecord(value)) {
@@ -180,6 +291,8 @@ function validateManifest(value: unknown, edition: Edition): asserts value is Ma
       errors.push(`${field} 必须是非负整数，实际为 ${JSON.stringify(count)}`);
     }
   }
+  validateSupportedLocales(value.supportedLocales, errors);
+  validateLocalizationSharedFields(value.localizationSharedFields, errors);
   if (errors.length > 0) {
     throw new Error(`${location}: 清单校验失败: ${errors.join("; ")}`);
   }
@@ -317,7 +430,40 @@ export function loadBank(root: string, edition: Edition): LoadedBank {
     }
   }
 
-  return { chapters, files };
+  const supportedLocales: readonly UiLocale[] =
+    manifest.supportedLocales ?? ["zh-CN"];
+  const frSupported = supportedLocales.includes("fr");
+  let gaps: LocalizationGap[];
+  try {
+    gaps = collectLocalizationGaps(chapters, "fr", SECTION_KEYS, {
+      // 未声明 fr 时不消费共用字段裁定，避免旧中文版被无关声明阻断；
+      // 小章 key 属于内容契约，无论是否启用都校验。
+      sharedFields: frSupported
+        ? manifest.localizationSharedFields?.fr ?? {}
+        : {},
+    });
+  } catch (error) {
+    throw new Error(
+      `manifest.json: 法语本地化声明无效: ${describeError(error)}`
+    );
+  }
+  if (frSupported && gaps.length > 0) {
+    const preview = gaps
+      .slice(0, 25)
+      .map((gap) => formatLocalizationGap(gap))
+      .join("\n - ");
+    const more =
+      gaps.length > 25 ? `\n ... 另有 ${gaps.length - 25} 项` : "";
+    throw new Error(
+      `manifest.json: supportedLocales 声明 fr，但 ${edition} 题库法语内容不完整（${gaps.length} 项）:\n - ${preview}${more}`
+    );
+  }
+
+  // UI 文案目录随 app 构建，完整性不取决于内容是否启用 fr；旧中文版
+  // manifest 也校验真实目录，避免未启用的语言键静默缺失。
+  assertMessageCatalogsComplete();
+
+  return { chapters, files, supportedLocales };
 }
 
 type RelativePathApi = Pick<typeof path, "relative" | "isAbsolute">;
@@ -424,7 +570,7 @@ export function contentPlugin(options: {
         .replace(/\u2028/g, "\\u2028")
         .replace(/\u2029/g, "\\u2029");
       return {
-        code: `export const CHAPTERS = ${payload};`,
+        code: `export const CHAPTERS = ${payload};\nexport const SUPPORTED_LOCALES = ${JSON.stringify(loaded.supportedLocales)};`,
         map: null,
       };
     },

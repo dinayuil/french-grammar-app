@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { LettersQuestion as LettersQ } from "../types";
 import { lettersBank, pickDecoys } from "../engine";
+import { useLocale } from "../i18n/LocaleProvider";
 
 interface Props {
   q: LettersQ;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function LettersQuestion({ q, response, onResponse, disabled }: Props) {
+  const { t } = useLocale();
   const [used, setUsed] = useState<number[]>([]); // 已用掉的 bank 字母下标
   // 干扰字母:挂载时随机抽取一次,本关内保持稳定(重做本关会重新抽取)
   const [decoys] = useState(() => pickDecoys(q.answer, Math.random));
@@ -68,10 +70,10 @@ export function LettersQuestion({ q, response, onResponse, disabled }: Props) {
       )}
       <div className="row-actions">
         <button className="btn btn-secondary btn-small" disabled={disabled} onClick={backspace}>
-          ⌫ 退格
+          {t("letters.backspace")}
         </button>
         <button className="btn btn-secondary btn-small" disabled={disabled} onClick={clear}>
-          清空
+          {t("letters.clear")}
         </button>
       </div>
     </div>

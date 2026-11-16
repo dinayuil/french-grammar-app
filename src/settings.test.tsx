@@ -1,7 +1,8 @@
 import { createRoot, type Root } from "react-dom/client";
-import { act, useState } from "react";
+import { act, useState, type ReactNode } from "react";
 import { describe, expect, test, vi } from "vitest";
 import { SettingsView } from "./views/SettingsView";
+import { LocaleProvider } from "./i18n/LocaleProvider";
 import { DEFAULT_PROGRESS } from "./storage";
 import type { Progress } from "./types";
 import type { ClientSyncController } from "./sync/useClientSync";
@@ -24,8 +25,16 @@ afterEach(() => {
   container.remove();
 });
 
+function withLocale(node: ReactNode) {
+  return (
+    <LocaleProvider supportedLocales={["zh-CN", "fr"]}>{node}</LocaleProvider>
+  );
+}
+
 function renderSettings(progress: Progress, onChange: (p: Progress) => void = () => {}) {
-  act(() => root.render(<SettingsView progress={progress} onChange={onChange} />));
+  act(() =>
+    root.render(withLocale(<SettingsView progress={progress} onChange={onChange} />))
+  );
 }
 
 const SYNC_SNAPSHOT: SyncSnapshot = {
@@ -74,11 +83,13 @@ describe("SettingsView 同步入口", () => {
   test("原生端传入控制器后显示同步设置", () => {
     act(() =>
       root.render(
-        <SettingsView
-          progress={DEFAULT_PROGRESS}
-          onChange={() => {}}
-          syncController={fakeSyncController()}
-        />
+        withLocale(
+          <SettingsView
+            progress={DEFAULT_PROGRESS}
+            onChange={() => {}}
+            syncController={fakeSyncController()}
+          />
+        )
       )
     );
     expect(container.textContent).toContain("跨设备同步");
@@ -159,7 +170,7 @@ describe("SettingsView 分享卡内容", () => {
       return <SettingsView progress={progress} onChange={setProgress} />;
     }
 
-    act(() => root.render(<Harness />));
+    act(() => root.render(withLocale(<Harness />)));
     click(shareContentButtons().find((button) => button.textContent === "时间")!);
 
     const buttons = shareContentButtons();

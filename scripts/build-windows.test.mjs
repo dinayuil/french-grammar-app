@@ -157,7 +157,11 @@ test("real Tauri configs are identity-consistent, NSIS-only, and narrowly scoped
       `unexpected broad permission: ${permission}`
     );
   }
-  assert.ok(configs.permissions.includes("core:window:allow-set-theme"));
+  assert.deepEqual(configs.permissions, [
+    "core:default",
+    "core:window:allow-set-theme",
+    "core:window:allow-set-title",
+  ]);
   assert.deepEqual(configs.icons, ["icons/icon.ico"]);
 });
 

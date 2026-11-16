@@ -6,6 +6,8 @@ import { HomeView } from "./views/HomeView";
 import { DEFAULT_PROGRESS, today } from "./storage";
 import type { DayRecord, Progress } from "./types";
 import { syntheticChapter } from "./test/fixtures";
+import { LocaleProvider } from "./i18n/LocaleProvider";
+import { UI_LOCALES } from "./i18n/types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -40,13 +42,15 @@ let root: Root;
 function render(progress: Partial<Progress> = {}) {
   act(() =>
     root.render(
-      <HomeView
-        chapters={[syntheticChapter]}
-        progress={{ ...DEFAULT_PROGRESS, ...progress }}
-        onOpenLesson={() => {}}
-        onOpenCards={() => {}}
-        onOpenReview={() => {}}
-      />
+      <LocaleProvider supportedLocales={UI_LOCALES}>
+        <HomeView
+          chapters={[syntheticChapter]}
+          progress={{ ...DEFAULT_PROGRESS, ...progress }}
+          onOpenLesson={() => {}}
+          onOpenCards={() => {}}
+          onOpenReview={() => {}}
+        />
+      </LocaleProvider>
     )
   );
 }
@@ -141,9 +145,11 @@ describe("首页顶部摘要", () => {
 
     expect($$(".streak-flame").length).toBe(1);
     expect($(".streak-count")!.textContent).toBe("12");
-    expect($(".hero-goal-value")!.textContent).toMatch(/98765\s*\/\s*120\s*XP/);
-    expect($(".hero-goal-note")!.textContent).toBe("已达成 · 超出 98645 XP");
-    expect($(".level-num")!.textContent).toMatch(/^等级 \d+$/);
+    expect($(".hero-goal-value")!.textContent).toBe("98,765 / 120 XP");
+    expect($(".hero-goal-note")!.textContent).toBe(
+      "已达成 · 超出 98,645 XP"
+    );
+    expect($(".level-num")!.textContent).toBe("等级 1,234,568");
     expect($(".home-hero")!.textContent).not.toMatch(/NaN|Infinity/);
   });
 });

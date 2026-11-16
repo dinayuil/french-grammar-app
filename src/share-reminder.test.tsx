@@ -13,6 +13,7 @@ vi.mock("./share/shareStats", () => ({
 
 import App from "./App";
 import { LessonView } from "./views/LessonView";
+import { LocaleProvider } from "./i18n/LocaleProvider";
 import { CHAPTERS } from "./content";
 import {
   STORAGE_KEY,
@@ -406,7 +407,13 @@ test("onSettlement 收到结算后的 Progress(含奖励 XP),且在 onProgress �
     );
   }
 
-  act(() => root.render(<Harness />));
+  act(() =>
+    root.render(
+      <LocaleProvider supportedLocales={["zh-CN", "fr"]}>
+        <Harness />
+      </LocaleProvider>
+    )
+  );
   playLesson(firstLesson);
 
   const expectedXp =

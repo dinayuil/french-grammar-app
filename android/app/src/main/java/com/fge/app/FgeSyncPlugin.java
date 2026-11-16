@@ -45,7 +45,13 @@ public class FgeSyncPlugin extends Plugin {
                 }
                 call.resolve(result);
             } catch (RuntimeException error) {
-                rejectSafely(call, error, "无法读取同步配置");
+                rejectWith(
+                    call,
+                    error,
+                    "readConfig",
+                    FgeSyncErrors.STORAGE_FAILED,
+                    "无法读取同步配置"
+                );
             }
         });
     }
@@ -54,7 +60,7 @@ public class FgeSyncPlugin extends Plugin {
     public void writeConfig(PluginCall call) {
         final JSObject config = call.getObject("config");
         if (config == null) {
-            call.reject("同步配置无效");
+            rejectMessage(call, FgeSyncErrors.CONFIG_INVALID, "writeConfig", "同步配置无效");
             return;
         }
 
@@ -62,7 +68,7 @@ public class FgeSyncPlugin extends Plugin {
         final String username = config.getString("username");
         final Boolean autoSync = config.getBoolean("autoSync", null);
         if (url == null || username == null || autoSync == null) {
-            call.reject("同步配置无效");
+            rejectMessage(call, FgeSyncErrors.CONFIG_INVALID, "writeConfig", "同步配置无效");
             return;
         }
 
@@ -72,7 +78,7 @@ public class FgeSyncPlugin extends Plugin {
         if (data.has(PASSWORD_KEY) && !data.isNull(PASSWORD_KEY)) {
             final Object rawPassword = data.opt(PASSWORD_KEY);
             if (!(rawPassword instanceof String)) {
-                call.reject("同步密码无效");
+                rejectMessage(call, FgeSyncErrors.CONFIG_INVALID, "writeConfig", "同步密码无效");
                 return;
             }
             updatedPassword = (String) rawPassword;
@@ -86,7 +92,13 @@ public class FgeSyncPlugin extends Plugin {
                 validatePassword(updatedPassword);
             }
         } catch (IllegalArgumentException error) {
-            call.reject(error.getMessage());
+            rejectWith(
+                call,
+                error,
+                "writeConfig",
+                FgeSyncErrors.CONFIG_INVALID,
+                "同步配置无效"
+            );
             return;
         }
 
@@ -97,10 +109,22 @@ public class FgeSyncPlugin extends Plugin {
                 store.write(getContext(), url, username, autoSync, passwordForSave, update);
                 call.resolve();
             } catch (IllegalArgumentException | IllegalStateException error) {
-                rejectSafely(call, error, "无法保存同步配置");
+                rejectWith(
+                    call,
+                    error,
+                    "writeConfig",
+                    FgeSyncErrors.STORAGE_FAILED,
+                    "无法保存同步配置"
+                );
             } catch (RuntimeException error) {
                 Log.w(TAG, "Failed to save sync config");
-                call.reject("无法保存同步配置");
+                rejectWith(
+                    call,
+                    error,
+                    "writeConfig",
+                    FgeSyncErrors.STORAGE_FAILED,
+                    "无法保存同步配置"
+                );
             }
         });
     }
@@ -112,10 +136,22 @@ public class FgeSyncPlugin extends Plugin {
                 store.disconnect(getContext());
                 call.resolve();
             } catch (IllegalStateException error) {
-                rejectSafely(call, error, "无法断开同步");
+                rejectWith(
+                    call,
+                    error,
+                    "disconnect",
+                    FgeSyncErrors.STORAGE_FAILED,
+                    "无法断开同步"
+                );
             } catch (RuntimeException error) {
                 Log.w(TAG, "Failed to disconnect sync");
-                call.reject("无法断开同步");
+                rejectWith(
+                    call,
+                    error,
+                    "disconnect",
+                    FgeSyncErrors.STORAGE_FAILED,
+                    "无法断开同步"
+                );
             }
         });
     }
@@ -124,7 +160,7 @@ public class FgeSyncPlugin extends Plugin {
     public void request(PluginCall call) {
         final JSObject request = call.getObject("request");
         if (request == null) {
-            call.reject("同步请求无效");
+            rejectMessage(call, FgeSyncErrors.CONFIG_INVALID, "request", "同步请求无效");
             return;
         }
 
@@ -132,7 +168,7 @@ public class FgeSyncPlugin extends Plugin {
         final String filename = request.getString("filename");
         final JSONObject headers = request.optJSONObject("headers");
         if (method == null || filename == null || headers == null) {
-            call.reject("同步请求无效");
+            rejectMessage(call, FgeSyncErrors.CONFIG_INVALID, "request", "同步请求无效");
             return;
         }
 
@@ -140,7 +176,7 @@ public class FgeSyncPlugin extends Plugin {
         if (request.has("body") && !request.isNull("body")) {
             final Object rawBody = request.opt("body");
             if (!(rawBody instanceof String)) {
-                call.reject("同步请求体无效");
+                rejectMessage(call, FgeSyncErrors.CONFIG_INVALID, "request", "同步请求体无效");
                 return;
             }
             body = (String) rawBody;
@@ -165,13 +201,14 @@ public class FgeSyncPlugin extends Plugin {
                 final FgeSyncHttp.Response response = FgeSyncHttp.execute(prepared);
                 call.resolve(toJson(response));
             } catch (IllegalArgumentException | IllegalStateException error) {
-                rejectSafely(call, error, "同步请求无效");
+                // 固定诊断:异常原文可能含 URL、主机、路径或响应内容。
+                rejectRequest(call, error);
             } catch (IOException error) {
                 // 不输出 URL、请求头或响应体:错误保持认证安全。
-                call.reject("同步请求失败，请检查网络或服务器");
+                rejectRequest(call, error);
             } catch (RuntimeException error) {
                 Log.w(TAG, "Sync request failed");
-                call.reject("同步请求失败");
+                rejectRequest(call, error);
             }
         });
     }
@@ -224,16 +261,55 @@ public class FgeSyncPlugin extends Plugin {
         return object;
     }
 
-    private static void rejectSafely(PluginCall call, RuntimeException error, String fallback) {
-        final String message = error.getMessage();
-        if (
-            (error instanceof IllegalArgumentException || error instanceof IllegalStateException) &&
-            message != null &&
-            !message.isEmpty()
-        ) {
-            call.reject(message);
-            return;
+    private static void rejectMessage(
+        PluginCall call,
+        String code,
+        String operation,
+        String message
+    ) {
+        final JSObject params = new JSObject();
+        params.put("operation", operation);
+        final JSObject data = new JSObject();
+        data.put("params", params);
+        data.put("diagnostic", message);
+        call.reject(message, code, data);
+    }
+
+    private static void rejectRequest(PluginCall call, Throwable error) {
+        final FgeSyncErrors.Payload payload = FgeSyncErrors.forRequestFailure(
+            error,
+            "request"
+        );
+        final JSObject params = new JSObject();
+        for (Map.Entry<String, Object> entry : payload.params.entrySet()) {
+            params.put(entry.getKey(), entry.getValue());
         }
-        call.reject(fallback);
+        final JSObject data = new JSObject();
+        data.put("params", params);
+        data.put("diagnostic", payload.message);
+        call.reject(payload.message, payload.code, data);
+    }
+
+    private static void rejectWith(
+        PluginCall call,
+        Throwable error,
+        String operation,
+        String fallbackCode,
+        String fallbackMessage
+    ) {
+        final FgeSyncErrors.Payload payload = FgeSyncErrors.forFailure(
+            error,
+            operation,
+            fallbackCode,
+            fallbackMessage
+        );
+        final JSObject params = new JSObject();
+        for (Map.Entry<String, Object> entry : payload.params.entrySet()) {
+            params.put(entry.getKey(), entry.getValue());
+        }
+        final JSObject data = new JSObject();
+        data.put("params", params);
+        data.put("diagnostic", payload.message);
+        call.reject(payload.message, payload.code, data);
     }
 }

@@ -10,6 +10,8 @@ vi.mock("virtual:fge-content", async () => {
 import App from "./App";
 import { CHAPTERS } from "./content";
 import { LibraryView } from "./views/LibraryView";
+import { LocaleProvider } from "./i18n/LocaleProvider";
+import { UI_LOCALES } from "./i18n/types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -38,12 +40,14 @@ function typeQuery(value: string) {
 function Harness({ initial = "" }: { initial?: string }) {
   const [query, setQuery] = useState(initial);
   return (
-    <LibraryView
-      chapters={CHAPTERS}
-      query={query}
-      onQueryChange={setQuery}
-      onOpenCard={() => {}}
-    />
+    <LocaleProvider supportedLocales={UI_LOCALES}>
+      <LibraryView
+        chapters={CHAPTERS}
+        query={query}
+        onQueryChange={setQuery}
+        onOpenCard={() => {}}
+      />
+    </LocaleProvider>
   );
 }
 

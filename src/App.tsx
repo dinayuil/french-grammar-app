@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { loadProgress, saveProgress, today } from "./storage";
 import { addStudySeconds, markSharePrompted, type StudyKind } from "./engine";
-import { CHAPTERS } from "./content";
+import { CHAPTERS, SUPPORTED_LOCALES } from "./content";
 import { buildReviewLesson } from "./content/review";
 import { HomeView } from "./views/HomeView";
 import { LessonView } from "./views/LessonView";
@@ -10,7 +10,10 @@ import { LibraryView } from "./views/LibraryView";
 import { StatsView } from "./views/StatsView";
 import { SettingsView } from "./views/SettingsView";
 import { GoalReachedDialog } from "./components/GoalReachedDialog";
+import { LanguageMenu } from "./components/LanguageMenu";
 import { NavIcon } from "./components/icons";
+import { LocaleProvider, useLocale } from "./i18n/LocaleProvider";
+import type { UiLocale } from "./i18n/types";
 import { shareStatsCard, type ShareResult } from "./share/shareStats";
 import {
   SECTION_MAP,
@@ -22,7 +25,7 @@ import {
   lessonSequenceFor,
   type SectionMap,
 } from "./learning/sections";
-import type { Chapter, Progress } from "./types";
+import type { Chapter, Lesson, Progress } from "./types";
 import { useClientSync } from "./sync/useClientSync";
 import {
   applyTheme,
@@ -70,7 +73,30 @@ function pageScrollTop(): number {
   return Math.max(window.scrollY || 0, root?.scrollTop ?? 0);
 }
 
+/**
+ * 旧测试或尚未声明语言的构建可能只注入 CHAPTERS；与旧 manifest 语义一致，
+ * 缺失时按仅支持中文处理，绝不因此默认开启法语。
+ */
+const FALLBACK_SUPPORTED_LOCALES: readonly UiLocale[] = ["zh-CN"];
+
+/**
+ * 上面一层只负责提供稳定的语言上下文。内容状态全部留在 AppContent 内，
+ * 切换语言不会重挂载页面或重置当前作答/浏览状态。
+ */
 export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: SectionMap } = {}) {
+  const declared = SUPPORTED_LOCALES as readonly UiLocale[] | undefined;
+  const supportedLocales =
+    declared && declared.length > 0 ? declared : FALLBACK_SUPPORTED_LOCALES;
+
+  return (
+    <LocaleProvider supportedLocales={supportedLocales}>
+      <AppContent sectionMap={sectionMap} />
+    </LocaleProvider>
+  );
+}
+
+function AppContent({ sectionMap }: { sectionMap: SectionMap }) {
+  const { locale, supportedLocales, setLocale, t } = useLocale();
   const [view, setView] = useState<View>({ name: "home" });
   const [progress, setProgress] = useState<Progress>(() => loadProgress());
   const progressRef = useRef(progress);
@@ -79,6 +105,15 @@ export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: Section
     () => new Set()
   );
   const libraryScrollTop = useRef(0);
+  const previousLocaleRef = useRef(locale);
+
+  // 语言切换后讲解搜索索引与结果都属于旧语言：只清空查询，保留路由、目录
+  // 展开、阅读位置和练习/作答状态；阅读器内部查询由阅读页按同一事件清理。
+  useEffect(() => {
+    if (previousLocaleRef.current === locale) return;
+    previousLocaleRef.current = locale;
+    setLibraryQuery("");
+  }, [locale]);
   const [goalDialogProgress, setGoalDialogProgress] = useState<Progress | null>(null);
   /** 同步控制器就绪后,把本地学习变更登记为待同步;远端应用不经过这里。 */
   const notifyLocalChangeRef = useRef<(() => void) | null>(null);
@@ -165,7 +200,7 @@ export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: Section
 
   const shareStats = async (): Promise<ShareResult> => {
     const date = today();
-    const result = await shareStatsCard(progressRef.current, date);
+    const result = await shareStatsCard(progressRef.current, date, locale);
     if (result.status === "shared" || result.status === "downloaded") {
       const current = progressRef.current;
       if (!current.days[date]?.sharePrompted) {
@@ -335,7 +370,7 @@ export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: Section
       body = (
         <div className="lesson-placeholder">
           <button className="btn btn-secondary" onClick={() => setView({ name: "home" })}>
-            返回
+            {t("common.back")}
           </button>
         </div>
       );
@@ -359,7 +394,7 @@ export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: Section
 
   return (
     <div className="app">
-      <nav className="bottom-nav" aria-label="主导航">
+      <nav className="bottom-nav" aria-label={t("nav.label")}>
         <button
           className={`nav-item ${isPractice ? "active" : ""}`}
           type="button"
@@ -372,7 +407,7 @@ export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: Section
           }}
         >
           <NavIcon name="practice" />
-          <span>练习</span>
+          <span>{t("nav.practice")}</span>
         </button>
         <button
           className={`nav-item ${isLibrary ? "active" : ""}`}
@@ -381,7 +416,7 @@ export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: Section
           onClick={() => setView({ name: "library" })}
         >
           <NavIcon name="library" />
-          <span>讲解</span>
+          <span>{t("nav.library")}</span>
         </button>
         <button
           className={`nav-item ${view.name === "stats" ? "active" : ""}`}
@@ -390,7 +425,7 @@ export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: Section
           onClick={() => setView({ name: "stats" })}
         >
           <NavIcon name="stats" />
-          <span>统计</span>
+          <span>{t("nav.stats")}</span>
         </button>
         <button
           className={`nav-item ${view.name === "settings" ? "active" : ""}`}
@@ -399,8 +434,13 @@ export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: Section
           onClick={() => setView({ name: "settings" })}
         >
           <NavIcon name="settings" />
-          <span>设置</span>
+          <span>{t("nav.settings")}</span>
         </button>
+        <LanguageMenu
+          locale={locale}
+          supportedLocales={supportedLocales}
+          onChange={setLocale}
+        />
       </nav>
       <div className="content">{body}</div>
       {goalDialogProgress && (
@@ -429,16 +469,30 @@ function ReviewLessonView({
   onHome: () => void;
   onStudyTick?: (kind: StudyKind, seconds: number) => void;
 }) {
-  const [lesson] = useState(() => buildReviewLesson(progress));
+  const { t } = useLocale();
+  // 题目只冻结基础身份与队列；标题等应用生成文字在渲染时取当前语言。
+  const [baseLesson] = useState(() =>
+    buildReviewLesson(progress, {
+      title: t("review.title"),
+      source: t("review.source"),
+    })
+  );
   const chapter: Chapter = {
     id: "review",
-    title: "错题回顾",
-    titleFr: "Révision",
+    title: t("review.title"),
+    titleFr: t("review.title"),
     cards: [],
     lessons: [],
     challenges: [],
   };
-  if (!lesson) return <div className="placeholder-view">没有错题,太棒了!</div>;
+  if (!baseLesson) {
+    return <div className="placeholder-view">{t("review.empty")}</div>;
+  }
+  const lesson: Lesson = {
+    ...baseLesson,
+    title: t("review.title"),
+    source: t("review.source"),
+  };
   return (
     <LessonView
       key="review"

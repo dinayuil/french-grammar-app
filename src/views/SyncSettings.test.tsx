@@ -3,6 +3,7 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { ProgressBackup } from "../backup/progressBackup";
 import { STORAGE_KEY } from "../config";
+import { LocaleProvider, useLocale } from "../i18n/LocaleProvider";
 import { DEFAULT_PROGRESS } from "../storage";
 import type { SyncSnapshot } from "../sync/types";
 import {
@@ -183,7 +184,54 @@ function buttonByText(text: string): HTMLButtonElement {
 }
 
 function render(controller: ClientSyncController | null) {
-  act(() => root.render(<SyncSettings controller={controller} />));
+  act(() =>
+    root.render(
+      <LocaleProvider supportedLocales={["zh-CN", "fr"]}>
+        <SyncSettings controller={controller} />
+      </LocaleProvider>
+    )
+  );
+}
+
+function LocaleButtons() {
+  const { setLocale } = useLocale();
+  return (
+    <div>
+      <button type="button" data-testid="locale-fr" onClick={() => setLocale("fr")}>
+        fr
+      </button>
+      <button
+        type="button"
+        data-testid="locale-zh"
+        onClick={() => setLocale("zh-CN")}
+      >
+        zh
+      </button>
+    </div>
+  );
+}
+
+function renderWithControls(
+  controller: ClientSyncController | null,
+  locale: "zh-CN" | "fr" = "zh-CN"
+) {
+  localStorage.setItem("fge:ui-locale:v1", locale);
+  act(() =>
+    root.render(
+      <LocaleProvider supportedLocales={["zh-CN", "fr"]}>
+        <SyncSettings controller={controller} />
+        <LocaleButtons />
+      </LocaleProvider>
+    )
+  );
+}
+
+function renderInLocale(
+  controller: ClientSyncController | null,
+  locale: "zh-CN" | "fr"
+) {
+  localStorage.setItem("fge:ui-locale:v1", locale);
+  render(controller);
 }
 
 function setValue(element: HTMLInputElement, value: string) {
@@ -461,6 +509,10 @@ describe("SyncSettings 连接配置", () => {
           config: CONNECTED,
           status: "error",
           message: "保存同步配置失败，请检查系统存储",
+          error: {
+            code: "sync.error.config_save_failed",
+            diagnostic: "保存同步配置失败，请检查系统存储",
+          },
         })
       );
     });
@@ -492,6 +544,10 @@ describe("SyncSettings 连接配置", () => {
           config: { ...settings, hasPassword: true },
           status: "error",
           message: "云端认证失败，请检查用户名与应用密码",
+          error: {
+            code: "sync.error.http_auth",
+            diagnostic: "云端认证失败，请检查用户名与应用密码",
+          },
         })
       );
     });
@@ -533,6 +589,10 @@ describe("SyncSettings 连接配置", () => {
           config: CONNECTED,
           status: "error",
           message: "断开同步失败，请重试",
+          error: {
+            code: "sync.error.disconnect_failed",
+            diagnostic: "断开同步失败，请重试",
+          },
         })
       );
     });
@@ -577,6 +637,10 @@ describe("SyncSettings 状态与立即同步", () => {
           status: "error",
           config: CONNECTED,
           message: "认证失败，请检查用户名和应用密码。",
+          error: {
+            code: "sync.error.http_auth",
+            diagnostic: "认证失败，请检查用户名和应用密码。",
+          },
         })
       )
     );
@@ -594,6 +658,145 @@ describe("SyncSettings 状态与立即同步", () => {
     expect(buttonByText("保存连接").disabled).toBe(true);
     expect(buttonByText("断开连接").disabled).toBe(true);
     expect(container.textContent).toContain("正在同步");
+  });
+});
+
+describe("SyncSettings 法语与即时切换", () => {
+  test("法语显示表单、状态和结构化认证错误", () => {
+    renderInLocale(
+      createController(
+        snapshot({
+          status: "error",
+          config: CONNECTED,
+          message: "云端认证失败，请检查用户名与应用密码",
+          error: {
+            code: "sync.error.http_auth",
+            diagnostic: "云端认证失败，请检查用户名与应用密码",
+          },
+        })
+      ),
+      "fr"
+    );
+
+    expect(container.textContent).toContain("Synchronisation");
+    expect(container.textContent).toContain("Adresse racine WebDAV");
+    expect(container.textContent).toContain("Synchroniser maintenant");
+    const alert = $('[role="alert"]')?.textContent ?? "";
+    const main = $('[role="alert"] > span')?.textContent ?? "";
+    expect(alert.toLowerCase()).toContain("authentification");
+    expect(main).not.toContain("认证");
+    expect(alert).toContain("Détails techniques");
+  });
+
+  test("错误快照后切换语言，提示按当前语言即时更新且不重新同步", async () => {
+    const controller = createController(snapshot({ config: CONNECTED }));
+    renderWithControls(controller, "zh-CN");
+
+    act(() => {
+      controller.setSnapshot(
+        snapshot({
+          status: "error",
+          config: CONNECTED,
+          message: "云端认证失败，请检查用户名与应用密码",
+          error: { code: "sync.error.http_auth" },
+        })
+      );
+    });
+
+    expect($('[role="alert"]')?.textContent).toContain("云端认证失败");
+
+    click($('[data-testid="locale-fr"]') as HTMLButtonElement);
+    expect($('[role="alert"]')?.textContent?.toLowerCase()).toContain(
+      "authentification"
+    );
+    expect(container.textContent).not.toContain("云端认证失败");
+
+    click($('[data-testid="locale-zh"]') as HTMLButtonElement);
+    expect($('[role="alert"]')?.textContent).toContain("云端认证失败");
+    expect(controller.sync).not.toHaveBeenCalled();
+  });
+
+  test("旧 message 无结构化错误时用法语通用提示，中文原文只在技术详情", () => {
+    renderInLocale(
+      createController(
+        snapshot({
+          status: "error",
+          config: CONNECTED,
+          message: "旧版控制器直接给出的中文错误",
+        })
+      ),
+      "fr"
+    );
+
+    const alert = $('[role="alert"]')?.textContent ?? "";
+    expect(alert).toContain("Échec de la synchronisation");
+    expect(alert).toContain("Détails techniques");
+    expect(alert).toContain("旧版控制器直接给出的中文错误");
+  });
+
+  test("冲突中恢复副本保存失败：法语显示存储错误而非普通同步状态", () => {
+    const recoveryError = {
+      code: "sync.error.recovery_save_failed",
+      diagnostic: "保存同步恢复副本失败，请检查本地存储空间",
+    };
+    renderInLocale(
+      createController(
+        snapshot({
+          status: "conflict",
+          config: CONNECTED,
+          message: "保存同步恢复副本失败，请检查本地存储空间",
+          error: recoveryError,
+          notice: null,
+          conflict: {
+            local: LOCAL_BACKUP,
+            remote: REMOTE_BACKUP,
+            remoteEtag: '"etag-1"',
+          },
+        })
+      ),
+      "fr"
+    );
+
+    const alert = $('[role="alert"]')?.textContent ?? "";
+    expect(alert.toLowerCase()).toContain("copie de secours");
+    expect(alert).toContain("Détails techniques");
+    expect(alert).toContain("保存同步恢复副本失败");
+    expect(alert).not.toContain("L'état de la synchronisation a été mis à jour");
+  });
+
+  test("冲突错误优先于 notice，并随语言切换更新主提示", () => {
+    const controller = createController(
+      snapshot({
+        status: "conflict",
+        config: CONNECTED,
+        message: "保存同步恢复副本失败，请检查本地存储空间",
+        error: {
+          code: "sync.error.recovery_save_failed",
+          diagnostic: "保存同步恢复副本失败，请检查本地存储空间",
+        },
+        notice: { code: "sync.message.conflict" },
+        conflict: {
+          local: LOCAL_BACKUP,
+          remote: REMOTE_BACKUP,
+          remoteEtag: '"etag-1"',
+        },
+      })
+    );
+    renderWithControls(controller, "zh-CN");
+
+    const main = () => $('[role="alert"] > span')?.textContent ?? "";
+    expect(main()).toContain("保存同步恢复副本失败");
+    expect(main()).not.toContain("云端与本机都有新的学习进度");
+
+    click($('[data-testid="locale-fr"]') as HTMLButtonElement);
+    expect(main().toLowerCase()).toContain("copie de secours");
+    expect($('[role="alert"]')?.textContent).toContain(
+      "保存同步恢复副本失败"
+    );
+
+    click($('[data-testid="locale-zh"]') as HTMLButtonElement);
+    expect(main()).toContain("保存同步恢复副本失败");
+    expect(controller.sync).not.toHaveBeenCalled();
   });
 });
 
@@ -699,7 +902,10 @@ describe("SyncSettings 恢复副本", () => {
       ) as HTMLButtonElement
     );
     await flush();
-    expect(backupMocks.exportBackup).toHaveBeenLastCalledWith(LOCAL_BACKUP.progress);
+    expect(backupMocks.exportBackup).toHaveBeenLastCalledWith(
+      LOCAL_BACKUP.progress,
+      "zh-CN"
+    );
     expect(container.textContent).toContain("已导出本机旧记录");
 
     click(
@@ -708,7 +914,10 @@ describe("SyncSettings 恢复副本", () => {
       ) as HTMLButtonElement
     );
     await flush();
-    expect(backupMocks.exportBackup).toHaveBeenLastCalledWith(REMOTE_BACKUP.progress);
+    expect(backupMocks.exportBackup).toHaveBeenLastCalledWith(
+      REMOTE_BACKUP.progress,
+      "zh-CN"
+    );
     expect(container.textContent).toContain("已导出云端旧记录");
 
     // 导出只生成文件,不覆盖当前学习进度。
@@ -736,13 +945,32 @@ describe("SyncSettings 恢复副本", () => {
       ) as HTMLButtonElement
     );
     await flush();
-    expect(backupMocks.exportBackup).toHaveBeenLastCalledWith({
-      ...LOCAL_BACKUP.progress,
-      xp: 80,
-    });
+    expect(backupMocks.exportBackup).toHaveBeenLastCalledWith(
+      {
+        ...LOCAL_BACKUP.progress,
+        xp: 80,
+      },
+      "zh-CN"
+    );
     expect(
       $('button[aria-label="导出 2026-11-14 08:00 的云端旧记录"]')
     ).toBeNull();
+  });
+
+  test("法语下导出恢复副本传当前界面语言", async () => {
+    seedRecovery();
+    renderInLocale(createController(snapshot({ config: CONNECTED })), "fr");
+
+    click(buttonByText("Exporter cet appareil"));
+    await flush();
+
+    expect(backupMocks.exportBackup).toHaveBeenLastCalledWith(
+      LOCAL_BACKUP.progress,
+      "fr"
+    );
+    expect(container.textContent).toContain(
+      "L'ancienne progression de cet appareil a été exportée."
+    );
   });
 
   test("只有本机副本时只显示一个导出入口", () => {
@@ -776,6 +1004,23 @@ describe("SyncSettings 恢复副本", () => {
     await flush();
 
     expect($('[role="alert"]')?.textContent).toContain("无法写入文件");
+  });
+
+  test("coded Error 无 diagnostic 时保留 Error.message 到技术详情", async () => {
+    seedRecovery();
+    backupMocks.exportBackup.mockRejectedValueOnce(
+      Object.assign(new Error("quota from bridge"), {
+        code: "native.storage_failed",
+      })
+    );
+    render(createController(snapshot({ config: CONNECTED })));
+
+    click(buttonByText("导出本机"));
+    await flush();
+
+    const alert = $('[role="alert"]')?.textContent ?? "";
+    expect(alert).toContain("系统安全存储不可用");
+    expect(alert).toContain("quota from bridge");
   });
 
   test("切换到另一个账号后不显示旧账号的副本", () => {
@@ -868,18 +1113,24 @@ describe("SyncSettings 冲突", () => {
     {
       status: "conflict" as const,
       message: "云端与本机都有新的学习进度，请选择保留哪一份",
+      notice: { code: "sync.message.conflict" },
+      error: undefined,
     },
     {
       status: "idle" as const,
       message: "正在练习或阅读，稍后再应用云端学习进度",
+      notice: { code: "sync.message.busy_learning" },
+      error: undefined,
     },
     {
       status: "error" as const,
       message: "云端同步文件无效，已停止自动同步",
+      notice: undefined,
+      error: { code: "sync.error.remote_invalid" },
     },
   ])(
     "冲突未真正解决（$status）时保留控制器消息，不宣布覆盖成功",
-    async ({ status, message }) => {
+    async ({ status, message, notice, error }) => {
       const controller = renderConflict();
       vi.mocked(controller.resolveConflict).mockImplementationOnce(async () => {
         controller.setSnapshot(
@@ -887,6 +1138,8 @@ describe("SyncSettings 冲突", () => {
             status,
             config: CONNECTED,
             message,
+            notice,
+            error,
             conflict: {
               local: LOCAL_BACKUP,
               remote: REMOTE_BACKUP,

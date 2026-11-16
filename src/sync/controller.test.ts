@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createBackup } from "../backup/progressBackup";
+import { formatUserError } from "../i18n/errors";
 import { DEFAULT_PROGRESS } from "../storage";
 import type { Progress } from "../types";
 import {
@@ -1308,6 +1309,23 @@ describe("conflict resolution", () => {
     expect(harness.controller.getSnapshot().conflict?.remoteEtag).toBe('"v6"');
   });
 
+  test("选择本机但恢复副本保存失败 → 保留冲突错误且不上传", async () => {
+    const harness = await conflicted();
+    harness.storage.failKeys.add(
+      syncRecoveryKey(accountFingerprint(SETTINGS))
+    );
+
+    await harness.controller.resolveConflict("local");
+
+    const snapshot = harness.controller.getSnapshot();
+    expect(snapshot.status).toBe("conflict");
+    expect(snapshot.error?.code).toBe("sync.error.recovery_save_failed");
+    expect(snapshot.notice).toBeNull();
+    expect(
+      harness.server.requests.some((request) => request.method === "PUT")
+    ).toBe(false);
+  });
+
   test("并发冲突选择串行:先完成的 remote 生效,旧 local 选择不覆盖", async () => {
     const harness = await conflicted();
     let release!: (response: SyncResponse) => void;
@@ -1526,5 +1544,128 @@ describe("serialization and snapshot identity", () => {
     const put = harness.server.requests.find((request) => request.method === "PUT");
     expect(put?.headers["If-Match"]).toBe('"v2"');
     expect(harness.baseline()?.progress).toEqual(richProgress(41));
+  });
+});
+
+describe("结构化同步状态", () => {
+  test("HTTP 认证失败提供稳定错误码，旧 message 继续可读", async () => {
+    const harness = createHarness({ local: richProgress(40) });
+    harness.server.getStatus = 401;
+
+    await harness.controller.initialize();
+
+    const snapshot = harness.controller.getSnapshot();
+    expect(snapshot.status).toBe("error");
+    expect(snapshot.error?.code).toBe("sync.error.http_auth");
+    expect(snapshot.message).toMatch(/认证|密码/);
+
+    const fr = formatUserError(snapshot.error!, "fr");
+    expect(fr.message.toLowerCase()).toContain("authentification");
+    expect(fr.message).not.toMatch(/[\u3400-\u9fff]/);
+  });
+
+  test("成功同步带结构化提示码，切换语言即时得到法语", async () => {
+    const harness = createHarness({ local: richProgress(40) });
+
+    await harness.controller.initialize();
+
+    const snapshot = harness.controller.getSnapshot();
+    expect(snapshot.status).toBe("synced");
+    expect(snapshot.notice?.code).toBe("sync.message.synced");
+    expect(snapshot.error ?? null).toBeNull();
+
+    const fr = formatUserError(snapshot.notice!, "fr").message;
+    expect(fr).not.toMatch(/[\u3400-\u9fff]/);
+    expect(fr.toLowerCase()).toContain("synchronis");
+  });
+
+  test("冲突提示也结构化，主提示不再依赖匹配中文", async () => {
+    const harness = createHarness({
+      local: richProgress(10),
+      initialRemote: backup(richProgress(20)),
+    });
+
+    await harness.controller.initialize();
+
+    const snapshot = harness.controller.getSnapshot();
+    expect(snapshot.status).toBe("conflict");
+    expect(snapshot.notice?.code).toBe("sync.message.conflict");
+    expect(snapshot.message).toContain("请选择保留哪一份");
+    expect(formatUserError(snapshot.notice!, "fr").message).not.toMatch(
+      /[\u3400-\u9fff]/
+    );
+  });
+
+  test("HTTP 认证错误码不把中文原文当作语言判定依据", async () => {
+    const harness = createHarness({ local: richProgress(40) });
+    harness.server.getStatus = 403;
+
+    await harness.controller.initialize();
+
+    const snapshot = harness.controller.getSnapshot();
+    expect(snapshot.error?.code).toBe("sync.error.http_auth");
+    expect(snapshot.error?.code).not.toMatch(/[\u3400-\u9fff]/);
+    expect(formatUserError(snapshot.error!, "fr").message).not.toBe(
+      snapshot.message
+    );
+  });
+
+  test("原生桥稳定错误码优先于本地网络兜底码", async () => {
+    const harness = createHarness({ local: richProgress(40) });
+    harness.adapter.request = vi.fn(async () => {
+      throw Object.assign(new Error("原生存储写入失败"), {
+        code: "native.storage_failed",
+        diagnostic: "native storage raw",
+      });
+    });
+
+    await harness.controller.initialize();
+
+    const snapshot = harness.controller.getSnapshot();
+    expect(snapshot.status).toBe("error");
+    expect(snapshot.error?.code).toBe("native.storage_failed");
+    expect(snapshot.error?.diagnostic).toContain("native storage raw");
+    const fr = formatUserError(snapshot.error!, "fr").message;
+    expect(fr).toContain("stockage sécurisé");
+    expect(snapshot.message).not.toBe(fr);
+  });
+
+  test("Capacitor Error.data 的原生错误码保留 params 与 diagnostic", async () => {
+    const harness = createHarness({ local: richProgress(40) });
+    harness.adapter.request = vi.fn(async () => {
+      throw Object.assign(new Error("native request failed"), {
+        code: "native.network_failed",
+        data: {
+          params: { operation: "request" },
+          diagnostic: "native network raw",
+        },
+      });
+    });
+
+    await harness.controller.initialize();
+
+    const snapshot = harness.controller.getSnapshot();
+    expect(snapshot.status).toBe("error");
+    expect(snapshot.error?.code).toBe("native.network_failed");
+    expect(snapshot.error?.params).toEqual({ operation: "request" });
+    expect(snapshot.error?.diagnostic).toBe("native network raw");
+    expect(formatUserError(snapshot.error!, "fr").message).not.toMatch(
+      /[\u3400-\u9fff]/
+    );
+  });
+
+  test("coded Error 无 diagnostic 时用 message 兜底", async () => {
+    const harness = createHarness({ local: richProgress(40) });
+    harness.adapter.request = vi.fn(async () => {
+      throw Object.assign(new Error("native failure message"), {
+        code: "native.network_failed",
+      });
+    });
+
+    await harness.controller.initialize();
+
+    const snapshot = harness.controller.getSnapshot();
+    expect(snapshot.error?.code).toBe("native.network_failed");
+    expect(snapshot.error?.diagnostic).toBe("native failure message");
   });
 });

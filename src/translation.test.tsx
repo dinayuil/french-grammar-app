@@ -2,6 +2,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { act, useState } from "react";
 import { LessonView } from "./views/LessonView";
 import { SettingsView } from "./views/SettingsView";
+import { LocaleProvider } from "./i18n/LocaleProvider";
 import { DEFAULT_PROGRESS } from "./storage";
 import { syntheticChapter } from "./test/fixtures";
 import type { Chapter, ChoiceQuestion, Lesson, Progress, TilesQuestion } from "./types";
@@ -29,21 +30,27 @@ function chapterFor(lesson: Lesson): Chapter {
 function LessonHarness({ initial, lesson }: { initial: Progress; lesson: Lesson }) {
   const [progress, setProgress] = useState(initial);
   return (
-    <LessonView
-      chapter={chapterFor(lesson)}
-      lesson={lesson}
-      progress={progress}
-      onProgress={setProgress}
-      onExit={() => {}}
-      onNextLesson={() => {}}
-      onFinish={() => {}}
-    />
+    <LocaleProvider supportedLocales={["zh-CN", "fr"]}>
+      <LessonView
+        chapter={chapterFor(lesson)}
+        lesson={lesson}
+        progress={progress}
+        onProgress={setProgress}
+        onExit={() => {}}
+        onNextLesson={() => {}}
+        onFinish={() => {}}
+      />
+    </LocaleProvider>
   );
 }
 
 function SettingsHarness({ initial }: { initial: Progress }) {
   const [progress, setProgress] = useState(initial);
-  return <SettingsView progress={progress} onChange={setProgress} />;
+  return (
+    <LocaleProvider supportedLocales={["zh-CN", "fr"]}>
+      <SettingsView progress={progress} onChange={setProgress} />
+    </LocaleProvider>
+  );
 }
 
 const $$ = (sel: string) => [...container.querySelectorAll(sel)];

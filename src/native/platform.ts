@@ -69,7 +69,24 @@ export type HarmonyRequest =
   | HarmonySyncDisconnectRequest
   | HarmonySyncRequestRequest;
 
-export interface HarmonyReply {
+export type NativeErrorCode =
+  | "native.config_invalid"
+  | "native.credentials_required"
+  | "native.storage_failed"
+  | "native.network_failed"
+  | "native.file_failed"
+  | "native.unsupported"
+  | "native.unknown";
+
+export type NativeErrorParams = Record<string, string | number>;
+
+export interface NativeErrorDetails {
+  code?: NativeErrorCode;
+  params?: NativeErrorParams;
+  diagnostic?: string;
+}
+
+export interface HarmonyReply extends NativeErrorDetails {
   status: "ok" | "cancelled" | "error";
   message?: string;
 }
@@ -80,20 +97,144 @@ export type HarmonyShareResult =
 
 /** 桥不可用、调用失败或响应不符合协议时抛出;message 可直接展示。 */
 export class HarmonyBridgeError extends Error {
-  constructor(message: string) {
+  readonly code: NativeErrorCode;
+  readonly params?: NativeErrorParams;
+  readonly diagnostic?: string;
+
+  constructor(message: string, details: NativeErrorDetails = {}) {
     super(message);
     this.name = "HarmonyBridgeError";
+    this.code = details.code ?? "native.unknown";
+    if (details.params && Object.keys(details.params).length > 0) {
+      this.params = details.params;
+    }
+    if (details.diagnostic !== undefined) {
+      this.diagnostic = details.diagnostic;
+    }
   }
 }
 
 const INVALID_REPLY = "鸿蒙桥返回了无效响应";
 const THEME_FALLBACK = "鸿蒙系统主题同步失败";
 const SHARE_FALLBACK = "鸿蒙系统分享失败";
+const NATIVE_ERROR_CODES = new Set<NativeErrorCode>([
+  "native.config_invalid",
+  "native.credentials_required",
+  "native.storage_failed",
+  "native.network_failed",
+  "native.file_failed",
+  "native.unsupported",
+  "native.unknown",
+]);
+const NATIVE_PARAM_FORBIDDEN_KEYS = new Set([
+  "__proto__",
+  "prototype",
+  "constructor",
+]);
 
-function messageFor(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === "string" && error) return error;
-  return fallback;
+function nativeCode(value: unknown): NativeErrorCode {
+  return typeof value === "string" &&
+    NATIVE_ERROR_CODES.has(value as NativeErrorCode)
+    ? (value as NativeErrorCode)
+    : "native.unknown";
+}
+
+/** 只转发标量非敏感参数;嵌套对象、布尔和超长文本整体丢弃。 */
+function nativeParams(value: unknown): NativeErrorParams | undefined {
+  if (!isRecord(value)) return undefined;
+  const params: NativeErrorParams = {};
+  for (const [key, entry] of Object.entries(value)) {
+    const lower = key.toLowerCase();
+    if (
+      key.length === 0 ||
+      key.length > 64 ||
+      NATIVE_PARAM_FORBIDDEN_KEYS.has(lower) ||
+      /[\r\n\0]/.test(key)
+    ) {
+      continue;
+    }
+    if (typeof entry === "string") {
+      if (entry.length <= 200 && !/[\r\n\0]/.test(entry)) params[key] = entry;
+    } else if (
+      typeof entry === "number" &&
+      Number.isFinite(entry) &&
+      Number.isInteger(entry)
+    ) {
+      params[key] = entry;
+    }
+  }
+  return Object.keys(params).length > 0 ? params : undefined;
+}
+
+function withOperation(
+  params: NativeErrorParams | undefined,
+  operation: string | undefined
+): NativeErrorParams | undefined {
+  if (!operation) return params;
+  if (params?.operation !== undefined) return params;
+  return { ...(params ?? {}), operation };
+}
+
+function nativeFailure(
+  message: string,
+  code: NativeErrorCode,
+  params?: NativeErrorParams,
+  diagnostic?: string
+): HarmonyBridgeError {
+  return new HarmonyBridgeError(message, { code, params, diagnostic });
+}
+
+/**
+ * 旧桥只 reject 字符串时保留原文作为诊断,但绝不由中文字符串推断具体
+ * 错误码;新桥的结构化对象则直接采用其 code/params。
+ */
+function errorFromThrown(
+  error: unknown,
+  fallback: string,
+  operation?: string
+): HarmonyBridgeError {
+  if (isRecord(error)) {
+    const diagnostic =
+      typeof error.diagnostic === "string" && error.diagnostic
+        ? error.diagnostic
+        : typeof error.message === "string" && error.message
+          ? error.message
+          : undefined;
+    const params = withOperation(
+      nativeParams(error.params) ??
+        nativeParams((error as { data?: unknown }).data) ??
+        (isRecord((error as { data?: unknown }).data)
+          ? nativeParams(
+              ((error as { data: Record<string, unknown> }).data
+                .params ?? undefined) as unknown
+            )
+          : undefined),
+      operation
+    );
+    return new HarmonyBridgeError(diagnostic ?? fallback, {
+      code: nativeCode(error.code),
+      params,
+      diagnostic,
+    });
+  }
+  if (error instanceof Error && error.message) {
+    return new HarmonyBridgeError(error.message, {
+      code: "native.unknown",
+      params: withOperation(undefined, operation),
+      diagnostic: error.message,
+    });
+  }
+  if (typeof error === "string" && error) {
+    return new HarmonyBridgeError(error, {
+      code: "native.unknown",
+      params: withOperation(undefined, operation),
+      diagnostic: error,
+    });
+  }
+  return new HarmonyBridgeError(fallback, {
+    code: "native.unknown",
+    params: withOperation(undefined, operation),
+  });
 }
 
 /** 仅把具备 invoke 函数的注入对象视为鸿蒙桥,避免半注入对象误判。 */
@@ -111,46 +252,69 @@ export function isHarmonyPlatform(): boolean {
   return getBridge() !== undefined;
 }
 
-interface ParsedReply {
+interface ParsedReply extends NativeErrorDetails {
   status: HarmonyReply["status"];
   message?: string;
   record: Record<string, unknown>;
 }
 
-function parseReplyRecord(raw: unknown, fallback: string): ParsedReply {
-  if (typeof raw !== "string") throw new HarmonyBridgeError(INVALID_REPLY);
+function invalidReply(): HarmonyBridgeError {
+  return nativeFailure(INVALID_REPLY, "native.unknown", undefined, INVALID_REPLY);
+}
+
+function parseReplyRecord(
+  raw: unknown,
+  fallback: string,
+  operation?: string
+): ParsedReply {
+  if (typeof raw !== "string") throw invalidReply();
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new HarmonyBridgeError(INVALID_REPLY);
+    throw invalidReply();
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new HarmonyBridgeError(INVALID_REPLY);
+    throw invalidReply();
   }
 
   const record = parsed as Record<string, unknown>;
   const status = record.status;
   if (status !== "ok" && status !== "cancelled" && status !== "error") {
-    throw new HarmonyBridgeError(INVALID_REPLY);
+    throw invalidReply();
   }
   if (status === "error") {
-    const message = record.message;
+    const nativeMessage =
+      typeof record.message === "string" && record.message.length > 0
+        ? record.message
+        : undefined;
     return {
       status,
-      message:
-        typeof message === "string" && message.length > 0 ? message : fallback,
+      message: nativeMessage ?? fallback,
+      code: nativeCode(record.code),
+      params: withOperation(nativeParams(record.params), operation),
+      diagnostic: nativeMessage,
       record,
     };
   }
   return { status, record };
 }
 
-function parseReply(raw: unknown, fallback: string): HarmonyReply {
-  const reply = parseReplyRecord(raw, fallback);
+function parseReply(
+  raw: unknown,
+  fallback: string,
+  operation?: string
+): HarmonyReply {
+  const reply = parseReplyRecord(raw, fallback, operation);
   if (reply.status === "error") {
-    return { status: reply.status, message: reply.message };
+    return {
+      status: reply.status,
+      message: reply.message,
+      code: reply.code,
+      params: reply.params,
+      diagnostic: reply.diagnostic,
+    };
   }
   return { status: reply.status };
 }
@@ -160,15 +324,19 @@ async function invoke(
   fallback: string
 ): Promise<HarmonyReply> {
   const bridge = getBridge();
-  if (!bridge) throw new HarmonyBridgeError("鸿蒙桥不可用");
+  if (!bridge) {
+    throw nativeFailure("鸿蒙桥不可用", "native.unsupported", {
+      operation: request.operation,
+    });
+  }
 
   let raw: unknown;
   try {
     raw = await bridge.invoke(JSON.stringify(request));
   } catch (error) {
-    throw new HarmonyBridgeError(messageFor(error, fallback));
+    throw errorFromThrown(error, fallback, request.operation);
   }
-  return parseReply(raw, fallback);
+  return parseReply(raw, fallback, request.operation);
 }
 
 /** 同步类操作需要读取 ok 回复中的数据字段,与主题/分享共用同一层校验。 */
@@ -177,20 +345,28 @@ async function invokeRecord(
   fallback: string
 ): Promise<Record<string, unknown>> {
   const bridge = getBridge();
-  if (!bridge) throw new HarmonyBridgeError("鸿蒙桥不可用");
+  if (!bridge) {
+    throw nativeFailure("鸿蒙桥不可用", "native.unsupported", {
+      operation: request.operation,
+    });
+  }
 
   let raw: unknown;
   try {
     raw = await bridge.invoke(JSON.stringify(request));
   } catch (error) {
-    throw new HarmonyBridgeError(messageFor(error, fallback));
+    throw errorFromThrown(error, fallback, request.operation);
   }
-  const reply = parseReplyRecord(raw, fallback);
+  const reply = parseReplyRecord(raw, fallback, request.operation);
   if (reply.status === "error") {
-    throw new HarmonyBridgeError(reply.message ?? fallback);
+    throw new HarmonyBridgeError(reply.message ?? fallback, {
+      code: reply.code,
+      params: reply.params,
+      diagnostic: reply.diagnostic,
+    });
   }
   if (reply.status !== "ok") {
-    throw new HarmonyBridgeError(INVALID_REPLY);
+    throw invalidReply();
   }
   return reply.record;
 }
@@ -230,7 +406,11 @@ export async function shareHarmonyFile(
   );
 
   if (reply.status === "error") {
-    throw new HarmonyBridgeError(reply.message ?? SHARE_FALLBACK);
+    throw new HarmonyBridgeError(reply.message ?? SHARE_FALLBACK, {
+      code: reply.code,
+      params: reply.params,
+      diagnostic: reply.diagnostic,
+    });
   }
   return reply.status === "cancelled"
     ? { status: "cancelled" }
@@ -258,7 +438,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function invalidSyncPayload(kind: "配置" | "响应"): never {
-  throw new Error(`原生同步${kind}无效`);
+  throw nativeFailure(
+    `原生同步${kind}无效`,
+    "native.config_invalid",
+    { operation: "sync" },
+    `原生同步${kind}无效`
+  );
+}
+
+function invalidSyncConfiguration(message: string): never {
+  throw nativeFailure(message, "native.config_invalid", undefined, message);
 }
 
 function utf8ByteLength(text: string): number {
@@ -324,22 +513,22 @@ export function parseNativeSyncResponse(value: unknown): SyncResponse {
 }
 
 function normalizeSyncSettings(settings: SyncSettings): SyncSettings {
-  if (!isRecord(settings)) throw new HarmonyBridgeError("同步配置无效");
+  if (!isRecord(settings)) invalidSyncConfiguration("同步配置无效");
   const { url, username, autoSync } = settings;
   if (
     typeof url !== "string" ||
     typeof username !== "string" ||
     typeof autoSync !== "boolean"
   ) {
-    throw new HarmonyBridgeError("同步配置无效");
+    invalidSyncConfiguration("同步配置无效");
   }
   const urlError = validateSyncRootUrl(url);
-  if (urlError) throw new HarmonyBridgeError(urlError);
+  if (urlError) invalidSyncConfiguration(urlError);
   return { url, username, autoSync };
 }
 
 function normalizeSyncRequest(request: SyncRequest): SyncRequest {
-  if (!isRecord(request)) throw new HarmonyBridgeError("同步请求无效");
+  if (!isRecord(request)) invalidSyncConfiguration("同步请求无效");
   const { method, filename, headers, body } = request;
   if (
     !SYNC_METHODS.has(method) ||
@@ -348,7 +537,7 @@ function normalizeSyncRequest(request: SyncRequest): SyncRequest {
     !isRecord(headers) ||
     (body !== undefined && typeof body !== "string")
   ) {
-    throw new HarmonyBridgeError("同步请求无效");
+    invalidSyncConfiguration("同步请求无效");
   }
   const cleanHeaders: Record<string, string> = {};
   const seenHeaders = new Set<string>();
@@ -364,14 +553,14 @@ function normalizeSyncRequest(request: SyncRequest): SyncRequest {
       value.length > 8192 ||
       (lower === "depth" && value !== "0")
     ) {
-      throw new HarmonyBridgeError("同步请求无效");
+      invalidSyncConfiguration("同步请求无效");
     }
     seenHeaders.add(lower);
     cleanHeaders[name] = value;
   }
   if (method === "GET" || method === "MKCOL") {
     if (body !== undefined) {
-      throw new HarmonyBridgeError("同步请求体无效");
+      invalidSyncConfiguration("同步请求体无效");
     }
   }
   if (method === "PROPFIND") {
@@ -379,19 +568,19 @@ function normalizeSyncRequest(request: SyncRequest): SyncRequest {
       (name) => name.toLowerCase() === "depth"
     );
     if (!depthKey || cleanHeaders[depthKey] !== "0") {
-      throw new HarmonyBridgeError("同步请求头无效");
+      invalidSyncConfiguration("同步请求头无效");
     }
     if (body !== undefined && body !== DAV_PROPERTY_QUERY) {
-      throw new HarmonyBridgeError("同步请求体无效");
+      invalidSyncConfiguration("同步请求体无效");
     }
   }
   if (method === "PUT") {
     if (typeof body !== "string" || body.length === 0) {
-      throw new HarmonyBridgeError("同步请求体无效");
+      invalidSyncConfiguration("同步请求体无效");
     }
   }
   if (body !== undefined && utf8ByteLength(body) > SYNC_MAX_BYTES) {
-    throw new HarmonyBridgeError("同步请求超过大小上限");
+    invalidSyncConfiguration("同步请求超过大小上限");
   }
   const clean: SyncRequest = {
     method: method as SyncRequest["method"],
@@ -423,7 +612,7 @@ export async function writeHarmonySyncConfig(
   };
   if (password !== undefined) {
     if (typeof password !== "string") {
-      throw new HarmonyBridgeError("同步密码无效");
+      invalidSyncConfiguration("同步密码无效");
     }
     request.password = password;
   }
@@ -451,7 +640,7 @@ export async function requestHarmonySync(
     SYNC_FALLBACK
   );
   if (!("response" in record)) {
-    throw new HarmonyBridgeError(INVALID_REPLY);
+    throw invalidReply();
   }
   return parseNativeSyncResponse(record.response);
 }

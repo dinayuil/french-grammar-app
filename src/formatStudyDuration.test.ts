@@ -28,4 +28,18 @@ describe("formatStudyDuration", () => {
     expect(formatStudyDuration(Number.NaN)).toBe("0 分");
     expect(formatStudyDuration(Number.POSITIVE_INFINITY)).toBe("0 分");
   });
+
+  test("法语委托统一时长文案，使用紧凑单位", () => {
+    expect(formatStudyDuration(90, "fr")).toBe("2 min");
+    expect(formatStudyDuration(3600, "fr")).toBe("1 h");
+    expect(formatStudyDuration(3660, "fr")).toBe("1 h 1 min");
+    expect(formatStudyDuration(7200, "fr")).toBe("2 h");
+    expect(formatStudyDuration(9990, "fr")).toBe("2 h 47 min");
+    expect(formatStudyDuration(-5, "fr")).toBe("0 min");
+  });
+
+  test("显式中文仍使用卡片原有紧凑单位", () => {
+    expect(formatStudyDuration(90, "zh-CN")).toBe("2 分");
+    expect(formatStudyDuration(3660, "zh-CN")).toBe("1 小时 1 分");
+  });
 });
