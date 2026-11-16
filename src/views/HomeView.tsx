@@ -15,10 +15,14 @@ import {
   findSectionById,
   findSectionByLesson,
   getLearningSections,
+  sectionKeyFor,
   sectionProgress,
   type LearningSection,
   type SectionMap,
 } from "../learning/sections";
+import { localizeChapter, sectionTitleForDisplay, type ChapterDisplay } from "../content/localize";
+import { useLocale } from "../i18n/LocaleProvider";
+import { formatNumber } from "../i18n/format";
 
 /** 减少动效偏好;缺少 matchMedia 或查询异常时按不减少处理。 */
 function prefersReducedMotion(): boolean {
@@ -39,6 +43,21 @@ function focusQuietly(element: HTMLElement | null): void {
   } catch {
     element.focus();
   }
+}
+
+/** 当前语言下的关卡标题；Id/归属仍由原关卡决定。 */
+function lessonTitleForDisplay(
+  display: ChapterDisplay,
+  lessonId: string,
+  fallback: string
+): string {
+  for (const lesson of display.lessons) {
+    if (lesson.base.id === lessonId) return lesson.title;
+  }
+  for (const challenge of display.challenges) {
+    if (challenge.base.id === lessonId) return challenge.title;
+  }
+  return fallback;
 }
 
 interface Props {
@@ -64,6 +83,7 @@ export function HomeView({
   onOpenReview,
   sectionMap = SECTION_MAP,
 }: Props) {
+  const { locale, t } = useLocale();
   const [openChapter, setOpenChapter] = useState<string | null>(openChapterId ?? null);
   const chapterRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const toggleRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -77,6 +97,11 @@ export function HomeView({
   const sectionSets = useMemo(
     () => chapters.map((chapter) => getLearningSections(chapter, sectionMap)),
     [chapters, sectionMap]
+  );
+  // 展示模型只影响标题/正文；展开状态、section ID 仍使用原章节对象。
+  const chapterDisplays = useMemo(
+    () => chapters.map((chapter) => localizeChapter(chapter, locale)),
+    [chapters, locale]
   );
 
   useEffect(() => {
@@ -145,20 +170,20 @@ export function HomeView({
     sectionSets,
   ]);
 
-  const t = today();
-  const todayXp = progress.days[t]?.xp ?? 0;
+  const todayKey = today();
+  const todayXp = progress.days[todayKey]?.xp ?? 0;
   const dailyGoal = progress.dailyGoal;
-  const streak = streakFor(progress.days, dailyGoal, t);
+  const streak = streakFor(progress.days, dailyGoal, todayKey);
   const goalMet = dailyGoal > 0 && todayXp >= dailyGoal;
   const goalPct = dailyGoal > 0 ? Math.min((todayXp / dailyGoal) * 100, 100) : 0;
   const goalNote =
     dailyGoal <= 0
-      ? "尚未设置每日目标"
+      ? t("home.goal.unset")
       : goalMet
         ? todayXp > dailyGoal
-          ? `已达成 · 超出 ${todayXp - dailyGoal} XP`
-          : "今日目标已达成"
-        : `还差 ${dailyGoal - todayXp} XP`;
+          ? t("home.goal.over", { xp: formatNumber(locale, todayXp - dailyGoal) })
+          : t("home.goal.met")
+        : t("home.goal.remaining", { xp: formatNumber(locale, dailyGoal - todayXp) });
 
   // 只统计当前题库中实际存在的可玩题目;空题库或仅有旧错题时禁用练习/复习
   const playableQuestionIds = new Set<string>();
@@ -181,6 +206,7 @@ export function HomeView({
   const renderLessonItem = (
     ch: Chapter,
     lesson: Lesson,
+    display: ChapterDisplay,
     sectionId?: string
   ) => {
     const stars = progress.lessons[lesson.id]?.stars ?? 0;
@@ -204,20 +230,40 @@ export function HomeView({
             <PlayIcon />
           )}
         </span>
-        <span className="lesson-title">{lesson.title}</span>
-        {lesson.kind === "challenge" && <span className="lesson-badge">挑战</span>}
+        <span className="lesson-title">
+          {lessonTitleForDisplay(display, lesson.id, lesson.title)}
+        </span>
+        {lesson.kind === "challenge" && (
+          <span className="lesson-badge">{t("home.challenge")}</span>
+        )}
       </button>
     );
   };
 
-  const renderSection = (ch: Chapter, section: LearningSection) => {
+  const renderSection = (
+    ch: Chapter,
+    section: LearningSection,
+    display: ChapterDisplay
+  ) => {
     const comprehensive = section.kind === "comprehensive";
+    const title = sectionTitleForDisplay(
+      display,
+      sectionKeyFor(section, ch.id),
+      comprehensive ? t("section.comprehensive") : section.title
+    );
     const { done, total } = sectionProgress(section, progress.lessons);
+    const doneText = formatNumber(locale, done);
+    const totalText = formatNumber(locale, total);
+    const cardCountText = formatNumber(locale, section.cards.length);
     const progressText =
-      total > 0 ? `${done}/${total} 关` : comprehensive ? "暂无挑战" : "暂无练习";
+      total > 0
+        ? t("section.progress", { done: doneText, total: totalText })
+        : comprehensive
+          ? t("section.noChallenges")
+          : t("section.noLessons");
     const meta = comprehensive
       ? progressText
-      : `${section.cards.length} 张讲解 · ${progressText}`;
+      : `${t("section.cards", { count: cardCountText })} · ${progressText}`;
     const complete = total > 0 && done === total;
 
     return (
@@ -239,31 +285,33 @@ export function HomeView({
               sectionHeadingRefs.current[section.id] = el;
             }}
           >
-            <h3 className="section-title">{section.title}</h3>
+            <h3 className="section-title">{title}</h3>
             <span className="section-meta">
               {meta}
-              {complete ? " · 已完成" : ""}
+              {complete ? ` · ${t("section.complete")}` : ""}
             </span>
           </div>
           {!comprehensive && (
             <button
               className="btn btn-cards section-cards"
               type="button"
-              title="本节知识讲解"
-              aria-label={`阅读讲解：${section.title}`}
+              title={t("home.sectionCardsTitle")}
+              aria-label={t("home.readCardsAria", { title })}
               disabled={section.cards.length === 0}
               onClick={() => onOpenCards(ch.id, section.id)}
             >
               <BookIcon />
-              讲解
+              {t("home.cardsButton")}
             </button>
           )}
         </div>
         <div className="lesson-list">
           {[...section.lessons, ...section.challenges].map((lesson) =>
-            renderLessonItem(ch, lesson, section.id)
+            renderLessonItem(ch, lesson, display, section.id)
           )}
-          {total === 0 && <div className="section-empty">本节暂无练习</div>}
+          {total === 0 && (
+            <div className="section-empty">{t("section.noCards")}</div>
+          )}
         </div>
       </div>
     );
@@ -273,7 +321,8 @@ export function HomeView({
     <div className="home">
       <div className="home-side">
         <h1 className="home-greeting">
-          Bonjour，今天练一点 <em>français</em>
+          {t("home.greeting")}
+          <em>français</em>
         </h1>
 
         <div className="home-hero">
@@ -286,13 +335,15 @@ export function HomeView({
             >
               <div className="hero-goal-head">
                 <span className="hero-goal-label">
-                  {dailyGoal > 0 ? "今日目标" : "今日获得"}
+                  {dailyGoal > 0 ? t("home.goal.today") : t("home.goal.earned")}
                 </span>
                 <span className="hero-goal-rule" aria-hidden="true" />
                 <span className="hero-goal-value">
-                  <b>{todayXp}</b>
+                  <b>{formatNumber(locale, todayXp)}</b>
                   {dailyGoal > 0 && (
-                    <span className="hero-goal-total"> / {dailyGoal}</span>
+                    <span className="hero-goal-total">
+                      {" "}/ {formatNumber(locale, dailyGoal)}
+                    </span>
                   )}
                   <span className="hero-goal-unit"> XP</span>
                 </span>
@@ -316,15 +367,19 @@ export function HomeView({
           onClick={() => onOpenReview()}
         >
           <ReviewIcon />
-          <span>复习错题</span>
-          {reviewCount > 0 && <span className="review-count">{reviewCount}</span>}
+          <span>{t("home.review")}</span>
+          {reviewCount > 0 && (
+            <span className="review-count">
+              {formatNumber(locale, reviewCount)}
+            </span>
+          )}
         </button>
       </div>
 
       {!hasPlayableContent ? (
         <div className="empty-state">
           <div className="empty-state-icon">📝</div>
-          <div className="empty-state-title">原创题库正在准备中</div>
+          <div className="empty-state-title">{t("home.empty")}</div>
         </div>
       ) : (
         <div className="chapter-list">
@@ -335,6 +390,8 @@ export function HomeView({
             const doneCount = all.filter((l) => (progress.lessons[l.id]?.stars ?? 0) > 0).length;
             const pct = all.length > 0 ? Math.round((doneCount / all.length) * 100) : 0;
             const sectionSet = sectionSets[index];
+            const display = chapterDisplays[index]!;
+            const heading = display.title;
             return (
               <div
                 key={ch.id}
@@ -348,7 +405,12 @@ export function HomeView({
                     className="chapter-toggle"
                     type="button"
                     aria-expanded={open}
-                    aria-label={`第${index + 1}章 ${ch.title}，已完成 ${doneCount}/${all.length}`}
+                    aria-label={t("home.chapterAria", {
+                      number: formatNumber(locale, index + 1),
+                      title: heading,
+                      done: formatNumber(locale, doneCount),
+                      total: formatNumber(locale, all.length),
+                    })}
                     ref={(el) => {
                       toggleRefs.current[ch.id] = el;
                     }}
@@ -359,15 +421,18 @@ export function HomeView({
                       <b>{String(index + 1).padStart(2, "0")}</b>
                     </span>
                     <span className="chapter-copy">
-                      <span className="chapter-title">{ch.title}</span>
-                      <span className="chapter-title-fr">{ch.titleFr}</span>
+                      <span className="chapter-title">{heading}</span>
+                      {locale !== "fr" && (
+                        <span className="chapter-title-fr">{ch.titleFr}</span>
+                      )}
                       <span className="chapter-progress" aria-hidden="true">
                         <span style={{ width: `${pct}%` }} />
                       </span>
                     </span>
                     <span className="chapter-meta">
                       <span className="chapter-count">
-                        {doneCount}/{all.length}
+                        {formatNumber(locale, doneCount)}/
+                        {formatNumber(locale, all.length)}
                       </span>
                       <PlusMinusIcon open={open} />
                     </span>
@@ -376,11 +441,11 @@ export function HomeView({
                     <button
                       className="btn btn-cards"
                       type="button"
-                      title="知识讲解"
+                      title={t("home.cardsTitle")}
                       onClick={() => onOpenCards(ch.id)}
                     >
                       <BookIcon />
-                      讲解
+                      {t("home.cardsButton")}
                     </button>
                   )}
                 </div>
@@ -388,14 +453,16 @@ export function HomeView({
                   (sectionSet ? (
                     <div className="section-list">
                       {sectionSet.sections.map((section) =>
-                        renderSection(ch, section)
+                        renderSection(ch, section, display)
                       )}
                       {sectionSet.comprehensive &&
-                        renderSection(ch, sectionSet.comprehensive)}
+                        renderSection(ch, sectionSet.comprehensive, display)}
                     </div>
                   ) : (
                     <div className="lesson-list">
-                      {all.map((lesson) => renderLessonItem(ch, lesson))}
+                      {all.map((lesson) =>
+                        renderLessonItem(ch, lesson, display)
+                      )}
                     </div>
                   ))}
               </div>

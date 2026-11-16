@@ -5,6 +5,8 @@ import { LibraryView } from "./views/LibraryView";
 import { ReaderView } from "./views/ReaderView";
 import { CHAPTERS } from "./content";
 import { getLearningSections } from "./learning/sections";
+import { LocaleProvider } from "./i18n/LocaleProvider";
+import { UI_LOCALES } from "./i18n/types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -40,12 +42,14 @@ describe.skipIf(__FGE_EDITION__ !== "public")("公开版 C03 讲解库目录验�
     expect(sections.length).toBeGreaterThan(0);
     act(() =>
       root.render(
-        <LibraryView
-          chapters={[c03]}
-          query=""
-          onQueryChange={() => {}}
-          onOpenCard={() => {}}
-        />
+        <LocaleProvider supportedLocales={UI_LOCALES}>
+          <LibraryView
+            chapters={[c03]}
+            query=""
+            onQueryChange={() => {}}
+            onOpenCard={() => {}}
+          />
+        </LocaleProvider>
       )
     );
     click($$(".library-chapter-toggle")[0]!);
@@ -61,12 +65,14 @@ describe.skipIf(__FGE_EDITION__ !== "public")("公开版 C03 讲解库目录验�
     if (!c03) throw new Error("C03 chapter not found");
     act(() =>
       root.render(
-        <ReaderView
-          chapter={c03}
-          chapterNumber={3}
-          onBack={() => {}}
-          onPracticeChapter={() => {}}
-        />
+        <LocaleProvider supportedLocales={UI_LOCALES}>
+          <ReaderView
+            chapter={c03}
+            chapterNumber={3}
+            onBack={() => {}}
+            onPracticeChapter={() => {}}
+          />
+        </LocaleProvider>
       )
     );
     click($$(".reader-toc-toggle")[0]!);

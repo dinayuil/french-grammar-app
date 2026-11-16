@@ -19,6 +19,11 @@ const MANAGER_PATH = path.join(
   'harmony/entry/src/main/ets/bridge/FgeSyncManager.ets',
 );
 const MANAGER_SOURCE = readFileSync(MANAGER_PATH, 'utf8');
+const BRIDGE_PATH = path.join(
+  APP_ROOT,
+  'harmony/entry/src/main/ets/bridge/FgeHarmonyBridge.ets',
+);
+const BRIDGE_SOURCE = readFileSync(BRIDGE_PATH, 'utf8');
 
 let bundleCounter = 0;
 
@@ -153,6 +158,73 @@ function createHarness() {
     },
   };
 
+  harness.utd = {
+    getUniformDataTypeByMIMEType() {
+      return 'general.file';
+    },
+    UniformDataType: { FILE: 'general.file' },
+  };
+  harness.fileIo = {
+    OpenMode: { READ_WRITE: 2, CREATE: 4, TRUNC: 8 },
+    openError: null,
+    writeError: null,
+    closeError: null,
+    closeCount: 0,
+    mkdirSync() {},
+    accessSync() {
+      return true;
+    },
+    openSync() {
+      if (harness.fileIo.openError) throw harness.fileIo.openError;
+      return { fd: 1 };
+    },
+    writeSync() {
+      if (harness.fileIo.writeError) throw harness.fileIo.writeError;
+    },
+    closeSync() {
+      harness.fileIo.closeCount += 1;
+      if (harness.fileIo.closeError) throw harness.fileIo.closeError;
+    },
+  };
+  harness.fileUri = {
+    getUriFromPath(filePath) {
+      return `file://${filePath}`;
+    },
+  };
+  harness.shareOutcome = 'completed';
+  harness.systemShare = {
+    SharedData: class {
+      constructor(record) {
+        this.record = record;
+      }
+    },
+    ShareController: class {
+      constructor() {
+        this.handlers = {};
+      }
+      on(event, callback) {
+        this.handlers[event] = callback;
+      }
+      async show() {
+        if (harness.shareOutcome === 'completed') {
+          this.handlers.shareCompleted?.();
+        } else if (harness.shareOutcome === 'cancelled') {
+          setTimeout(() => this.handlers.dismiss?.(), 0);
+        }
+      }
+    },
+    SharePreviewMode: { DETAIL: 0 },
+    SelectionMode: { SINGLE: 0 },
+  };
+  harness.window = {
+    async getLastWindow() {
+      return {
+        setWindowBackgroundColor() {},
+        async setWindowSystemBarProperties() {},
+      };
+    },
+  };
+
   return harness;
 }
 
@@ -170,7 +242,7 @@ const KIT_PLUGIN = {
           return { contents: 'export const common = {};', loader: 'js' };
         case '@kit.ArkData':
           return {
-            contents: `export const preferences = ${harness}.preferences;`,
+            contents: `export const preferences = ${harness}.preferences;\nexport const uniformTypeDescriptor = ${harness}.utd;`,
             loader: 'js',
           };
         case '@kit.ArkTS':
@@ -191,6 +263,26 @@ const KIT_PLUGIN = {
         case '@kit.CryptoArchitectureKit':
           return {
             contents: `export const cryptoFramework = ${harness}.cryptoFramework;`,
+            loader: 'js',
+          };
+        case '@kit.CoreFileKit':
+          return {
+            contents: `export const fileIo = ${harness}.fileIo;\nexport const fileUri = ${harness}.fileUri;`,
+            loader: 'js',
+          };
+        case '@kit.ShareKit':
+          return {
+            contents: `export const systemShare = ${harness}.systemShare;`,
+            loader: 'js',
+          };
+        case '@kit.ArkUI':
+          return {
+            contents: `export const window = ${harness}.window;`,
+            loader: 'js',
+          };
+        case '@kit.BasicServicesKit':
+          return {
+            contents: 'export class BusinessError extends Error {}',
             loader: 'js',
           };
         default:
@@ -225,6 +317,40 @@ async function loadManager(harness) {
     abilityInfo: { bundleName: 'com.fge.open' },
   });
   return manager;
+}
+
+async function loadBridge(harness, bundleName = 'com.fge.open') {
+  globalThis.__FGE_SYNC_HARNESS__ = harness;
+  const result = await build({
+    stdin: {
+      contents: BRIDGE_SOURCE,
+      resolveDir: path.dirname(BRIDGE_PATH),
+      sourcefile: 'FgeHarmonyBridge.ets',
+      loader: 'ts',
+    },
+    bundle: true,
+    write: false,
+    format: 'esm',
+    platform: 'neutral',
+    target: 'es2022',
+    loader: { '.ets': 'ts' },
+    resolveExtensions: ['.ets', '.ts', '.js', '.json'],
+    plugins: [KIT_PLUGIN],
+  });
+  const code = `${result.outputFiles[0].text}\n// bridge bundle ${++bundleCounter}`;
+  const module = await import(
+    `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
+  );
+  const bridge = new module.FgeHarmonyBridge();
+  bridge.setContext({
+    abilityInfo: { bundleName },
+    cacheDir: '/tmp/fge-cache',
+  });
+  return bridge;
+}
+
+async function callBridge(bridge, request) {
+  return JSON.parse(await bridge.invoke(JSON.stringify(request)));
 }
 
 const A = {
@@ -478,4 +604,211 @@ test('DAV method and Depth bounds reject invalid requests before the network', a
     /文件名/,
   );
   assert.equal(harness.requests.length, 0);
+});
+
+test('bridge error replies carry a fixed native code, params and diagnostics', async () => {
+  const harness = createHarness();
+  const bridge = await loadBridge(harness);
+  await callBridge(bridge, {
+    version: 1,
+    operation: 'syncWriteConfig',
+    config: A,
+    password: 'old-password',
+  });
+
+  const reply = await callBridge(bridge, {
+    version: 1,
+    operation: 'syncWriteConfig',
+    config: B,
+  });
+
+  assert.equal(reply.status, 'error');
+  assert.equal(reply.code, 'native.credentials_required');
+  assert.deepEqual(reply.params, { operation: 'syncWriteConfig' });
+  assert.match(reply.message, /重新输入|密码/);
+});
+
+test('bridge maps invalid sync requests to native.config_invalid before the network', async () => {
+  const harness = createHarness();
+  const bridge = await loadBridge(harness);
+  await callBridge(bridge, {
+    version: 1,
+    operation: 'syncWriteConfig',
+    config: A,
+  });
+
+  const reply = await callBridge(bridge, {
+    version: 1,
+    operation: 'syncRequest',
+    request: {
+      method: 'DELETE',
+      filename: 'fge-progress-public.json',
+      headers: {},
+    },
+  });
+
+  assert.equal(reply.status, 'error');
+  assert.equal(reply.code, 'native.config_invalid');
+  assert.equal(reply.params.operation, 'syncRequest');
+  assert.equal(harness.requests.length, 0);
+});
+
+test('bridge maps transport failures to native.network_failed with a diagnostic', async () => {
+  const harness = createHarness();
+  const bridge = await loadBridge(harness);
+  await callBridge(bridge, {
+    version: 1,
+    operation: 'syncWriteConfig',
+    config: A,
+  });
+  harness.requestError = new Error('socket closed');
+
+  const reply = await callBridge(bridge, {
+    version: 1,
+    operation: 'syncRequest',
+    request: {
+      method: 'GET',
+      filename: 'fge-progress-public.json',
+      headers: {},
+    },
+  });
+
+  assert.equal(reply.status, 'error');
+  assert.equal(reply.code, 'native.network_failed');
+  assert.equal(reply.params.operation, 'syncRequest');
+  assert.match(reply.message, /网络|请求/);
+  assert.doesNotMatch(reply.message, /socket closed/);
+});
+
+test('bridge maps an unknown edition to native.unsupported', async () => {
+  const harness = createHarness();
+  const bridge = await loadBridge(harness, 'com.fge.other');
+  await callBridge(bridge, {
+    version: 1,
+    operation: 'syncWriteConfig',
+    config: A,
+  });
+
+  const reply = await callBridge(bridge, {
+    version: 1,
+    operation: 'syncRequest',
+    request: {
+      method: 'GET',
+      filename: 'fge-progress-public.json',
+      headers: {},
+    },
+  });
+
+  assert.equal(reply.status, 'error');
+  assert.equal(reply.code, 'native.unsupported');
+  assert.equal(reply.params.operation, 'syncRequest');
+});
+
+test('bridge share validation uses native.file_failed and keeps the reason', async () => {
+  const harness = createHarness();
+  const bridge = await loadBridge(harness);
+
+  const reply = await callBridge(bridge, {
+    version: 1,
+    operation: 'shareFile',
+    filename: 'fge-progress-public.json',
+    mimeType: 'application/json',
+    encoding: 'utf8',
+    data: 'not-json',
+  });
+
+  assert.equal(reply.status, 'error');
+  assert.equal(reply.code, 'native.file_failed');
+  assert.equal(reply.params.operation, 'shareFile');
+  assert.match(reply.message, /JSON/);
+});
+
+test('bridge parses malformed protocol requests as native.config_invalid', async () => {
+  const harness = createHarness();
+  const bridge = await loadBridge(harness);
+
+  const reply = JSON.parse(await bridge.invoke('not-json'));
+  assert.equal(reply.status, 'error');
+  assert.equal(reply.code, 'native.config_invalid');
+  assert.ok(reply.message.length > 0);
+});
+
+const SHARE_REQUEST = {
+  version: 1,
+  operation: 'shareFile',
+  filename: 'fge-progress-public.json',
+  mimeType: 'application/json',
+  encoding: 'utf8',
+  data: '{"format":"fge-progress"}',
+};
+
+function assertNoPathLeak(reply) {
+  const text = JSON.stringify(reply);
+  for (const marker of [
+    'https://',
+    'dav.example.com',
+    '/data/storage',
+    'private-token',
+    'EACCES',
+  ]) {
+    assert.equal(text.includes(marker), false, `reply leaked ${marker}: ${text}`);
+  }
+}
+
+test('bridge classifies share file open failures as native.file_failed without paths', async () => {
+  const harness = createHarness();
+  harness.fileIo.openError = new Error(
+    'EACCES https://dav.example.com/private-token.json /data/storage/private-token.json',
+  );
+  const bridge = await loadBridge(harness);
+
+  const reply = await callBridge(bridge, SHARE_REQUEST);
+
+  assert.equal(reply.status, 'error');
+  assert.equal(reply.code, 'native.file_failed');
+  assert.deepEqual(reply.params, { operation: 'shareFile' });
+  assert.equal(reply.message, '无法写入分享文件');
+  assertNoPathLeak(reply);
+});
+
+test('bridge closes a failed share write and keeps the fixed file diagnostic', async () => {
+  const harness = createHarness();
+  harness.fileIo.writeError = new Error(
+    'ENOSPC https://dav.example.com/private-token.json',
+  );
+  const bridge = await loadBridge(harness);
+
+  const reply = await callBridge(bridge, SHARE_REQUEST);
+
+  assert.equal(reply.code, 'native.file_failed');
+  assert.equal(reply.message, '无法写入分享文件');
+  assert.equal(harness.fileIo.closeCount, 1);
+  assertNoPathLeak(reply);
+});
+
+test('bridge does not report success when closing the share file fails', async () => {
+  const harness = createHarness();
+  harness.fileIo.closeError = new Error(
+    'EIO /data/storage/private-token.json',
+  );
+  const bridge = await loadBridge(harness);
+
+  const reply = await callBridge(bridge, SHARE_REQUEST);
+
+  assert.equal(reply.code, 'native.file_failed');
+  assert.equal(reply.message, '无法写入分享文件');
+  assert.equal(harness.fileIo.closeCount, 1);
+  assertNoPathLeak(reply);
+});
+
+test('bridge keeps share cancellation as cancelled rather than a file failure', async () => {
+  const harness = createHarness();
+  harness.shareOutcome = 'cancelled';
+  const bridge = await loadBridge(harness);
+
+  const reply = await callBridge(bridge, SHARE_REQUEST);
+
+  assert.equal(reply.status, 'cancelled', JSON.stringify(reply));
+  assert.equal(reply.code, undefined);
+  assert.equal(harness.fileIo.closeCount, 1);
 });

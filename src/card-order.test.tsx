@@ -6,6 +6,8 @@ import { getLearningSections, type LearningSection } from "./learning/sections";
 import type { Chapter } from "./types";
 import { LibraryView } from "./views/LibraryView";
 import { ReaderView } from "./views/ReaderView";
+import { LocaleProvider } from "./i18n/LocaleProvider";
+import { UI_LOCALES } from "./i18n/types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -59,12 +61,14 @@ function tocTitleOf(el: Element): string {
 function openLibraryChapter(chapter: Chapter) {
   act(() =>
     root.render(
-      <LibraryView
-        chapters={[chapter]}
-        query=""
-        onQueryChange={() => {}}
-        onOpenCard={() => {}}
-      />
+      <LocaleProvider supportedLocales={UI_LOCALES}>
+        <LibraryView
+          chapters={[chapter]}
+          query=""
+          onQueryChange={() => {}}
+          onOpenCard={() => {}}
+        />
+      </LocaleProvider>
     )
   );
   click($$(".library-chapter-toggle")[0]);
@@ -83,14 +87,16 @@ function firstLibrarySectionItems(): HTMLElement[] {
 function openReader(chapter: Chapter, section: LearningSection) {
   act(() =>
     root.render(
-      <ReaderView
-        key={section.id}
-        chapter={chapter}
-        chapterNumber={CHAPTERS.indexOf(chapter) + 1}
-        section={section}
-        onBack={() => {}}
-        onPracticeChapter={() => {}}
-      />
+      <LocaleProvider supportedLocales={UI_LOCALES}>
+        <ReaderView
+          key={section.id}
+          chapter={chapter}
+          chapterNumber={CHAPTERS.indexOf(chapter) + 1}
+          section={section}
+          onBack={() => {}}
+          onPracticeChapter={() => {}}
+        />
+      </LocaleProvider>
     )
   );
 }

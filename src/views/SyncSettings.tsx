@@ -11,6 +11,13 @@ import {
   isBackupCancelled,
   type ProgressBackup,
 } from "../backup/progressBackup";
+import {
+  formatUserError,
+  normalizeUserFacingError,
+  type FormattedUserError,
+  type UserFacingError,
+} from "../i18n/errors";
+import { useLocale } from "../i18n/LocaleProvider";
 import type { ClientSyncController } from "../sync/useClientSync";
 import type { SyncConfig, SyncSettings, SyncSnapshot } from "../sync/types";
 import {
@@ -26,29 +33,37 @@ interface Props {
 
 type StatusTone = "neutral" | "active" | "success" | "warning" | "error";
 
-const STATUS_TEXT: Record<
-  SyncSnapshot["status"],
-  { label: string; tone: StatusTone }
-> = {
-  disabled: { label: "同步未启用", tone: "neutral" },
-  idle: { label: "等待同步", tone: "neutral" },
-  syncing: { label: "正在同步", tone: "active" },
-  synced: { label: "已同步", tone: "success" },
-  conflict: { label: "需要处理冲突", tone: "warning" },
-  error: { label: "同步失败", tone: "error" },
+const STATUS_TONE: Record<SyncSnapshot["status"], StatusTone> = {
+  disabled: "neutral",
+  idle: "neutral",
+  syncing: "active",
+  synced: "success",
+  conflict: "warning",
+  error: "error",
 };
 
-const RECOVERY_REASON: Record<SyncRecoveryReason, string> = {
-  conflict: "冲突时保存",
-  "remote-apply": "应用云端前保存",
-  "local-overwrite": "覆盖云端前保存",
-  "remote-overwrite": "替换本机前保存",
+const STATUS_KEY = {
+  disabled: "sync.status.disabled",
+  idle: "sync.status.idle",
+  syncing: "sync.status.syncing",
+  synced: "sync.status.synced",
+  conflict: "sync.status.conflict",
+  error: "sync.status.error",
+} as const;
+
+const RECOVERY_KEY: Record<SyncRecoveryReason, string> = {
+  conflict: "sync.recovery.reason.conflict",
+  "remote-apply": "sync.recovery.reason.remote_apply",
+  "local-overwrite": "sync.recovery.reason.local_overwrite",
+  "remote-overwrite": "sync.recovery.reason.remote_overwrite",
 };
 
 const DISABLED_SNAPSHOT: SyncSnapshot = {
   status: "disabled",
   config: null,
   message: "",
+  error: null,
+  notice: null,
   lastSyncedAt: null,
   conflict: null,
 };
@@ -72,14 +87,47 @@ function useSyncSnapshot(controller: ClientSyncController | null): SyncSnapshot 
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
-function errorText(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  if (typeof error === "string" && error.trim()) return error;
-  return fallback;
+/** 统一规范化异常；无码旧错误保留当前操作的本地化上下文。 */
+function toUserError(error: unknown, fallbackCode: string): UserFacingError {
+  const normalized = normalizeUserFacingError(error);
+  if (normalized.code === "errors.unknown") {
+    return {
+      code: fallbackCode,
+      ...(normalized.diagnostic
+        ? { diagnostic: normalized.diagnostic }
+        : {}),
+    };
+  }
+  return normalized;
 }
 
-function formatSyncTime(value: string | null): string {
-  if (!value) return "暂无";
+function snapshotFeedback(
+  snapshot: SyncSnapshot,
+  locale: "zh-CN" | "fr"
+): FormattedUserError | null {
+  // 冲突操作中的存储/覆盖失败也带结构化 error;不能按 status 丢弃成普通状态。
+  if (snapshot.error) return formatUserError(snapshot.error, locale);
+  if (snapshot.status === "error") {
+    if (snapshot.message) {
+      return formatUserError(
+        { code: "sync.error.failed", diagnostic: snapshot.message },
+        locale
+      );
+    }
+    return null;
+  }
+  if (snapshot.notice) return formatUserError(snapshot.notice, locale);
+  if (snapshot.message) {
+    return formatUserError(
+      { code: "sync.message.legacy", diagnostic: snapshot.message },
+      locale
+    );
+  }
+  return null;
+}
+
+function formatSyncTime(value: string | null, emptyLabel: string): string {
+  if (!value) return emptyLabel;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -128,33 +176,34 @@ function validateConnection(
   username: string,
   password: string,
   canReusePassword: boolean
-): string {
+): UserFacingError | null {
   const trimmedUrl = url.trim();
-  if (!trimmedUrl) return "请填写 WebDAV 目录地址。";
+  if (!trimmedUrl) return { code: "sync.validation.url_required" };
 
   let parsed: URL;
   try {
     parsed = new URL(trimmedUrl);
   } catch {
-    return "WebDAV 地址格式不正确，请填写完整的 HTTPS 地址。";
+    return { code: "sync.validation.url_invalid" };
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    return "WebDAV 地址必须以 http:// 或 https:// 开头。";
+    return { code: "sync.validation.url_protocol" };
   }
   if (parsed.username || parsed.password) {
-    return "请不要把用户名或密码写在地址里。";
+    return { code: "sync.validation.url_credentials" };
   }
   if (parsed.search || parsed.hash) {
-    return "WebDAV 地址不能包含查询参数或片段。";
+    return { code: "sync.validation.url_query" };
   }
-  if (!username.trim()) return "请填写 WebDAV 用户名。";
+  if (!username.trim()) return { code: "sync.validation.username_required" };
   if (!canReusePassword && !password) {
-    return "请输入应用密码。";
+    return { code: "sync.validation.password_required" };
   }
-  return "";
+  return null;
 }
 
 export function SyncSettings({ controller }: Props) {
+  const { locale, t } = useLocale();
   const snapshot = useSyncSnapshot(controller);
   const config = snapshot.config;
 
@@ -166,8 +215,8 @@ export function SyncSettings({ controller }: Props) {
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [resolving, setResolving] = useState<"local" | "remote" | null>(null);
-  const [formError, setFormError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [formError, setFormError] = useState<UserFacingError | null>(null);
+  const [notice, setNotice] = useState<UserFacingError | null>(null);
   const [conflictHidden, setConflictHidden] = useState(false);
   const [recoveries, setRecoveries] = useState<SyncRecoveryRecord[]>([]);
   const [exporting, setExporting] = useState<{
@@ -219,11 +268,12 @@ export function SyncSettings({ controller }: Props) {
 
   if (!controller) return null;
 
-  const status = STATUS_TEXT[snapshot.status];
+  const statusTone = STATUS_TONE[snapshot.status];
   const connected = config !== null;
-  const displayStatus = !connected && snapshot.status === "idle"
-    ? { label: "尚未连接", tone: "neutral" as StatusTone }
-    : status;
+  const displayStatus =
+    !connected && snapshot.status === "idle"
+      ? { label: t("sync.status.not_connected"), tone: "neutral" as StatusTone }
+      : { label: t(STATUS_KEY[snapshot.status]), tone: statusTone };
   const busy =
     saving ||
     syncing ||
@@ -238,13 +288,13 @@ export function SyncSettings({ controller }: Props) {
   const canReusePassword = config?.hasPassword === true && !accountChanged;
 
   const clearFeedback = () => {
-    setFormError("");
-    setNotice("");
+    setFormError(null);
+    setNotice(null);
   };
 
   const markEdited = () => {
-    if (formError) setFormError("");
-    if (notice) setNotice("");
+    if (formError) setFormError(null);
+    if (notice) setNotice(null);
   };
 
   const handleSave = async (event: FormEvent<HTMLFormElement>) => {
@@ -278,25 +328,24 @@ export function SyncSettings({ controller }: Props) {
       if (!configMatches(latest.config, settings)) {
         // 控制器可能吞掉原生错误并只更新 snapshot;只有配置真正落盘才算保存成功。
         setFormError(
-          `保存连接失败：${latest.message || "同步配置未保存，请重试。"}`
+          latest.error ?? {
+            code: "sync.error.config_save_failed",
+            diagnostic: latest.message || undefined,
+          }
         );
         return;
       }
       // 保存成功后不保留任何密码输入,控制器只暴露 hasPassword。
       setPasswordInput("");
       // 配置已保存但首次同步可能失败,不能把同步结果说成连接失败或连接成功。
-      setNotice(
-        latest.status === "error"
-          ? "连接设置已保存，但首次同步未完成，请查看上方提示。"
-          : "连接设置已保存。"
-      );
+      setNotice({
+        code:
+          latest.status === "error"
+            ? "sync.notice.saved_sync_failed"
+            : "sync.notice.saved",
+      });
     } catch (error) {
-      setFormError(
-        `保存连接失败：${errorText(
-          error,
-          "请检查地址、用户名和应用密码后重试。"
-        )}`
-      );
+      setFormError(toUserError(error, "sync.action.save_unknown"));
     } finally {
       setSaving(false);
     }
@@ -309,7 +358,7 @@ export function SyncSettings({ controller }: Props) {
     try {
       await controller.sync();
     } catch (error) {
-      setFormError(`同步失败：${errorText(error, "请稍后重试。")}`);
+      setFormError(toUserError(error, "sync.action.sync_unknown"));
     } finally {
       setSyncing(false);
     }
@@ -324,16 +373,21 @@ export function SyncSettings({ controller }: Props) {
       const latest = controller.getSnapshot();
       if (latest.config !== null) {
         // 断开失败时保留已填写的配置与密码状态,不回显密码但也不清空。
-        setFormError(`断开连接失败：${latest.message || "请稍后重试。"}`);
+        setFormError(
+          latest.error ?? {
+            code: "sync.error.disconnect_failed",
+            diagnostic: latest.message || undefined,
+          }
+        );
         return;
       }
       setUrl("");
       setUsername("");
       setPasswordInput("");
       setAutoSync(true);
-      setNotice("已断开同步。本机学习进度和云端文件都保留。");
+      setNotice({ code: "sync.notice.disconnected" });
     } catch (error) {
-      setFormError(`断开失败：${errorText(error, "请稍后重试。")}`);
+      setFormError(toUserError(error, "sync.action.disconnect_unknown"));
     } finally {
       setDisconnecting(false);
     }
@@ -350,20 +404,19 @@ export function SyncSettings({ controller }: Props) {
         latest.status === "synced" && latest.conflict === null;
       if (!resolved) {
         // 冲突可能被延后、再次出现或失败;保留控制器消息,不宣布覆盖成功。
-        if (!latest.message) {
-          setFormError("冲突尚未处理，请稍后重试。");
+        if (!snapshotFeedback(latest, locale)) {
+          setFormError({ code: "sync.action.resolve_unhandled" });
         }
         return;
       }
-      setNotice(
-        choice === "local"
-          ? "已使用本机进度覆盖云端。"
-          : "已使用云端进度替换本机。"
-      );
+      setNotice({
+        code:
+          choice === "local"
+            ? "sync.notice.overwrote_cloud"
+            : "sync.notice.replaced_local",
+      });
     } catch (error) {
-      setFormError(
-        `处理冲突失败：${errorText(error, "两份记录都未改变，请重试。")}`
-      );
+      setFormError(toUserError(error, "sync.action.resolve_unknown"));
     } finally {
       setResolving(null);
     }
@@ -384,26 +437,36 @@ export function SyncSettings({ controller }: Props) {
     setExporting({ index, which });
     try {
       // 只导出文件;不恢复、不覆盖当前学习进度,也不写任何同步状态。
-      await exportBackup(copy.progress);
-      setNotice(
-        which === "local" ? "已导出本机旧记录。" : "已导出云端旧记录。"
-      );
+      await exportBackup(copy.progress, locale);
+      setNotice({
+        code:
+          which === "local"
+            ? "sync.notice.export_local"
+            : "sync.notice.export_remote",
+      });
     } catch (error) {
       if (isBackupCancelled(error)) {
-        setNotice("已取消导出。");
+        setNotice({ code: "sync.notice.cancelled" });
       } else {
-        setFormError(`导出恢复副本失败：${errorText(error, "请重试。")}`);
+        setFormError(
+          toUserError(error, "sync.action.export_recovery_unknown")
+        );
       }
     } finally {
       setExporting(null);
     }
   };
 
+  const feedback = snapshotFeedback(snapshot, locale);
+  const formErrorText = formError ? formatUserError(formError, locale) : null;
+  const noticeText = notice ? formatUserError(notice, locale).message : "";
+  const emptyTime = t("sync.last_synced_none");
+
   return (
     <section className="sync-panel" aria-labelledby="sync-panel-title">
       <div className="sync-head">
         <h2 className="settings-title backup-title" id="sync-panel-title">
-          跨设备同步
+          {t("sync.title")}
         </h2>
         <span
           className={`sync-badge sync-badge-${displayStatus.tone}`}
@@ -412,68 +475,85 @@ export function SyncSettings({ controller }: Props) {
           {displayStatus.label}
         </span>
       </div>
-      <p className="backup-intro">
-        用你自己的 WebDAV 服务，在 Windows、Android 和鸿蒙设备间同步学习进度。
-        只同步学习进度，不包含主题设置。
-      </p>
+      <p className="backup-intro">{t("sync.intro")}</p>
 
       <div className={`sync-status sync-status-${displayStatus.tone}`}>
         <div className="sync-status-row">
           <span className="sync-dot" aria-hidden="true" />
           <span className="sync-status-label">{displayStatus.label}</span>
           <span className="sync-status-time">
-            上次同步：{formatSyncTime(snapshot.lastSyncedAt)}
+            {t("sync.last_synced", {
+              time: formatSyncTime(snapshot.lastSyncedAt, emptyTime),
+            })}
           </span>
         </div>
-        {snapshot.message && (
-          <p
-            className={snapshot.status === "error" ? "sync-error" : "sync-message"}
-            role={snapshot.status === "error" ? "alert" : "status"}
+        {feedback && (
+          <div
+            className={
+              snapshot.error || snapshot.status === "error"
+                ? "sync-error"
+                : "sync-message"
+            }
+            role={snapshot.error || snapshot.status === "error" ? "alert" : "status"}
           >
-            {snapshot.message}
-          </p>
+            <span>{feedback.message}</span>
+            {feedback.diagnostic && (
+              <details className="sync-error-details">
+                <summary>{t("errors.details")}</summary>
+                <span>{feedback.diagnostic}</span>
+              </details>
+            )}
+          </div>
         )}
       </div>
 
       {conflict && !conflictHidden && (
-        <div className="sync-conflict" role="region" aria-label="同步冲突">
-          <div className="sync-conflict-head">
-            本机与云端的进度不一致
-          </div>
-          <p className="sync-conflict-intro">
-            选择前两份记录都会保留，不会自动覆盖；覆盖前也会保留旧版本的副本。
-          </p>
+        <div
+          className="sync-conflict"
+          role="region"
+          aria-label={t("sync.conflict.region")}
+        >
+          <div className="sync-conflict-head">{t("sync.conflict.title")}</div>
+          <p className="sync-conflict-intro">{t("sync.conflict.intro")}</p>
           <div className="sync-compare">
             <div className="sync-compare-card is-local">
-              <div className="sync-compare-label">本机</div>
+              <div className="sync-compare-label">{t("sync.local")}</div>
               <dl>
                 <div>
-                  <dt>累计经验</dt>
+                  <dt>{t("sync.xp")}</dt>
                   <dd>{conflict.local.progress.xp} XP</dd>
                 </div>
                 <div>
-                  <dt>已完成关卡</dt>
-                  <dd>{completedLessons(conflict.local)} 关</dd>
+                  <dt>{t("sync.lessons")}</dt>
+                  <dd>
+                    {t("sync.lessons_value", {
+                      count: completedLessons(conflict.local),
+                    })}
+                  </dd>
                 </div>
                 <div>
-                  <dt>记录日期</dt>
+                  <dt>{t("sync.record_date")}</dt>
                   <dd>{formatExportDate(conflict.local.exportedAt)}</dd>
                 </div>
               </dl>
             </div>
             <div className="sync-compare-card is-remote">
-              <div className="sync-compare-label">云端</div>
+              <div className="sync-compare-label">{t("sync.remote")}</div>
               <dl>
                 <div>
-                  <dt>累计经验</dt>
+                  <dt>{t("sync.xp")}</dt>
                   <dd>{conflict.remote.progress.xp} XP</dd>
                 </div>
                 <div>
-                  <dt>已完成关卡</dt>
-                  <dd>{completedLessons(conflict.remote)} 关</dd>
+                  <dt>{t("sync.lessons")}</dt>
+                  <dd>
+                    {t("sync.lessons_value", {
+                      count: completedLessons(conflict.remote),
+                    })}
+                  </dd>
                 </div>
                 <div>
-                  <dt>记录日期</dt>
+                  <dt>{t("sync.record_date")}</dt>
                   <dd>{formatExportDate(conflict.remote.exportedAt)}</dd>
                 </div>
               </dl>
@@ -487,7 +567,7 @@ export function SyncSettings({ controller }: Props) {
               disabled={busy}
               aria-busy={resolving === "local" ? "true" : undefined}
             >
-              用本机覆盖云端
+              {t("sync.overwrite_cloud")}
             </button>
             <button
               type="button"
@@ -496,7 +576,7 @@ export function SyncSettings({ controller }: Props) {
               disabled={busy}
               aria-busy={resolving === "remote" ? "true" : undefined}
             >
-              用云端替换本机
+              {t("sync.replace_local")}
             </button>
             <button
               type="button"
@@ -504,12 +584,12 @@ export function SyncSettings({ controller }: Props) {
               onClick={handlePostponeConflict}
               disabled={busy}
             >
-              暂不处理
+              {t("sync.postpone")}
             </button>
           </div>
           {resolving && (
             <p className="sync-notice" role="status">
-              正在处理冲突，请稍候…
+              {t("sync.resolving")}
             </p>
           )}
         </div>
@@ -517,13 +597,13 @@ export function SyncSettings({ controller }: Props) {
 
       {conflict && conflictHidden && (
         <div className="sync-conflict-pending">
-          <span>有未处理的同步冲突，两份记录都还保留着。</span>
+          <span>{t("sync.conflict_pending")}</span>
           <button
             type="button"
             className="backup-recovery-btn"
             onClick={() => setConflictHidden(false)}
           >
-            查看冲突
+            {t("sync.view_conflict")}
           </button>
         </div>
       )}
@@ -532,51 +612,59 @@ export function SyncSettings({ controller }: Props) {
         <section className="sync-recovery" aria-labelledby="sync-recovery-title">
           <div className="sync-recovery-head">
             <h3 className="sync-recovery-title" id="sync-recovery-title">
-              最近的同步前副本
+              {t("sync.recovery.title")}
             </h3>
             <span className="sync-recovery-saved">
-              最多保留 3 份 · 最新在前
+              {t("sync.recovery.limit")}
             </span>
           </div>
-          <p className="sync-recovery-intro">
-            同步覆盖或发现冲突前，会自动在本机保留旧记录。副本只包含学习进度，
-            不含账号密码；可以导出为备份文件，不会自动替换当前进度。
-          </p>
+          <p className="sync-recovery-intro">{t("sync.recovery.intro")}</p>
           <div className="sync-recovery-records">
             {recoveries.map((record, index) => {
               const isLatest = index === 0;
               const exportState =
                 exporting?.index === index ? exporting.which : null;
+              const reason = t(
+                RECOVERY_KEY[record.reason] as
+                  | "sync.recovery.reason.conflict"
+                  | "sync.recovery.reason.remote_apply"
+                  | "sync.recovery.reason.local_overwrite"
+                  | "sync.recovery.reason.remote_overwrite"
+              );
               return (
                 <div
                   className={`sync-recovery-record${isLatest ? " is-latest" : ""}`}
                   role="group"
-                  aria-label={`${formatSyncTime(record.savedAt)} ${RECOVERY_REASON[record.reason]}`}
+                  aria-label={`${formatSyncTime(record.savedAt, emptyTime)} ${reason}`}
                   key={`${record.savedAt}-${index}`}
                 >
                   <div className="sync-recovery-record-head">
                     <span className="sync-recovery-record-date">
-                      {formatSyncTime(record.savedAt)}
+                      {formatSyncTime(record.savedAt, emptyTime)}
                     </span>
                     {isLatest && (
-                      <span className="sync-recovery-latest">最新</span>
+                      <span className="sync-recovery-latest">{t("sync.latest")}</span>
                     )}
-                    <span className="sync-recovery-record-reason">
-                      {RECOVERY_REASON[record.reason]}
-                    </span>
+                    <span className="sync-recovery-record-reason">{reason}</span>
                   </div>
                   <div
                     className={`sync-recovery-copies${record.remote ? "" : " is-single"}`}
                   >
                     <div className="sync-recovery-card">
-                      <div className="sync-recovery-label">本机旧记录</div>
+                      <div className="sync-recovery-label">
+                        {t("sync.recovery.local_old")}
+                      </div>
                       <div className="sync-recovery-meta">
                         <span>
-                          {record.local.progress.xp} XP ·{" "}
-                          {completedLessons(record.local)} 关
+                          {t("sync.recovery.meta", {
+                            xp: record.local.progress.xp,
+                            count: completedLessons(record.local),
+                          })}
                         </span>
                         <span className="sync-recovery-copy-date">
-                          记录 {formatExportDate(record.local.exportedAt)}
+                          {t("sync.recovery.record_date", {
+                            date: formatExportDate(record.local.exportedAt),
+                          })}
                         </span>
                       </div>
                       <button
@@ -585,21 +673,31 @@ export function SyncSettings({ controller }: Props) {
                         onClick={() => handleExportRecovery(index, "local")}
                         disabled={busy}
                         aria-busy={exportState === "local" ? "true" : undefined}
-                        aria-label={`导出 ${formatSyncTime(record.savedAt)} 的本机旧记录`}
+                        aria-label={t("sync.recovery.export_local_aria", {
+                          time: formatSyncTime(record.savedAt, emptyTime),
+                        })}
                       >
-                        {exportState === "local" ? "正在导出…" : "导出本机"}
+                        {exportState === "local"
+                          ? t("sync.exporting")
+                          : t("sync.export_local")}
                       </button>
                     </div>
                     {record.remote && (
                       <div className="sync-recovery-card">
-                        <div className="sync-recovery-label">云端旧记录</div>
+                        <div className="sync-recovery-label">
+                          {t("sync.recovery.remote_old")}
+                        </div>
                         <div className="sync-recovery-meta">
                           <span>
-                            {record.remote.progress.xp} XP ·{" "}
-                            {completedLessons(record.remote)} 关
+                            {t("sync.recovery.meta", {
+                              xp: record.remote.progress.xp,
+                              count: completedLessons(record.remote),
+                            })}
                           </span>
                           <span className="sync-recovery-copy-date">
-                            记录 {formatExportDate(record.remote.exportedAt)}
+                            {t("sync.recovery.record_date", {
+                              date: formatExportDate(record.remote.exportedAt),
+                            })}
                           </span>
                         </div>
                         <button
@@ -610,9 +708,13 @@ export function SyncSettings({ controller }: Props) {
                           aria-busy={
                             exportState === "remote" ? "true" : undefined
                           }
-                          aria-label={`导出 ${formatSyncTime(record.savedAt)} 的云端旧记录`}
+                          aria-label={t("sync.recovery.export_remote_aria", {
+                            time: formatSyncTime(record.savedAt, emptyTime),
+                          })}
                         >
-                          {exportState === "remote" ? "正在导出…" : "导出云端"}
+                          {exportState === "remote"
+                            ? t("sync.exporting")
+                            : t("sync.export_remote")}
                         </button>
                       </div>
                     )}
@@ -621,16 +723,14 @@ export function SyncSettings({ controller }: Props) {
               );
             })}
           </div>
-          <p className="backup-hint">
-            需要恢复其中一份时，可在上方「学习进度备份」中导入刚导出的文件；导入前会再次确认。
-          </p>
+          <p className="backup-hint">{t("sync.recovery.hint")}</p>
         </section>
       )}
 
       <form className="sync-form" onSubmit={handleSave} noValidate>
         <div className="sync-fields">
           <label className="sync-field" htmlFor="sync-url">
-            <span className="sync-label">WebDAV 根地址</span>
+            <span className="sync-label">{t("sync.form.url_label")}</span>
             <input
               id="sync-url"
               className="sync-input"
@@ -650,26 +750,27 @@ export function SyncSettings({ controller }: Props) {
             />
           </label>
           <p className="backup-hint" id="sync-url-hint">
-            填写 WebDAV 根地址，http:// 和 https:// 都支持，局域网和自建服务也可以用。
-            应用会自动创建 FrenchGrammarExercise/ 文件夹存放同步文件，不需要提前建目录。
+            {t("sync.form.url_hint")}
           </p>
 
           <div className="sync-folder">
             <div className="sync-folder-head">
-              <span className="sync-label">应用文件夹</span>
-              <span className="sync-folder-fixed">自动创建 · 固定不可编辑</span>
+              <span className="sync-label">{t("sync.form.folder")}</span>
+              <span className="sync-folder-fixed">
+                {t("sync.form.folder_fixed")}
+              </span>
             </div>
             <div className="sync-folder-path">FrenchGrammarExercise/</div>
           </div>
 
           <label className="sync-field" htmlFor="sync-username">
-            <span className="sync-label">用户名</span>
+            <span className="sync-label">{t("sync.form.username")}</span>
             <input
               id="sync-username"
               className="sync-input"
               type="text"
               value={username}
-              placeholder="WebDAV 用户名"
+              placeholder={t("sync.form.username_placeholder")}
               autoComplete="username"
               autoCapitalize="none"
               autoCorrect="off"
@@ -682,17 +783,21 @@ export function SyncSettings({ controller }: Props) {
           </label>
 
           <label className="sync-field" htmlFor="sync-password">
-            <span className="sync-label">应用密码</span>
+            <span className="sync-label">
+              {t("sync.form.password")}
+            </span>
             <input
               id="sync-password"
               className="sync-input"
               type="password"
               value={password}
               placeholder={
-                canReusePassword ? "已保存；留空保持不变" : "请输入应用密码"
+                canReusePassword
+                  ? t("sync.form.password_saved_placeholder")
+                  : t("sync.form.password_placeholder")
               }
               autoComplete="off"
-              aria-label="应用密码"
+              aria-label={t("sync.form.password")}
               aria-describedby="sync-password-hint"
               onChange={(event) => {
                 setPasswordInput(event.currentTarget.value);
@@ -701,7 +806,7 @@ export function SyncSettings({ controller }: Props) {
             />
           </label>
           <p className="backup-hint" id="sync-password-hint">
-            密码只保存在本机的系统安全存储中，不会写入学习进度备份。修改地址或用户名后需要重新输入密码。
+            {t("sync.form.password_hint")}
           </p>
         </div>
 
@@ -710,7 +815,7 @@ export function SyncSettings({ controller }: Props) {
             id="sync-auto"
             type="checkbox"
             checked={autoSync}
-            aria-label="自动同步"
+            aria-label={t("sync.form.auto")}
             aria-describedby="sync-auto-hint"
             onChange={(event) => {
               setAutoSync(event.currentTarget.checked);
@@ -719,21 +824,25 @@ export function SyncSettings({ controller }: Props) {
           />
           <span className="sync-auto-track" aria-hidden="true" />
           <span className="sync-auto-copy">
-            <strong>自动同步</strong>
-            <span id="sync-auto-hint">
-              启动、回到前台或学习记录变化后自动尝试同步，随连接设置保存。
-            </span>
+            <strong>{t("sync.form.auto")}</strong>
+            <span id="sync-auto-hint">{t("sync.form.auto_hint")}</span>
           </span>
         </label>
 
-        {formError && (
-          <p className="sync-error sync-form-error" role="alert">
-            {formError}
-          </p>
+        {formErrorText && (
+          <div className="sync-error sync-form-error" role="alert">
+            <span>{formErrorText.message}</span>
+            {formErrorText.diagnostic && (
+              <details className="sync-error-details">
+                <summary>{t("errors.details")}</summary>
+                <span>{formErrorText.diagnostic}</span>
+              </details>
+            )}
+          </div>
         )}
-        {notice && !formError && (
+        {noticeText && !formErrorText && (
           <p className="sync-notice" role="status">
-            {notice}
+            {noticeText}
           </p>
         )}
 
@@ -744,7 +853,7 @@ export function SyncSettings({ controller }: Props) {
             disabled={busy}
             aria-busy={saving ? "true" : undefined}
           >
-            {saving ? "正在保存…" : "保存连接"}
+            {saving ? t("sync.form.saving") : t("sync.form.save")}
           </button>
           <button
             type="button"
@@ -753,7 +862,7 @@ export function SyncSettings({ controller }: Props) {
             disabled={!connected || busy}
             aria-busy={syncing || snapshot.status === "syncing" ? "true" : undefined}
           >
-            立即同步
+            {t("sync.form.sync_now")}
           </button>
         </div>
       </form>
@@ -766,11 +875,11 @@ export function SyncSettings({ controller }: Props) {
             onClick={handleDisconnect}
             disabled={busy}
           >
-            {disconnecting ? "正在断开…" : "断开连接"}
+            {disconnecting
+              ? t("sync.form.disconnecting")
+              : t("sync.form.disconnect")}
           </button>
-          <p className="backup-hint">
-            只清除本机保存的连接和同步记录，不删除学习进度或云端文件。
-          </p>
+          <p className="backup-hint">{t("sync.form.disconnect_hint")}</p>
         </div>
       )}
     </section>

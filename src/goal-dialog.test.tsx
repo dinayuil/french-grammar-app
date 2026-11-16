@@ -2,6 +2,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { GoalReachedDialog } from "./components/GoalReachedDialog";
+import { LocaleProvider, useLocale } from "./i18n/LocaleProvider";
 import { DEFAULT_PROGRESS } from "./storage";
 import type { Progress } from "./types";
 import type { ShareResult } from "./share/shareStats";
@@ -12,6 +13,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  localStorage.clear();
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -32,6 +34,20 @@ interface DialogProps {
 
 const progress: Progress = { ...DEFAULT_PROGRESS, dailyGoal: 50 };
 
+function LocaleSwitch() {
+  const { setLocale } = useLocale();
+  return (
+    <div>
+      <button data-testid="locale-zh" onClick={() => setLocale("zh-CN")}>
+        zh
+      </button>
+      <button data-testid="locale-fr" onClick={() => setLocale("fr")}>
+        fr
+      </button>
+    </div>
+  );
+}
+
 function renderDialog(overrides: Partial<DialogProps> = {}) {
   const onShare =
     overrides.onShare ?? vi.fn(() => new Promise<ShareResult>(() => {}));
@@ -42,8 +58,32 @@ function renderDialog(overrides: Partial<DialogProps> = {}) {
     onClose,
     returnFocusTo: overrides.returnFocusTo,
   };
-  act(() => root.render(<GoalReachedDialog {...props} />));
+  act(() =>
+    root.render(
+      <LocaleProvider supportedLocales={["zh-CN", "fr"]}>
+        <LocaleSwitch />
+        <GoalReachedDialog {...props} />
+      </LocaleProvider>
+    )
+  );
   return { onShare, onClose };
+}
+
+function switchLocale(locale: "fr" | "zh-CN") {
+  act(() => {
+    container
+      .querySelector<HTMLButtonElement>(`[data-testid="locale-${locale}"]`)
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+}
+
+function statusMainText(): string {
+  const status = $(".goal-dialog-status");
+  return status?.firstElementChild?.textContent ?? "";
+}
+
+function statusDetailText(): string {
+  return $(".goal-dialog-status details span")?.textContent ?? "";
 }
 
 const $ = (selector: string) =>
@@ -218,7 +258,7 @@ describe("GoalReachedDialog", () => {
     expect(statusText()).toContain("已取消");
   });
 
-  test("error 后保持打开,显示分享失败并可重试", async () => {
+  test("旧 message-only error 用通用主提示，原文进技术详情并可重试", async () => {
     const onShare = vi
       .fn<() => Promise<ShareResult>>()
       .mockResolvedValueOnce({ status: "error", message: "网络错误" })
@@ -230,8 +270,11 @@ describe("GoalReachedDialog", () => {
     await flush();
 
     expect(onClose).not.toHaveBeenCalled();
-    expect(statusText()).toContain("分享失败");
-    expect(statusText()).toContain("网络错误");
+    expect(statusMainText()).toBe("操作失败，请重试。");
+    expect(statusMainText()).not.toContain("分享失败");
+    expect(statusMainText()).not.toContain("网络错误");
+    expect($(".goal-dialog-status details summary")?.textContent).toBe("技术详情");
+    expect(statusDetailText()).toBe("网络错误");
 
     const retry = primaryButton();
     expect(retry.disabled).toBe(false);
@@ -244,7 +287,7 @@ describe("GoalReachedDialog", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  test("onShare 抛异常时显示错误,不关闭", async () => {
+  test("onShare 抛异常时主提示本地化，原文只进技术详情", async () => {
     const onShare = vi.fn(async (): Promise<ShareResult> => {
       throw new Error("生成失败");
     });
@@ -256,9 +299,50 @@ describe("GoalReachedDialog", () => {
 
     expect(onClose).not.toHaveBeenCalled();
     expect($('[role="dialog"]')).not.toBeNull();
-    expect(statusText()).toContain("分享失败");
-    expect(statusText()).toContain("生成失败");
+    expect(statusMainText()).toBe("操作失败，请重试。");
+    expect(statusMainText()).not.toContain("生成失败");
+    expect(statusDetailText()).toBe("生成失败");
     expect(primaryButton().disabled).toBe(false);
+  });
+
+  test("结构化原生错误保留 code，异步返回后按当前语言显示", async () => {
+    const { onShare, resolve } = deferredShare();
+    renderDialog({ onShare });
+
+    click(primaryButton());
+    switchLocale("fr");
+    await resolveShare(resolve, {
+      status: "error",
+      message: "compat raw",
+      error: {
+        code: "native.file_failed",
+        params: { operation: "save" },
+        diagnostic: "disk raw detail",
+      },
+    });
+
+    expect(statusMainText()).toContain(
+      "Impossible de lire ou d'écrire le fichier de sauvegarde"
+    );
+    expect(statusMainText()).not.toContain("Échec du partage");
+    expect($(".goal-dialog-status details summary")?.textContent).toBe(
+      "Détails techniques"
+    );
+    expect(statusDetailText()).toBe("disk raw detail");
+  });
+
+  test("旧 message-only 结果在法语下不用中文作主提示", async () => {
+    const { onShare, resolve } = deferredShare();
+    renderDialog({ onShare });
+
+    click(primaryButton());
+    switchLocale("fr");
+    await resolveShare(resolve, { status: "error", message: "网络错误" });
+
+    expect(statusMainText()).toBe("L'opération a échoué. Veuillez réessayer.");
+    expect(statusMainText()).not.toMatch(/[\u3400-\u9fff]/);
+    expect(statusMainText()).not.toContain("Échec du partage");
+    expect(statusDetailText()).toBe("网络错误");
   });
 
   test("按 Esc 关闭", () => {

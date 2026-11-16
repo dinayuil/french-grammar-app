@@ -1,10 +1,18 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Chapter } from "../types";
 import type { StudyKind } from "../engine";
 import { useStudyTimer } from "../studyTimer";
 import { cardSummary, groupCardsByUnit } from "../library/search";
 import { sanitizeCardHtml } from "../content/cardHtml";
-import type { LearningSection } from "../learning/sections";
+import {
+  sectionKeyFor,
+  type LearningSection,
+} from "../learning/sections";
+import {
+  localizeChapter,
+  sectionTitleForDisplay,
+} from "../content/localize";
+import { useLocale } from "../i18n/LocaleProvider";
 
 interface Props {
   chapter: Chapter;
@@ -34,6 +42,15 @@ export function ReaderView({
   onStudyTick,
 }: Props) {
   const cards = section ? section.cards : chapter.cards;
+  const { locale, t } = useLocale();
+  const chapterDisplay = useMemo(
+    () => localizeChapter(chapter, locale),
+    [chapter, locale]
+  );
+  const cardDisplayById = useMemo(
+    () => new Map(chapterDisplay.cards.map((card) => [card.base.id, card])),
+    [chapterDisplay]
+  );
   const initialIndex = Math.max(
     0,
     initialCardId ? cards.findIndex((c) => c.id === initialCardId) : 0
@@ -66,20 +83,38 @@ export function ReaderView({
 
   useStudyTimer((s) => onStudyTick?.("read", s));
 
+  const localizedSectionTitle = (target: LearningSection): string =>
+    sectionTitleForDisplay(
+      chapterDisplay,
+      sectionKeyFor(target, chapter.id),
+      target.kind === "comprehensive"
+        ? t("section.comprehensive")
+        : target.title
+    );
+
   if (total === 0) {
     return (
       <div className="reader">
         <div className="reader-header">
-          <button className="reader-back" aria-label="返回" onClick={onBack}>
+          <button
+            className="reader-back"
+            aria-label={t("common.back")}
+            onClick={onBack}
+          >
             ←
           </button>
         </div>
         <div className="reader-empty">
-          {section ? "本小节暂无讲解" : "本章暂无讲解"}
+          {section ? t("reader.emptySection") : t("reader.emptyChapter")}
         </div>
       </div>
     );
   }
+
+  const cardDisplay = card ? cardDisplayById.get(card.id) : undefined;
+  const cardTitle = cardDisplay?.title ?? card?.title ?? "";
+  const cardBody = cardDisplay?.body ?? card?.body ?? "";
+  const sectionName = section ? localizedSectionTitle(section) : "";
 
   const progress = ((cardIndex + 1) / Math.max(total, 1)) * 100;
   // 小节阅读范围已由配置决定分组，目录直接跟随正文源序，避免旧 ID 的
@@ -111,18 +146,27 @@ export function ReaderView({
   return (
     <div className="reader">
       <div className="reader-header">
-        <button className="reader-back" aria-label="返回" onClick={onBack}>
+        <button
+          className="reader-back"
+          aria-label={t("common.back")}
+          onClick={onBack}
+        >
           ←
         </button>
         <div className="reader-chapter">
           <span className="reader-chapter-title">
-            第{chapterNumber}章 · {chapter.title}
+            {t("reader.chapterHeading", {
+              number: chapterNumber,
+              title: chapterDisplay.title,
+            })}
           </span>
-          {section && <span className="reader-section-name">{section.title}</span>}
+          {section && (
+            <span className="reader-section-name">{sectionName}</span>
+          )}
         </div>
         <button
           className="reader-toc-toggle"
-          aria-label="目录"
+          aria-label={t("reader.toc")}
           onClick={() => setDrawerOpen(true)}
         >
           ☰
@@ -135,7 +179,7 @@ export function ReaderView({
           aria-valuemin={1}
           aria-valuemax={total}
           aria-valuenow={cardIndex + 1}
-          aria-label="阅读进度"
+          aria-label={t("reader.progress")}
         >
           <div
             className="reader-progress-fill"
@@ -152,7 +196,9 @@ export function ReaderView({
           <button
             className="reader-section-prev"
             type="button"
-            aria-label={`上一节：${previousLink.section.title}`}
+            aria-label={t("reader.previousSectionAria", {
+              title: localizedSectionTitle(previousLink.section),
+            })}
             onClick={() =>
               previousLink.open(previousLink.section.id, previousLink.cardId)
             }
@@ -160,30 +206,38 @@ export function ReaderView({
             <span className="reader-section-prev-arrow" aria-hidden="true">
               ←
             </span>
-            <span className="reader-section-prev-label">上一节</span>
+            <span className="reader-section-prev-label">
+              {t("reader.previousSection")}
+            </span>
             <span className="reader-section-prev-title">
-              {previousLink.section.title}
+              {localizedSectionTitle(previousLink.section)}
             </span>
           </button>
         )}
-        <div className="card-title">{card.title}</div>
+        <div className="card-title">{cardTitle}</div>
         <div
           className="card-body"
-          dangerouslySetInnerHTML={{ __html: sanitizeCardHtml(card.body) }}
+          dangerouslySetInnerHTML={{ __html: sanitizeCardHtml(cardBody) }}
         />
         {nextLink && (
           <div className="reader-section-end">
-            <div className="reader-section-end-label">本节读完</div>
+            <div className="reader-section-end-label">
+              {t("reader.sectionEnd")}
+            </div>
             <button
               className="reader-section-next"
               type="button"
-              aria-label={`下一节：${nextLink.section.title}`}
+              aria-label={t("reader.nextSectionAria", {
+                title: localizedSectionTitle(nextLink.section),
+              })}
               onClick={() => nextLink.open(nextLink.section.id)}
             >
               <span className="reader-section-next-copy">
-                <span className="reader-section-next-label">下一节</span>
+                <span className="reader-section-next-label">
+                  {t("reader.nextSection")}
+                </span>
                 <span className="reader-section-next-title">
-                  {nextLink.section.title}
+                  {localizedSectionTitle(nextLink.section)}
                 </span>
               </span>
               <span className="reader-section-next-arrow" aria-hidden="true">
@@ -200,14 +254,14 @@ export function ReaderView({
           disabled={cardIndex === 0}
           onClick={() => setCardIndex((i) => Math.max(0, i - 1))}
         >
-          上一张
+          {t("reader.previousCard")}
         </button>
         <button
           className="reader-next"
           disabled={cardIndex === total - 1}
           onClick={() => setCardIndex((i) => Math.min(total - 1, i + 1))}
         >
-          下一张
+          {t("reader.nextCard")}
         </button>
         <button
           className="reader-practice"
@@ -215,7 +269,7 @@ export function ReaderView({
             section ? onPracticeChapter(section.id) : onPracticeChapter()
           }
         >
-          {section ? "练习本节" : "练习本章"}
+          {section ? t("reader.practiceSection") : t("reader.practiceChapter")}
         </button>
       </div>
 
@@ -228,16 +282,19 @@ export function ReaderView({
           <div className="reader-drawer-panel">
             <div className="reader-drawer-head">
               <div>
-                <div className="reader-drawer-title">目录</div>
+                <div className="reader-drawer-title">{t("reader.toc")}</div>
                 {section && (
                   <div className="reader-drawer-scope">
-                    {section.title} · {total} 张
+                    {t("reader.tocScope", {
+                      title: sectionName,
+                      count: total,
+                    })}
                   </div>
                 )}
               </div>
               <button
                 className="reader-drawer-close"
-                aria-label="关闭目录"
+                aria-label={t("reader.tocClose")}
                 onClick={() => setDrawerOpen(false)}
               >
                 ✕
@@ -247,7 +304,9 @@ export function ReaderView({
               {units.map((unit) => (
                 <div key={unit.unit ?? "flat"} className="reader-toc-unit">
                   {unit.unit !== null && (
-                    <div className="reader-toc-unit-title">第{unit.unit}单元</div>
+                    <div className="reader-toc-unit-title">
+                      {t("section.unit", { unit: unit.unit })}
+                    </div>
                   )}
                   {unit.cards.map(({ card: c, cardIndex: idx }) => (
                     <button
@@ -262,9 +321,15 @@ export function ReaderView({
                       }}
                     >
                       <span className="reader-toc-index">{idx + 1}.</span>
-                      <span className="reader-toc-title">{c.title}</span>
+                      <span className="reader-toc-title">
+                        {cardDisplayById.get(c.id)?.title ?? c.title}
+                      </span>
                       <span className="reader-toc-summary">
-                        {cardSummary(c.body, undefined, 40)}
+                        {cardSummary(
+                          cardDisplayById.get(c.id)?.body ?? c.body,
+                          undefined,
+                          40
+                        )}
                       </span>
                     </button>
                   ))}

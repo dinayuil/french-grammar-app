@@ -1,4 +1,10 @@
 import { Capacitor } from "@capacitor/core";
+import {
+  normalizeUserFacingError,
+  type UserFacingError,
+} from "../i18n/errors";
+import { t } from "../i18n/messages";
+import type { UiLocale } from "../i18n/types";
 import { isDesktopPlatform, saveDesktopFile } from "../native/desktop";
 import { isHarmonyPlatform, shareHarmonyFile } from "../native/platform";
 import { saveProgress } from "../storage";
@@ -32,21 +38,26 @@ const FORBIDDEN_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 const DATE_KEY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const ISO_TIMESTAMP_RE =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?Z$/;
-const SHARE_TITLE = "法语学习进度备份";
-const SHARE_DIALOG_TITLE = "导出学习进度";
 
 /** 备份校验/存储失败;message 可直接展示给用户。 */
 export class BackupError extends Error {
-  constructor(message: string) {
+  /** 结构化业务错误，供界面按当前语言即时格式化。 */
+  readonly userError: UserFacingError;
+
+  constructor(message: string, userError?: UserFacingError) {
     super(message);
     this.name = "BackupError";
+    this.userError = userError ?? {
+      code: "errors.unknown",
+      diagnostic: message,
+    };
   }
 }
 
 /** 用户在系统分享面板取消导出(取消不是成功)。 */
 export class BackupCancelledError extends BackupError {
   constructor(message = "已取消导出") {
-    super(message);
+    super(message, { code: "backup.cancelled", diagnostic: message });
     this.name = "BackupCancelledError";
   }
 }
@@ -58,8 +69,17 @@ export function isBackupCancelled(error: unknown): boolean {
   );
 }
 
-function fail(message: string): never {
-  throw new BackupError(message);
+function fail(
+  code: string,
+  message: string,
+  params?: Record<string, string | number>,
+  diagnostic?: string
+): never {
+  throw new BackupError(message, {
+    code,
+    ...(params ? { params } : {}),
+    diagnostic: diagnostic ?? message,
+  });
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -74,14 +94,14 @@ function requireObject(
   value: unknown,
   path: string
 ): Record<string, unknown> {
-  if (!isPlainObject(value)) fail(`${path} 必须是对象`);
+  if (!isPlainObject(value)) fail("backup.invalid_structure", `${path} 必须是对象`);
   return value;
 }
 
 /** 拒绝 __proto__ / prototype / constructor 等可用于原型污染的键。 */
 function assertSafeKeys(obj: Record<string, unknown>, path: string): void {
   for (const key of Object.keys(obj)) {
-    if (FORBIDDEN_KEYS.has(key)) fail(`${path} 含非法键 ${key}`);
+    if (FORBIDDEN_KEYS.has(key)) fail("backup.unsafe_key", `${path} 含非法键 ${key}`);
   }
 }
 
@@ -91,13 +111,13 @@ function hasOwn(obj: Record<string, unknown>, key: string): boolean {
 
 function requireSafeNonNegativeInt(value: unknown, path: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
-    fail(`${path} 必须是非负安全整数`);
+    fail("backup.invalid_field", `${path} 必须是非负安全整数`);
   }
   return value;
 }
 
 function requireBoolean(value: unknown, path: string): boolean {
-  if (typeof value !== "boolean") fail(`${path} 必须是布尔值`);
+  if (typeof value !== "boolean") fail("backup.invalid_field", `${path} 必须是布尔值`);
   return value;
 }
 
@@ -107,15 +127,15 @@ function requireId(value: unknown, path: string): string {
     value.length === 0 ||
     value.length > MAX_ID_LENGTH
   ) {
-    fail(`${path} 必须是非空字符串且长度不超过 ${MAX_ID_LENGTH}`);
+    fail("backup.invalid_field", `${path} 必须是非空字符串且长度不超过 ${MAX_ID_LENGTH}`);
   }
   return value;
 }
 
 function requireIdArray(value: unknown, path: string): string[] {
-  if (!Array.isArray(value)) fail(`${path} 必须是数组`);
+  if (!Array.isArray(value)) fail("backup.invalid_structure", `${path} 必须是数组`);
   if (value.length > MAX_DAY_IDS) {
-    fail(`${path} 数量超出上限（${MAX_DAY_IDS}）`);
+    fail("backup.limit_exceeded", `${path} 数量超出上限（${MAX_DAY_IDS}）`);
   }
   return value.map((item, index) => requireId(item, `${path}[${index}]`));
 }
@@ -203,13 +223,13 @@ function normalizeDays(value: unknown): Progress["days"] {
   assertSafeKeys(raw, "progress.days");
   const entries = Object.entries(raw);
   if (entries.length > MAX_DAYS) {
-    fail(`progress.days 数量超出上限（${MAX_DAYS}）`);
+    fail("backup.limit_exceeded", `progress.days 数量超出上限（${MAX_DAYS}）`);
   }
 
   const days: Progress["days"] = {};
   for (const [date, entry] of entries) {
     if (!isRealDateKey(date)) {
-      fail(`progress.days 含无效日期键：${date}`);
+      fail("backup.invalid_field", `progress.days 含无效日期键：${date}`);
     }
     days[date] = normalizeDayRecord(entry, `progress.days.${date}`);
   }
@@ -221,7 +241,7 @@ function normalizeLessons(value: unknown): Progress["lessons"] {
   assertSafeKeys(raw, "progress.lessons");
   const entries = Object.entries(raw);
   if (entries.length > MAX_LESSONS) {
-    fail(`progress.lessons 数量超出上限（${MAX_LESSONS}）`);
+    fail("backup.limit_exceeded", `progress.lessons 数量超出上限（${MAX_LESSONS}）`);
   }
 
   const lessons: Progress["lessons"] = {};
@@ -231,7 +251,7 @@ function normalizeLessons(value: unknown): Progress["lessons"] {
     const record = requireObject(entry, path);
     assertSafeKeys(record, path);
     const stars = requireSafeNonNegativeInt(record.stars, `${path}.stars`);
-    if (stars > 3) fail(`${path}.stars 必须在 0 到 3 之间`);
+    if (stars > 3) fail("backup.invalid_field", `${path}.stars 必须在 0 到 3 之间`);
     lessons[key] = {
       completed: requireBoolean(record.completed, `${path}.completed`),
       stars,
@@ -245,7 +265,7 @@ function normalizeMistakes(value: unknown): Progress["mistakes"] {
   assertSafeKeys(raw, "progress.mistakes");
   const entries = Object.entries(raw);
   if (entries.length > MAX_MISTAKES) {
-    fail(`progress.mistakes 数量超出上限（${MAX_MISTAKES}）`);
+    fail("backup.limit_exceeded", `progress.mistakes 数量超出上限（${MAX_MISTAKES}）`);
   }
 
   const mistakes: Progress["mistakes"] = {};
@@ -255,7 +275,7 @@ function normalizeMistakes(value: unknown): Progress["mistakes"] {
     const record = requireObject(entry, path);
     assertSafeKeys(record, path);
     if (!isRealDateKey(record.lastWrong)) {
-      fail(`${path}.lastWrong 必须是有效日期`);
+      fail("backup.invalid_field", `${path}.lastWrong 必须是有效日期`);
     }
     mistakes[key] = {
       lastWrong: record.lastWrong,
@@ -271,7 +291,7 @@ function normalizeProgress(value: unknown): Progress {
   assertSafeKeys(raw, "progress");
 
   if (raw.translationTiming !== "before" && raw.translationTiming !== "after") {
-    fail("progress.translationTiming 必须是 before 或 after");
+    fail("backup.invalid_field", "progress.translationTiming 必须是 before 或 after");
   }
 
   // 旧备份没有 shareCardContent:按默认 both 兼容;显式非法值拒绝导入。
@@ -285,7 +305,7 @@ function normalizeProgress(value: unknown): Progress {
   ) {
     shareCardContent = raw.shareCardContent;
   } else {
-    fail("progress.shareCardContent 必须是 xp、time 或 both");
+    fail("backup.invalid_field", "progress.shareCardContent 必须是 xp、time 或 both");
   }
 
   return {
@@ -309,20 +329,31 @@ function normalizeBackup(value: unknown): ProgressBackup {
   assertSafeKeys(raw, "备份");
 
   if (raw.format !== BACKUP_FORMAT) {
-    fail("不是本应用的学习进度备份");
+    fail("backup.not_backup", "不是本应用的学习进度备份");
   }
   if (raw.version !== BACKUP_VERSION) {
-    fail(`不支持的备份版本：${String(raw.version)}`);
+    const version =
+      typeof raw.version === "number" ? raw.version : String(raw.version);
+    fail(
+      "backup.unsupported_version",
+      `不支持的备份版本：${String(raw.version)}`,
+      { version },
+      `不支持的备份版本：${String(raw.version)}`
+    );
   }
   if (raw.edition !== "public" && raw.edition !== "internal") {
-    fail("备份的版本标识(edition)无效");
+    fail("backup.invalid_edition", "备份的版本标识(edition)无效");
   }
   if (raw.edition !== __FGE_EDITION__) {
     const name = raw.edition === "internal" ? "内部版" : "公开版";
-    fail(`不能把${name}备份导入当前版本`);
+    const code =
+      raw.edition === "internal"
+        ? "backup.edition_mismatch_internal"
+        : "backup.edition_mismatch_public";
+    fail(code, `不能把${name}备份导入当前版本`);
   }
   if (!isValidIsoTimestamp(raw.exportedAt)) {
-    fail("备份的导出时间无效");
+    fail("backup.invalid_exported_at", "备份的导出时间无效");
   }
 
   return {
@@ -353,9 +384,11 @@ function serializeBackup(backup: ProgressBackup): string {
   const compact = JSON.stringify(backup);
   if (utf8ByteLength(compact) > MAX_BACKUP_BYTES) {
     fail(
+      "backup.export_too_large",
       `学习进度数据超过备份大小上限（${Math.floor(
         MAX_BACKUP_BYTES / 1024 / 1024
-      )} MB），无法导出`
+      )} MB），无法导出`,
+      { limitMb: Math.floor(MAX_BACKUP_BYTES / 1024 / 1024) }
     );
   }
   return compact;
@@ -374,17 +407,19 @@ export function createBackup(progress: Progress): ProgressBackup {
 
 /** 严格解析备份文本;任何异常都抛 BackupError(message 可展示)。 */
 export function parseBackup(text: string): ProgressBackup {
-  if (typeof text !== "string") fail("备份内容必须是文本");
+  if (typeof text !== "string") fail("backup.not_text", "备份内容必须是文本");
   if (utf8ByteLength(text) > MAX_BACKUP_BYTES) {
     fail(
-      `备份文件超出大小上限（${Math.floor(MAX_BACKUP_BYTES / 1024 / 1024)} MB）`
+      "backup.too_large",
+      `备份文件超出大小上限（${Math.floor(MAX_BACKUP_BYTES / 1024 / 1024)} MB）`,
+      { limitMb: Math.floor(MAX_BACKUP_BYTES / 1024 / 1024) }
     );
   }
   let raw: unknown;
   try {
     raw = JSON.parse(text);
   } catch {
-    fail("备份文件不是有效的 JSON");
+    fail("backup.invalid_json", "备份文件不是有效的 JSON");
   }
   return normalizeBackup(raw);
 }
@@ -399,13 +434,13 @@ export function restoreBackup(backup: ProgressBackup, current: Progress): void {
   const previous = createBackup(current);
 
   if (typeof localStorage === "undefined") {
-    fail("当前环境不支持本地存储,无法恢复进度");
+    fail("backup.storage_unsupported", "当前环境不支持本地存储,无法恢复进度");
   }
 
   try {
     localStorage.setItem(RECOVERY_STORAGE_KEY, JSON.stringify(previous));
   } catch {
-    fail("无法保存恢复前备份，当前进度未修改");
+    fail("backup.recovery_snapshot_failed", "无法保存恢复前备份，当前进度未修改");
   }
 
   try {
@@ -417,7 +452,7 @@ export function restoreBackup(backup: ProgressBackup, current: Progress): void {
     } catch {
       // 回滚也失败时旧值通常仍由 setItem 原子性保留,只能报告失败。
     }
-    fail("保存恢复进度失败，已保留原进度");
+    fail("backup.restore_save_failed", "保存恢复进度失败，已保留原进度");
   }
 }
 
@@ -438,9 +473,7 @@ function backupFilename(backup: ProgressBackup): string {
 }
 
 function errorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === "string" && error) return error;
-  return fallback;
+  return normalizeUserFacingError(error).diagnostic ?? fallback;
 }
 
 function downloadWeb(json: string, filename: string): void {
@@ -449,7 +482,7 @@ function downloadWeb(json: string, filename: string): void {
     typeof URL === "undefined" ||
     typeof URL.createObjectURL !== "function"
   ) {
-    fail("当前浏览器不支持文件下载，请更换浏览器后重试");
+    fail("backup.download_unsupported", "当前浏览器不支持文件下载，请更换浏览器后重试");
   }
 
   const blob = new Blob([json], { type: "application/json;charset=utf-8" });
@@ -457,7 +490,12 @@ function downloadWeb(json: string, filename: string): void {
   try {
     url = URL.createObjectURL(blob);
   } catch (error) {
-    fail(`无法创建下载文件：${errorMessage(error, "未知错误")}`);
+    fail(
+      "backup.create_download_failed",
+      `无法创建下载文件：${errorMessage(error, "未知错误")}`,
+      undefined,
+      errorMessage(error, "未知错误")
+    );
   }
 
   const link = document.createElement("a");
@@ -469,7 +507,12 @@ function downloadWeb(json: string, filename: string): void {
     document.body.appendChild(link);
     link.click();
   } catch (error) {
-    fail(`导出下载失败：${errorMessage(error, "未知错误")}`);
+    fail(
+      "backup.download_failed",
+      `导出下载失败：${errorMessage(error, "未知错误")}`,
+      undefined,
+      errorMessage(error, "未知错误")
+    );
   } finally {
     link.remove();
     // 延迟回收,避免下载开始前 URL 已被 revoke;部分 WebView 无 revoke。
@@ -493,7 +536,11 @@ function isShareCancellation(error: unknown): boolean {
   return /cancel|dismiss|取消/i.test(message);
 }
 
-async function shareNative(json: string, filename: string): Promise<void> {
+async function shareNative(
+  json: string,
+  filename: string,
+  locale: UiLocale
+): Promise<void> {
   const [{ Filesystem, Directory, Encoding }, { Share }] = await Promise.all([
     import("@capacitor/filesystem"),
     import("@capacitor/share"),
@@ -510,27 +557,42 @@ async function shareNative(json: string, filename: string): Promise<void> {
       encoding: Encoding.UTF8,
     });
   } catch (error) {
-    fail(`无法写入备份文件，请检查存储空间：${errorMessage(error, "未知错误")}`);
+    fail(
+      "backup.native_write_failed",
+      `无法写入备份文件，请检查存储空间：${errorMessage(error, "未知错误")}`,
+      undefined,
+      errorMessage(error, "未知错误")
+    );
   }
 
   let uri = "";
   try {
     uri = (await Filesystem.getUri({ path, directory: Directory.Cache })).uri;
   } catch (error) {
-    fail(`无法定位备份文件：${errorMessage(error, "未知错误")}`);
+    fail(
+      "backup.native_locate_failed",
+      `无法定位备份文件：${errorMessage(error, "未知错误")}`,
+      undefined,
+      errorMessage(error, "未知错误")
+    );
   }
 
   try {
     await Share.share({
-      title: SHARE_TITLE,
-      dialogTitle: SHARE_DIALOG_TITLE,
+      title: t(locale, "backup.share.title"),
+      dialogTitle: t(locale, "backup.share.dialog_title"),
       files: [uri],
     });
   } catch (error) {
     if (isShareCancellation(error)) {
       throw new BackupCancelledError("已取消导出");
     }
-    fail(`系统分享失败：${errorMessage(error, "请重试")}`);
+    fail(
+      "backup.share_failed",
+      `系统分享失败：${errorMessage(error, "请重试")}`,
+      undefined,
+      errorMessage(error, "请重试")
+    );
   }
 }
 
@@ -548,40 +610,72 @@ async function shareHarmony(json: string, filename: string): Promise<void> {
     }
   } catch (error) {
     if (error instanceof BackupError) throw error;
-    fail(`系统分享失败：${errorMessage(error, "请重试")}`);
+    const normalized = normalizeUserFacingError(error);
+    if (normalized.code.startsWith("native.")) {
+      throw new BackupError(
+        `系统分享失败：${errorMessage(error, "请重试")}`,
+        normalized
+      );
+    }
+    fail(
+      "backup.share_failed",
+      `系统分享失败：${errorMessage(error, "请重试")}`,
+      undefined,
+      errorMessage(error, "请重试")
+    );
   }
 }
 
 /** 导出学习进度:Web 用 Blob 下载 JSON,Android/Harmony 走系统分享。 */
-export async function exportBackup(progress: Progress): Promise<void> {
+export async function exportBackup(
+  progress: Progress,
+  locale: UiLocale = "zh-CN"
+): Promise<void> {
   const backup = createBackup(progress);
   const json = serializeBackup(backup);
   const filename = backupFilename(backup);
+  const dialogTitle = t(locale, "backup.share.dialog_title");
 
   try {
     if (isHarmonyPlatform()) {
+      // 鸿蒙 shareFile 协议没有应用控制标题参数,系统分享面板由系统决定语言。
       await shareHarmony(json, filename);
       return;
     }
     if (isDesktopPlatform()) {
-      const result = await saveDesktopFile({
-        filename,
-        mimeType: "application/json",
-        encoding: "utf8",
-        data: json,
-      });
+      const result = await saveDesktopFile(
+        {
+          filename,
+          mimeType: "application/json",
+          encoding: "utf8",
+          data: json,
+        },
+        { dialogTitle }
+      );
       if (result.status === "cancelled") {
         throw new BackupCancelledError("已取消导出");
       }
       return;
     }
     if (Capacitor.isNativePlatform()) {
-      await shareNative(json, filename);
+      await shareNative(json, filename, locale);
       return;
     }
     downloadWeb(json, filename);
   } catch (error) {
     if (error instanceof BackupError) throw error;
-    fail(`导出失败：${errorMessage(error, "请重试")}`);
+    const normalized = normalizeUserFacingError(error);
+    if (normalized.code.startsWith("native.")) {
+      throw new BackupError(
+        `导出失败：${errorMessage(error, "请重试")}`,
+        normalized
+      );
+    }
+    fail(
+      "backup.export_failed",
+      `导出失败：${errorMessage(error, "请重试")}`,
+      undefined,
+      errorMessage(error, "请重试")
+    );
   }
 }

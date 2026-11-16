@@ -17,6 +17,8 @@ const validIds = allQuestionIds();
 const progressWith = (mistakes: Progress["mistakes"]): Progress =>
   ({ mistakes }) as Progress;
 
+const LABELS = { title: "错题回顾", source: "错题本" };
+
 describe("buildReviewLesson(错题回顾)", () => {
   test("陈旧错题不占名额:12 条中仅 7 条有效 → 只返回 7 道有效题", () => {
     const selected = validIds.slice(0, 7);
@@ -30,7 +32,7 @@ describe("buildReviewLesson(错题回顾)", () => {
       mistakes[qid] = { lastWrong: `2026-02-${String(i + 1).padStart(2, "0")}`, count: 1 };
     });
 
-    const lesson = buildReviewLesson(progressWith(mistakes));
+    const lesson = buildReviewLesson(progressWith(mistakes), LABELS);
 
     expect(lesson).not.toBeNull();
     expect(lesson!.questions).toHaveLength(7);
@@ -45,10 +47,10 @@ describe("buildReviewLesson(错题回顾)", () => {
       "deleted-q2": { lastWrong: "2025-02-01", count: 3 },
     };
 
-    expect(buildReviewLesson(progressWith(mistakes))).toBeNull();
+    expect(buildReviewLesson(progressWith(mistakes), LABELS)).toBeNull();
   });
 
-  test("两道有效错题 → 按 lastWrong 由早到晚返回", () => {
+  test("两道有效错题 → 按 lastWrong 由早到晚返回基础题目引用", () => {
     const [older, newer] = validIds;
     expect(older).toBeDefined();
     expect(newer).toBeDefined();
@@ -57,12 +59,19 @@ describe("buildReviewLesson(错题回顾)", () => {
       progressWith({
         [newer]: { lastWrong: "2025-05-01", count: 1 },
         [older]: { lastWrong: "2025-04-01", count: 2 },
-      })
+      }),
+      LABELS
     );
 
     expect(lesson).not.toBeNull();
     expect(lesson!.title).toBe("错题回顾");
     expect(lesson!.source).toBe("错题本");
     expect(lesson!.questions.map((q) => q.id)).toEqual([older, newer]);
+    for (const question of lesson!.questions) {
+      const base = CHAPTERS.flatMap((ch) => [...ch.lessons, ...ch.challenges])
+        .flatMap((l) => l.questions)
+        .find((q) => q.id === question.id);
+      expect(question).toBe(base);
+    }
   });
 });

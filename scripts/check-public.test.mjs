@@ -539,6 +539,85 @@ test("manifest schema, edition, paths, and counts are enforced", async (t) => {
   assertFails(await checkPublic({ appRoot, publicRoot }), /root metadata|collides|chapter path/i, "manifest collision");
 });
 
+test("public manifests accept declared locales and shared French fields inside the contract", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  await setupPublic(publicRoot, {
+    chapters: {
+      "chapters/01.json": {
+        ...chapter(),
+        locales: { fr: { sectionTitles: { s1: "Section une" } } },
+      },
+    },
+    manifestPatch: {
+      supportedLocales: ["zh-CN", "fr"],
+      localizationSharedFields: { fr: { "synthetic-q1": ["prompt"] } },
+    },
+  });
+
+  const result = await checkPublic({ appRoot, publicRoot });
+  assert.equal(result.ok, true, errorsOf(result));
+
+  await writeAt(
+    publicRoot,
+    "chapters/02-unlisted.json",
+    JSON.stringify({ ...chapter({ id: "unlisted" }), locales: { fr: { title: "Titre" } } })
+  );
+  assertFails(
+    await checkPublic({ appRoot, publicRoot }),
+    /unreferenced JSON|not allowed/i,
+    "unlisted localized JSON"
+  );
+});
+
+test("public manifests reject invalid supported locales and shared-field adjudications", async (t) => {
+  const { appRoot, publicRoot } = await sandbox(t);
+  const cases = [
+    {
+      patch: { supportedLocales: ["zh-CN", "en"] },
+      pattern: /supportedLocales|locale|语言/i,
+      label: "unknown locale",
+    },
+    {
+      patch: { supportedLocales: ["zh-CN", "fr", "fr"] },
+      pattern: /supportedLocales|duplicate|重复/i,
+      label: "duplicate locale",
+    },
+    {
+      patch: { supportedLocales: ["fr"] },
+      pattern: /supportedLocales|zh-CN|中文/i,
+      label: "missing zh-CN",
+    },
+    {
+      patch: { supportedLocales: "zh-CN" },
+      pattern: /supportedLocales|array|数组/i,
+      label: "non-array supportedLocales",
+    },
+    {
+      patch: { localizationSharedFields: { en: { "synthetic-q1": ["prompt"] } } },
+      pattern: /localizationSharedFields|locale|fr/i,
+      label: "unknown shared locale",
+    },
+    {
+      patch: { localizationSharedFields: { fr: { "synthetic-q1": ["source"] } } },
+      pattern: /localizationSharedFields|field|字段|source/i,
+      label: "unknown shared field",
+    },
+    {
+      patch: { localizationSharedFields: { fr: { "synthetic-q1": "prompt" } } },
+      pattern: /localizationSharedFields|array|数组/i,
+      label: "non-array shared fields",
+    },
+  ];
+
+  for (const item of cases) {
+    await setupPublic(publicRoot, {
+      chapters: { "chapters/01.json": chapter() },
+      manifestPatch: item.patch,
+    });
+    assertFails(await checkPublic({ appRoot, publicRoot }), item.pattern, item.label);
+  }
+});
+
 test("malformed manifest and declared chapter JSON fail closed", async (t) => {
   const { appRoot, publicRoot } = await sandbox(t);
   await setupPublic(publicRoot);

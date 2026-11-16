@@ -9,6 +9,7 @@ vi.mock("virtual:fge-content", async () => {
 
 import App from "./App";
 import { ChoiceQuestion as ChoiceQuestionView } from "./components/ChoiceQuestion";
+import { LocaleProvider } from "./i18n/LocaleProvider";
 import { CHAPTERS } from "./content";
 import { STORAGE_KEY } from "./config";
 import { acceptedChoiceIndices } from "./engine";
@@ -86,13 +87,15 @@ function savedProgress() {
 function renderChoice(q: ChoiceQuestion, response: number | null, judged: boolean) {
   act(() => {
     root.render(
-      <ChoiceQuestionView
-        q={q}
-        response={response}
-        onResponse={() => {}}
-        disabled={judged}
-        judged={judged}
-      />
+      <LocaleProvider supportedLocales={["zh-CN", "fr"]}>
+        <ChoiceQuestionView
+          q={q}
+          response={response}
+          onResponse={() => {}}
+          disabled={judged}
+          judged={judged}
+        />
+      </LocaleProvider>
     );
   });
 }

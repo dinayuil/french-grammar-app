@@ -216,6 +216,21 @@ const PUBLIC_ROOT_FILES = new Set([".gitattributes", ".gitignore", "LICENSE", "R
 // still rejected by the public scanner.
 const PUBLIC_OPERATIONAL_FILES = new Set([".github/workflows/notify-app.yml"]);
 
+// Optional manifest localization metadata. supportedLocales only declares
+// gates that passed; localizationSharedFields adjudicates base-field reuse and
+// never grants language availability by itself.
+const PUBLIC_UI_LOCALES = new Set(["zh-CN", "fr"]);
+const PUBLIC_CONTENT_LOCALES = new Set(["fr"]);
+const PUBLIC_SHARED_FIELD_NAMES = new Set([
+  "title",
+  "body",
+  "prompt",
+  "example",
+  "explain",
+  "translation",
+  "options",
+]);
+
 // Exact generated locations only. Arbitrary gitignored or dot directories are
 // not skipped: an unknown file/directory is a hard failure.
 const APP_SKIP_PREFIXES = [
@@ -323,6 +338,7 @@ export const RULES = Object.freeze([
   "Android template allowlist: the checked-in Gradle wrapper/config files, Java under android/app/src/main/java/**, XML/images under android/app/src/main/res/** or android/app/src/{public,internal}/res/**, and only the exact Gradle wrapper JAR under android/gradle/wrapper/.",
   "HarmonyOS template allowlist: exactly the harmony/ root config files (build-profile.json5, oh-package.json5, hvigorfile.ts), AppScope/app.json5, hvigor/hvigor-config.json5, entry/build-profile.json5, entry/oh-package.json5, entry/hvigorfile.ts, entry/src/main/module.json5, the exact ArkTS sources EntryAbility.ets, Index.ets, FgeHarmonyBridge.ets, and FgeSyncManager.ets, exact element/profile resource metadata JSON (base and the dark color qualifier), and media icons under the exact AppScope/entry resource directories. Unknown ETS, JSON5, resource JSON, and directories are rejected; JSON5 is only accepted at those exact config paths and must not contain question-bank content. Signing configurations, passwords, certificate/key paths, and machine-specific paths are not allowed.",
   "Public bank allowlist: root manifest.json, LICENSE, README.md, .gitignore, .gitattributes, exactly .github/workflows/notify-app.yml, plus exactly the chapter JSON paths declared by manifest.json. No other public file is allowed.",
+  "Public localization metadata: optional supportedLocales may only list zh-CN and fr, must contain zh-CN, and must not repeat a locale. Optional localizationSharedFields is keyed by the registered content locale fr and maps entity ids to display field arrays (title, body, prompt, example, explain, translation, options); it adjudicates base-field reuse only and never enables a language.",
   "Named app JSON allowlist: package.json, package-lock.json, tsconfig.json, tsconfig.tools.json only; any other app JSON is treated as real content and rejected, except exact HarmonyOS resource metadata JSON which must not contain question-bank content, and exact Windows Tauri config/capability JSON.",
   "Forbidden everywhere: PDFs, key/keystore/signing material, secrets, internal/private manifests, private content directories, source maps, APK/AAB and .hap/.har/.hsp/.app internal build artifacts, p7b/p7c/p7s signing chain material, symlinks/junctions, and unknown files.",
   "Skipped exact generated locations (not audited by this guard): .git, node_modules, dist, coverage, .fge-build, android/.gradle, android/build, android/app/build, android/app/src/main/assets/public, android/capacitor-cordova-android-plugins, harmony/.hvigor, harmony/oh_modules, harmony/entry/oh_modules, src-tauri/target, src-tauri/gen, and known Capacitor-generated files. A top-level .git ordinary file is skipped only when it is a single-line safe submodule gitdir pointer into ../.git/modules/<name> (LF/CRLF, at most 1024 bytes); its target Git directory is never followed or inventoried.",
@@ -1041,6 +1057,90 @@ function normalizeChapterPath(raw, publicRoot) {
   return { value: normalized, absolute };
 }
 
+/**
+ * Validate optional localization metadata in the public manifest. The guard is
+ * an inventory/provenance boundary, not the content schema validator, but it
+ * must not let an undeclared language or an unregistered reuse field pass as
+ * public configuration.
+ */
+function validatePublicLocaleMetadata(manifest, label, rel, errors) {
+  if (manifest.supportedLocales !== undefined) {
+    if (!Array.isArray(manifest.supportedLocales)) {
+      addError(errors, `${label}: ${rel}: supportedLocales must be an array`);
+    } else {
+      const seen = new Set();
+      for (const locale of manifest.supportedLocales) {
+        if (typeof locale !== "string" || !PUBLIC_UI_LOCALES.has(locale)) {
+          addError(
+            errors,
+            `${label}: ${rel}: supportedLocales contains an unknown locale ${JSON.stringify(locale)}; allowed values are zh-CN and fr`
+          );
+          continue;
+        }
+        if (seen.has(locale)) {
+          addError(errors, `${label}: ${rel}: supportedLocales contains duplicate locale ${JSON.stringify(locale)}`);
+          continue;
+        }
+        seen.add(locale);
+      }
+      if (!seen.has("zh-CN")) {
+        addError(errors, `${label}: ${rel}: supportedLocales must include zh-CN`);
+      }
+    }
+  }
+
+  const shared = manifest.localizationSharedFields;
+  if (shared === undefined) return;
+  if (!isPlainObject(shared)) {
+    addError(errors, `${label}: ${rel}: localizationSharedFields must be a JSON object`);
+    return;
+  }
+  for (const [locale, entities] of Object.entries(shared)) {
+    if (!PUBLIC_CONTENT_LOCALES.has(locale)) {
+      addError(
+        errors,
+        `${label}: ${rel}: localizationSharedFields uses an unregistered content locale ${JSON.stringify(locale)}; only fr is allowed`
+      );
+      continue;
+    }
+    if (!isPlainObject(entities)) {
+      addError(errors, `${label}: ${rel}: localizationSharedFields.${locale} must map entity ids to field arrays`);
+      continue;
+    }
+    for (const [entityId, fields] of Object.entries(entities)) {
+      if (typeof entityId !== "string" || entityId.trim() === "") {
+        addError(errors, `${label}: ${rel}: localizationSharedFields.${locale} contains an empty entity id`);
+        continue;
+      }
+      if (!Array.isArray(fields)) {
+        addError(
+          errors,
+          `${label}: ${rel}: localizationSharedFields.${locale}.${entityId} must be an array of display fields`
+        );
+        continue;
+      }
+      const seenFields = new Set();
+      for (const field of fields) {
+        if (typeof field !== "string" || !PUBLIC_SHARED_FIELD_NAMES.has(field)) {
+          addError(
+            errors,
+            `${label}: ${rel}: localizationSharedFields.${locale}.${entityId} contains an unknown field ${JSON.stringify(field)}`
+          );
+          continue;
+        }
+        if (seenFields.has(field)) {
+          addError(
+            errors,
+            `${label}: ${rel}: localizationSharedFields.${locale}.${entityId} contains duplicate field ${JSON.stringify(field)}`
+          );
+          continue;
+        }
+        seenFields.add(field);
+      }
+    }
+  }
+}
+
 async function readPublicManifest(publicRoot) {
   const errors = [];
   const label = "public";
@@ -1080,6 +1180,7 @@ async function readPublicManifest(publicRoot) {
   if (manifest.edition !== "public") {
     addError(errors, `${label}: ${rel}: edition must be public`);
   }
+  validatePublicLocaleMetadata(manifest, label, rel, errors);
   if (
     !Number.isInteger(manifest.expectedChapterCount) ||
     manifest.expectedChapterCount < 0

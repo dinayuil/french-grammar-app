@@ -4,6 +4,8 @@ import type { ThemeChoice } from "../theme";
 import type { ClientSyncController } from "../sync/useClientSync";
 import { GOAL_PRESETS, STORAGE_KEY } from "../config";
 import { DEFAULT_PROGRESS } from "../storage";
+import { useLocale } from "../i18n/LocaleProvider";
+import { formatNumber } from "../i18n/format";
 import { ProgressBackup } from "./ProgressBackup";
 import { SyncSettings } from "./SyncSettings";
 
@@ -16,16 +18,28 @@ interface Props {
   syncController?: ClientSyncController | null;
 }
 
-const THEME_OPTIONS: ReadonlyArray<{ value: ThemeChoice; label: string }> = [
-  { value: "light", label: "浅色" },
-  { value: "system", label: "跟随系统" },
-  { value: "dark", label: "深色" },
+const THEME_OPTIONS: ReadonlyArray<{
+  value: ThemeChoice;
+  key:
+    | "settings.theme.light"
+    | "settings.theme.system"
+    | "settings.theme.dark";
+}> = [
+  { value: "light", key: "settings.theme.light" },
+  { value: "system", key: "settings.theme.system" },
+  { value: "dark", key: "settings.theme.dark" },
 ];
 
-const SHARE_CONTENT_OPTIONS: ReadonlyArray<{ value: ShareCardContent; label: string }> = [
-  { value: "xp", label: "经验" },
-  { value: "time", label: "时间" },
-  { value: "both", label: "都有" },
+const SHARE_CONTENT_OPTIONS: ReadonlyArray<{
+  value: ShareCardContent;
+  key:
+    | "settings.shareCard.xp"
+    | "settings.shareCard.time"
+    | "settings.shareCard.both";
+}> = [
+  { value: "xp", key: "settings.shareCard.xp" },
+  { value: "time", key: "settings.shareCard.time" },
+  { value: "both", key: "settings.shareCard.both" },
 ];
 
 /** 旧运行时对象可能还没有 shareCardContent;选择器按默认「都有」显示。 */
@@ -41,13 +55,18 @@ export function SettingsView({
   onThemeChange,
   syncController = null,
 }: Props) {
+  const { locale, t } = useLocale();
   const [confirming, setConfirming] = useState(false);
   const shareContent = shareContentFor(progress);
 
   return (
     <div className="settings">
-      <div className="settings-title">外观</div>
-      <div className="goal-presets" role="radiogroup" aria-label="外观">
+      <div className="settings-title">{t("settings.appearance")}</div>
+      <div
+        className="goal-presets"
+        role="radiogroup"
+        aria-label={t("settings.appearance")}
+      >
         {THEME_OPTIONS.map((option) => (
           <button
             key={option.value}
@@ -57,12 +76,12 @@ export function SettingsView({
             className={`theme-option ${themeChoice === option.value ? "selected" : ""}`}
             onClick={() => onThemeChange?.(option.value)}
           >
-            {option.label}
+            {t(option.key)}
           </button>
         ))}
       </div>
 
-      <div className="settings-title">每日目标</div>
+      <div className="settings-title">{t("settings.dailyGoal")}</div>
       <div className="goal-presets">
         {GOAL_PRESETS.map((g) => (
           <button
@@ -70,13 +89,17 @@ export function SettingsView({
             className={`option-btn ${progress.dailyGoal === g ? "selected" : ""}`}
             onClick={() => onChange({ ...progress, dailyGoal: g })}
           >
-            {g} XP / 天
+            {t("settings.dailyGoalValue", { xp: formatNumber(locale, g) })}
           </button>
         ))}
       </div>
 
-      <div className="settings-title">分享卡内容</div>
-      <div className="goal-presets" role="radiogroup" aria-label="分享卡内容">
+      <div className="settings-title">{t("settings.shareCard")}</div>
+      <div
+        className="goal-presets"
+        role="radiogroup"
+        aria-label={t("settings.shareCard")}
+      >
         {SHARE_CONTENT_OPTIONS.map((option) => (
           <button
             key={option.value}
@@ -86,68 +109,72 @@ export function SettingsView({
             className={`option-btn ${shareContent === option.value ? "selected" : ""}`}
             onClick={() => onChange({ ...progress, shareCardContent: option.value })}
           >
-            {option.label}
+            {t(option.key)}
           </button>
         ))}
       </div>
 
-      <div className="settings-title">音效</div>
+      <div className="settings-title">{t("settings.sound")}</div>
       <div className="goal-presets">
         {[
-          { value: true, label: "🔊 开启" },
-          { value: false, label: "🔇 关闭" },
+          { value: true, key: "settings.sound.on" },
+          { value: false, key: "settings.sound.off" },
         ].map((o) => (
           <button
             key={String(o.value)}
             className={`option-btn ${progress.sound === o.value ? "selected" : ""}`}
             onClick={() => onChange({ ...progress, sound: o.value })}
           >
-            {o.label}
+            {t(o.key as "settings.sound.on" | "settings.sound.off")}
           </button>
         ))}
       </div>
 
-      <div className="settings-title">翻译</div>
-      <div className="goal-presets">
-        {[
-          { value: true, label: "开启翻译" },
-          { value: false, label: "关闭翻译" },
-        ].map((o) => (
-          <button
-            key={String(o.value)}
-            className={`option-btn ${progress.translationEnabled === o.value ? "selected" : ""}`}
-            onClick={() => onChange({ ...progress, translationEnabled: o.value })}
-          >
-            {o.label}
-          </button>
-        ))}
-      </div>
+      {locale !== "fr" && (
+        <>
+          <div className="settings-title">{t("translation.title")}</div>
+          <div className="goal-presets">
+            {[
+              { value: true, key: "translation.enable" },
+              { value: false, key: "translation.disable" },
+            ].map((o) => (
+              <button
+                key={String(o.value)}
+                className={`option-btn ${progress.translationEnabled === o.value ? "selected" : ""}`}
+                onClick={() => onChange({ ...progress, translationEnabled: o.value })}
+              >
+                {t(o.key as "translation.enable" | "translation.disable")}
+              </button>
+            ))}
+          </div>
 
-      <div className="settings-title">翻译显示时机</div>
-      <div className="goal-presets">
-        {[
-          { value: "before" as const, label: "答题前显示" },
-          { value: "after" as const, label: "答题后显示" },
-        ].map((o) => (
-          <button
-            key={o.value}
-            className={`option-btn ${progress.translationTiming === o.value ? "selected" : ""}`}
-            disabled={!progress.translationEnabled}
-            onClick={() => onChange({ ...progress, translationTiming: o.value })}
-          >
-            {o.label}
-          </button>
-        ))}
-      </div>
+          <div className="settings-title">{t("translation.timing")}</div>
+          <div className="goal-presets">
+            {[
+              { value: "before" as const, key: "translation.before" as const },
+              { value: "after" as const, key: "translation.after" as const },
+            ].map((o) => (
+              <button
+                key={o.value}
+                className={`option-btn ${progress.translationTiming === o.value ? "selected" : ""}`}
+                disabled={!progress.translationEnabled}
+                onClick={() => onChange({ ...progress, translationTiming: o.value })}
+              >
+                {t(o.key)}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       <ProgressBackup progress={progress} onChange={onChange} />
 
       {syncController && <SyncSettings controller={syncController} />}
 
-      <div className="settings-title">危险操作</div>
+      <div className="settings-title">{t("settings.danger")}</div>
       {confirming ? (
         <div className="danger-row">
-          <span>确定清空全部进度(连击、XP、关卡)?</span>
+          <span>{t("settings.clearConfirm")}</span>
           <button
             className="btn btn-danger"
             onClick={() => {
@@ -156,21 +183,19 @@ export function SettingsView({
               setConfirming(false);
             }}
           >
-            确认清空
+            {t("settings.clearConfirmAction")}
           </button>
           <button className="btn btn-secondary" onClick={() => setConfirming(false)}>
-            取消
+            {t("common.cancel")}
           </button>
         </div>
       ) : (
         <button className="btn btn-danger-outline" onClick={() => setConfirming(true)}>
-          清空进度
+          {t("settings.clear")}
         </button>
       )}
 
-      <div className="settings-note">
-        内容说明：本应用内容由 AI 参与编写与复核，未经过人工法语审校。
-      </div>
+      <div className="settings-note">{t("settings.note")}</div>
     </div>
   );
 }

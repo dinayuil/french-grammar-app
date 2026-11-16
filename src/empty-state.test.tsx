@@ -7,6 +7,8 @@ import { CHAPTERS } from "./content";
 import { DEFAULT_PROGRESS } from "./storage";
 import { STORAGE_KEY } from "./config";
 import type { Chapter, Progress } from "./types";
+import { LocaleProvider } from "./i18n/LocaleProvider";
+import { UI_LOCALES } from "./i18n/types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -50,14 +52,16 @@ function renderHomeView(props: {
 }) {
   act(() =>
     root.render(
-      <HomeView
-        chapters={props.chapters}
-        progress={props.progress}
-        openChapterId={props.openChapterId}
-        onOpenLesson={props.onOpenLesson ?? vi.fn()}
-        onOpenCards={props.onOpenCards ?? vi.fn()}
-        onOpenReview={props.onOpenReview ?? vi.fn()}
-      />
+      <LocaleProvider supportedLocales={UI_LOCALES}>
+        <HomeView
+          chapters={props.chapters}
+          progress={props.progress}
+          openChapterId={props.openChapterId}
+          onOpenLesson={props.onOpenLesson ?? vi.fn()}
+          onOpenCards={props.onOpenCards ?? vi.fn()}
+          onOpenReview={props.onOpenReview ?? vi.fn()}
+        />
+      </LocaleProvider>
     )
   );
 }

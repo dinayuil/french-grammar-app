@@ -1,0 +1,60 @@
+/**
+ * 阅读、目录与首页范围的界面文案。
+ *
+ * 本文件是域目录，最终由消息目录聚合器展开进 `zh-CN.ts`；键统一使用
+ * `home.`、`library.`、`reader.`、`section.` 前缀，避免与其他域冲突。
+ */
+export const readingZhCN = {
+  "home.greeting": "Bonjour，今天练一点 ",
+  "home.goal.today": "今日目标",
+  "home.goal.earned": "今日获得",
+  "home.goal.unset": "尚未设置每日目标",
+  "home.goal.met": "今日目标已达成",
+  "home.goal.over": "已达成 · 超出 {xp} XP",
+  "home.goal.remaining": "还差 {xp} XP",
+  "home.review": "复习错题",
+  "home.empty": "原创题库正在准备中",
+  "home.challenge": "挑战",
+  "home.cardsButton": "讲解",
+  "home.cardsTitle": "知识讲解",
+  "home.sectionCardsTitle": "本节知识讲解",
+  "home.readCardsAria": "阅读讲解：{title}",
+  "home.chapterAria": "第{number}章 {title}，已完成 {done}/{total}",
+
+  "library.title": "讲解库",
+  "library.searchPlaceholder": "搜索所有章节的讲解…",
+  "library.back": "返回讲解库",
+  "library.resultCount": "找到 {count} 条结果",
+  "library.noResults": "未找到「{query}」相关讲解",
+  "library.clear": "清除搜索",
+  "library.chapterAria": "第{number}章 {title}，{count} 张讲解",
+  "library.start": "开始阅读",
+  "library.startAria": "开始阅读：{title}",
+  "library.read": "阅读",
+
+  "reader.emptySection": "本小节暂无讲解",
+  "reader.emptyChapter": "本章暂无讲解",
+  "reader.chapterHeading": "第{number}章 · {title}",
+  "reader.toc": "目录",
+  "reader.progress": "阅读进度",
+  "reader.previousSection": "上一节",
+  "reader.previousSectionAria": "上一节：{title}",
+  "reader.sectionEnd": "本节读完",
+  "reader.nextSection": "下一节",
+  "reader.nextSectionAria": "下一节：{title}",
+  "reader.previousCard": "上一张",
+  "reader.nextCard": "下一张",
+  "reader.practiceSection": "练习本节",
+  "reader.practiceChapter": "练习本章",
+  "reader.tocClose": "关闭目录",
+  "reader.tocScope": "{title} · {count} 张",
+
+  "section.unit": "第{unit}单元",
+  "section.cards": "{count} 张讲解",
+  "section.progress": "{done}/{total} 关",
+  "section.noChallenges": "暂无挑战",
+  "section.noLessons": "暂无练习",
+  "section.noCards": "本节暂无练习",
+  "section.complete": "已完成",
+  "section.comprehensive": "专题综合挑战",
+} as const;

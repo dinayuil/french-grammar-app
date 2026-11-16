@@ -16,6 +16,7 @@ const store = source(`${ANDROID_JAVA}/FgeSyncStore.java`);
 const policy = source(`${ANDROID_JAVA}/FgeSyncPolicy.java`);
 const targets = source(`${ANDROID_JAVA}/FgeSyncTargets.java`);
 const http = source(`${ANDROID_JAVA}/FgeSyncHttp.java`);
+const errors = source(`${ANDROID_JAVA}/FgeSyncErrors.java`);
 const activity = source(`${ANDROID_JAVA}/MainActivity.java`);
 const manifest = source('android/app/src/main/AndroidManifest.xml');
 const buildGradle = source('android/app/build.gradle');
@@ -84,6 +85,27 @@ test('Android HTTP is redirect-free, bounded and header-allowlisted including De
   );
 });
 
+test('Android rejects with stable native codes and non-sensitive params', () => {
+  for (const code of [
+    'native.config_invalid',
+    'native.credentials_required',
+    'native.storage_failed',
+    'native.network_failed',
+    'native.unsupported',
+    'native.unknown',
+  ]) {
+    assert.match(errors, new RegExp(code.replaceAll('.', '\\.')));
+  }
+  assert.match(plugin, /rejectWith\(/);
+  assert.match(plugin, /rejectMessage\(/);
+  assert.match(plugin, /rejectRequest\(call, error\)/);
+  assert.match(plugin, /FgeSyncErrors\.forRequestFailure/);
+  assert.match(plugin, /call\.reject\(payload\.message, payload\.code, data\)/);
+  assert.match(plugin, /data\.put\("params", params\)/);
+  assert.match(plugin, /data\.put\("diagnostic", payload\.message\)/);
+  assert.doesNotMatch(plugin, /call\.reject\([^,)]*\)/);
+});
+
 test('Harmony declares INTERNET and routes sync operations without losing theme/share', () => {
   assert.match(harmonyModule, /ohos\.permission\.INTERNET/);
   assert.match(harmonyBridge, /case 'syncReadConfig'|=== 'syncReadConfig'/);
@@ -101,6 +123,13 @@ test('Harmony sync uses HUKS AES-GCM, single-record config and no plaintext cred
   assert.match(harmonySync, /HUKS_TAG_AE_TAG/);
   assert.match(harmonySync, /putSync\(\s*KEY_CONFIG/);
   assert.match(harmonySync, /请重新输入应用密码/);
+  assert.match(harmonySync, /class NativeSyncError extends Error/);
+  assert.match(harmonySync, /native\.credentials_required/);
+  assert.match(harmonySync, /native\.network_failed/);
+  assert.match(harmonyBridge, /NativeSyncError/);
+  assert.match(harmonyBridge, /native\.file_failed/);
+  assert.match(harmonyBridge, /errorReply\(/);
+  assert.match(harmonyBridge, /params\[/);
   assert.doesNotMatch(harmonySync, /console\.(log|info|error)/);
 });
 

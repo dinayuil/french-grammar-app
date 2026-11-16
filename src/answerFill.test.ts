@@ -228,3 +228,122 @@ test("tiles:题干不变,返回完整目标句", () => {
     target: "La pluie ne tombe pas.",
   });
 });
+
+test("choice:blankTarget 用原选项下标只补指定空，显示选项翻译不参与", () => {
+  const q = choice({
+    prompt: "Nous allons ___ marché et ___ piscine.",
+    options: ["au", "à la"],
+    answer: 1,
+    blankTarget: 2,
+    locales: {
+      fr: {
+        prompt: "Nous allons ___ marché et ___ piscine.",
+        options: ["au marché", "à la piscine"],
+      },
+    },
+  });
+  expect(completedQuestion(q, q.locales!.fr!.prompt!)).toEqual({
+    prompt: "Nous allons ___ marché et à la piscine.",
+    target: null,
+  });
+});
+
+test("choice:显示题干按 ___ / ... 原顺序补全，显示选项翻译不改变 / 拆分", () => {
+  const q = choice({
+    prompt:
+      "Complétez : Le chat est ___ la table et le chien est ___ la chaise.",
+    options: ["sur / sous", "sous / sur"],
+    answer: 0,
+    locales: {
+      fr: {
+        prompt: "Le chat est ___ la table et le chien est ___ la chaise.",
+        options: [
+          "sur la table / sous la chaise",
+          "sous la table / sur la chaise",
+        ],
+      },
+    },
+  });
+  expect(completedQuestion(q, q.locales!.fr!.prompt!)).toEqual({
+    prompt: "Le chat est sur la table et le chien est sous la chaise.",
+    target: null,
+  });
+});
+
+test("choice:显示题干组答中 — 仍补为空", () => {
+  const q = choice({
+    prompt:
+      "Complétez : ① J'ai beaucoup ___ livres. ② J'ai deux ___ livres.",
+    options: ["de / de", "de / —"],
+    answer: 1,
+    locales: {
+      fr: {
+        prompt: "① J'ai beaucoup ___ livres. ② J'ai deux ___ livres.",
+        options: ["de / de", "de / aucun"],
+      },
+    },
+  });
+  expect(completedQuestion(q, q.locales!.fr!.prompt!)).toEqual({
+    prompt: "① J'ai beaucoup de livres. ② J'ai deux livres.",
+    target: null,
+  });
+});
+
+test("choice:旧（第2空）标记从原始题干归一，显示题干可用法语", () => {
+  const q = choice({
+    prompt: "Nous allons ... marché et ... piscine.(第2空)",
+    options: ["au", "à la"],
+    answer: 1,
+  });
+  expect(
+    completedQuestion(q, "Nous allons ___ marché et ___ piscine.")
+  ).toEqual({
+    prompt: "Nous allons ___ marché et à la piscine.",
+    target: null,
+  });
+});
+
+test("letters:用显示题干完成 (être) 展示并消费原答案", () => {
+  const q = letters({
+    prompt: "Complétez avec être : Le livre (être) neuf.",
+    answer: "est",
+    locales: {
+      fr: { prompt: "Le livre (être) neuf." },
+    },
+  });
+  expect(completedQuestion(q, q.locales!.fr!.prompt!)).toEqual({
+    prompt: "Le livre est neuf.",
+    target: null,
+  });
+});
+
+test("letters:本地化题干保留兼容 (avoir) 锚点并按原答案补全", () => {
+  const q = letters({
+    prompt: "Conjuguez avoir : J' (avoir) un vélo.",
+    answer: "ai",
+    locales: {
+      fr: { prompt: "Conjuguez le verbe : J' (avoir) un vélo." },
+    },
+  });
+  expect(completedQuestion(q, q.locales!.fr!.prompt!)).toEqual({
+    prompt: "Conjuguez le verbe : J'ai un vélo.",
+    target: null,
+  });
+});
+
+test("tiles:显示题干本地化，目标句始终来自原 answer", () => {
+  const q = tiles({
+    prompt: "改成否定句:Le train arrive tôt.",
+    answer: ["Le", "train", "n'", "arrive", "pas", "tôt."],
+    bank: ["Le", "train", "n'", "arrive", "pas", "tôt."],
+    locales: {
+      fr: {
+        prompt: "Transformez à la forme négative : Le train arrive tôt.",
+      },
+    },
+  });
+  expect(completedQuestion(q, q.locales!.fr!.prompt!)).toEqual({
+    prompt: "Transformez à la forme négative : Le train arrive tôt.",
+    target: "Le train n' arrive pas tôt.",
+  });
+});

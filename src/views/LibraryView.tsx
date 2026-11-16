@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Card, Chapter } from "../types";
 import {
   buildSearchIndex,
@@ -12,10 +12,18 @@ import {
   SECTION_MAP,
   findSectionByCard,
   getLearningSections,
+  sectionKeyFor,
   type LearningSection,
   type SectionMap,
 } from "../learning/sections";
 import { PlusMinusIcon, SearchIcon } from "../components/icons";
+import {
+  localizeChapter,
+  sectionTitleForDisplay,
+  type CardDisplay,
+} from "../content/localize";
+import { useLocale } from "../i18n/LocaleProvider";
+import { formatNumber } from "../i18n/format";
 
 interface Props {
   chapters: Chapter[];
@@ -40,12 +48,22 @@ export function LibraryView({
   onExpandedChange,
   restoreScrollTop,
 }: Props) {
+  const { locale, t } = useLocale();
   const [innerExpanded, setInnerExpanded] = useState<Set<string>>(
     () => new Set()
   );
   const expanded = expandedProp ?? innerExpanded;
   const activeQuery = query.trim();
   const returnToDirectoryRef = useRef(false);
+  const previousLocaleRef = useRef(locale);
+
+  useEffect(() => {
+    // 初次挂载保留父级已有搜索词；只有语言真正变化时才清空当前查询。
+    // 视图切换会卸载本组件，重新挂载时以当前语言初始化，不会误清。
+    if (previousLocaleRef.current === locale) return;
+    previousLocaleRef.current = locale;
+    if (query !== "") onQueryChange("");
+  }, [locale, query, onQueryChange]);
 
   useLayoutEffect(() => {
     if (restoreScrollTop == null) return;
@@ -69,7 +87,29 @@ export function LibraryView({
     () => chapters.map((chapter) => getLearningSections(chapter, sectionMap)),
     [chapters, sectionMap]
   );
-  const searchIndex = useMemo(() => buildSearchIndex(chapters), [chapters]);
+  // 目录展示与搜索都按当前语言建立；原 chapter/card 仍是路由与索引身份。
+  const chapterDisplays = useMemo(
+    () => chapters.map((chapter) => localizeChapter(chapter, locale)),
+    [chapters, locale]
+  );
+  const displayByChapterId = useMemo(
+    () => new Map(chapterDisplays.map((display) => [display.base.id, display])),
+    [chapterDisplays]
+  );
+  const cardDisplayByChapterId = useMemo(() => {
+    const byChapter = new Map<string, Map<string, CardDisplay>>();
+    for (const display of chapterDisplays) {
+      byChapter.set(
+        display.base.id,
+        new Map(display.cards.map((card) => [card.base.id, card]))
+      );
+    }
+    return byChapter;
+  }, [chapterDisplays]);
+  const searchIndex = useMemo(
+    () => buildSearchIndex(chapters, chapterDisplays),
+    [chapters, chapterDisplays]
+  );
   const results = useMemo(
     () => (activeQuery ? searchEntries(searchIndex, activeQuery) : []),
     [searchIndex, activeQuery]
@@ -109,6 +149,21 @@ export function LibraryView({
     onExpandedChange?.(next);
   };
 
+  const sectionTitle = (chapter: Chapter, section: LearningSection) => {
+    const display = displayByChapterId.get(chapter.id);
+    const fallback =
+      section.kind === "comprehensive"
+        ? t("section.comprehensive")
+        : section.title;
+    return display
+      ? sectionTitleForDisplay(
+          display,
+          sectionKeyFor(section, chapter.id),
+          fallback
+        )
+      : fallback;
+  };
+
   const backToDirectory = () => {
     returnToDirectoryRef.current = true;
     onQueryChange("");
@@ -135,6 +190,7 @@ export function LibraryView({
   ) => {
     // 已配置小章时，小章自身就是呈现层：按传入的源序平铺，不再按稳定
     // ID 里的 -uN- 重建单元层，否则跨章迁入/无单元卡会被重排。
+    const displayByCardId = cardDisplayByChapterId.get(chapterId);
     const units = sectionId
       ? [
           {
@@ -148,21 +204,32 @@ export function LibraryView({
         {units.map((unit) => (
           <div key={unit.unit ?? "flat"} className="library-unit">
             {unit.unit !== null && (
-              <div className="library-unit-title">第{unit.unit}单元</div>
+              <div className="library-unit-title">
+                {t("section.unit", {
+                  unit: formatNumber(locale, unit.unit),
+                })}
+              </div>
             )}
-            {unit.cards.map(({ card, cardIndex }) => (
-              <button
-                key={card.id}
-                className="library-card-item"
-                onClick={() => openCard(chapterId, card.id, sectionId)}
-              >
-                <span className="library-card-index">{cardIndex + 1}.</span>
-                <span className="library-card-title">{card.title}</span>
-                <span className="library-card-summary">
-                  {cardSummary(card.body, undefined, 40)}
-                </span>
-              </button>
-            ))}
+            {unit.cards.map(({ card, cardIndex }) => {
+              const display = displayByCardId?.get(card.id);
+              const title = display?.title ?? card.title;
+              const body = display?.body ?? card.body;
+              return (
+                <button
+                  key={card.id}
+                  className="library-card-item"
+                  onClick={() => openCard(chapterId, card.id, sectionId)}
+                >
+                  <span className="library-card-index">
+                    {formatNumber(locale, cardIndex + 1)}.
+                  </span>
+                  <span className="library-card-title">{title}</span>
+                  <span className="library-card-summary">
+                    {cardSummary(body, undefined, 40)}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         ))}
       </div>
@@ -172,15 +239,15 @@ export function LibraryView({
   return (
     <div className="library">
       <div className="library-header">
-        <h1>讲解库</h1>
+        <h1>{t("library.title")}</h1>
         <div className="library-search-field">
           <SearchIcon />
           <input
             className="library-search"
             type="search"
             value={query}
-            placeholder="搜索所有章节的讲解…"
-            aria-label="搜索所有章节的讲解…"
+            placeholder={t("library.searchPlaceholder")}
+            aria-label={t("library.searchPlaceholder")}
             onChange={(e) => onQueryChange(e.target.value)}
           />
         </div>
@@ -191,9 +258,13 @@ export function LibraryView({
               type="button"
               onClick={backToDirectory}
             >
-              <span aria-hidden="true">←</span> 返回讲解库
+              <span aria-hidden="true">←</span> {t("library.back")}
             </button>
-            <span className="library-result-count">找到 {results.length} 条结果</span>
+            <span className="library-result-count">
+              {t("library.resultCount", {
+                count: formatNumber(locale, results.length),
+              })}
+            </span>
           </div>
         )}
       </div>
@@ -202,41 +273,49 @@ export function LibraryView({
         <div className="library-results">
           {results.length === 0 ? (
             <div className="library-empty">
-              <p>未找到「{activeQuery}」相关讲解</p>
+              <p>{t("library.noResults", { query: activeQuery })}</p>
               <button
                 className="library-clear btn btn-secondary"
                 onClick={backToDirectory}
               >
-                清除搜索
+                {t("library.clear")}
               </button>
             </div>
           ) : (
-            [...groupedResults.values()].map(({ chapter, section, results: group }) => (
-              <div key={`${chapter.id}::${section?.id ?? ""}`} className="library-result-group">
-                <div className="library-result-chapter">
-                  {chapter.title}
-                  {section && (
-                    <span className="library-result-section"> · {section.title}</span>
-                  )}
+            [...groupedResults.values()].map(({ chapter, section, results: group }) => {
+              const display = displayByChapterId.get(chapter.id);
+              return (
+                <div key={`${chapter.id}::${section?.id ?? ""}`} className="library-result-group">
+                  <div className="library-result-chapter">
+                    {display?.title ?? chapter.title}
+                    {section && (
+                      <span className="library-result-section">
+                        {" "}· {sectionTitle(chapter, section)}
+                      </span>
+                    )}
+                  </div>
+                  {group.map((result) => (
+                    <button
+                      key={result.card.id}
+                      className="library-result-item"
+                      onClick={() =>
+                        openCard(chapter.id, result.card.id, section?.id)
+                      }
+                    >
+                      <div className="library-result-title">
+                        {renderHighlighted(
+                          result.displayTitle,
+                          `${result.card.id}-t`
+                        )}
+                      </div>
+                      <div className="library-result-summary">
+                        {renderHighlighted(result.summary, `${result.card.id}-s`)}
+                      </div>
+                    </button>
+                  ))}
                 </div>
-                {group.map((result) => (
-                  <button
-                    key={result.card.id}
-                    className="library-result-item"
-                    onClick={() =>
-                      openCard(chapter.id, result.card.id, section?.id)
-                    }
-                  >
-                    <div className="library-result-title">
-                      {renderHighlighted(result.card.title, `${result.card.id}-t`)}
-                    </div>
-                    <div className="library-result-summary">
-                      {renderHighlighted(result.summary, `${result.card.id}-s`)}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       ) : (
@@ -249,6 +328,8 @@ export function LibraryView({
               ? sectionSet.sections.find((section) => section.cards.length > 0) ?? null
               : null;
             const startCard = firstSection?.cards[0] ?? chapter.cards[0];
+            const display = chapterDisplays[chapterIndex]!;
+            const chapterTitle = display.title;
             return (
               <div
                 key={chapter.id}
@@ -259,7 +340,11 @@ export function LibraryView({
                     className="library-chapter-toggle"
                     type="button"
                     aria-expanded={isOpen}
-                    aria-label={`第${chapterIndex + 1}章 ${chapter.title}，${chapter.cards.length} 张讲解`}
+                    aria-label={t("library.chapterAria", {
+                      number: formatNumber(locale, chapterIndex + 1),
+                      title: chapterTitle,
+                      count: formatNumber(locale, chapter.cards.length),
+                    })}
                     onClick={() => toggleChapter(chapter.id)}
                   >
                     <span className="library-chapter-index" aria-hidden="true">
@@ -267,10 +352,16 @@ export function LibraryView({
                       <b>{String(chapterIndex + 1).padStart(2, "0")}</b>
                     </span>
                     <span className="library-chapter-copy">
-                      <span className="library-chapter-title">{chapter.title}</span>
-                      <span className="library-chapter-fr">{chapter.titleFr}</span>
+                      <span className="library-chapter-title">{chapterTitle}</span>
+                      {locale !== "fr" && (
+                        <span className="library-chapter-fr">
+                          {chapter.titleFr}
+                        </span>
+                      )}
                       <span className="library-chapter-count">
-                        {chapter.cards.length} 张讲解
+                        {t("section.cards", {
+                          count: formatNumber(locale, chapter.cards.length),
+                        })}
                       </span>
                     </span>
                     <PlusMinusIcon open={isOpen} />
@@ -286,7 +377,7 @@ export function LibraryView({
                       openCard(chapter.id, startCard.id, firstSection?.id)
                     }
                   >
-                    开始阅读
+                    {t("library.start")}
                   </button>
                 </div>
                 {isOpen &&
@@ -294,36 +385,44 @@ export function LibraryView({
                     <div className="library-section-list">
                       {sectionSet.sections
                         .filter((section) => section.cards.length > 0)
-                        .map((section) => (
-                          <div key={section.id} className="library-section">
-                            <div className="library-section-head">
-                              <span className="library-section-title">
-                                {section.title}
-                              </span>
-                              <span className="library-section-count">
-                                {section.cards.length} 张讲解
-                              </span>
-                              <button
-                                className="library-section-start btn btn-small btn-secondary"
-                                aria-label={`开始阅读：${section.title}`}
-                                onClick={() =>
-                                  openCard(
-                                    chapter.id,
-                                    section.cards[0]!.id,
-                                    section.id
-                                  )
-                                }
-                              >
-                                阅读
-                              </button>
+                        .map((section) => {
+                          const title = sectionTitle(chapter, section);
+                          return (
+                            <div key={section.id} className="library-section">
+                              <div className="library-section-head">
+                                <span className="library-section-title">
+                                  {title}
+                                </span>
+                                <span className="library-section-count">
+                                  {t("section.cards", {
+                                    count: formatNumber(
+                                      locale,
+                                      section.cards.length
+                                    ),
+                                  })}
+                                </span>
+                                <button
+                                  className="library-section-start btn btn-small btn-secondary"
+                                  aria-label={t("library.startAria", { title })}
+                                  onClick={() =>
+                                    openCard(
+                                      chapter.id,
+                                      section.cards[0]!.id,
+                                      section.id
+                                    )
+                                  }
+                                >
+                                  {t("library.read")}
+                                </button>
+                              </div>
+                              {renderCardList(
+                                section.cards,
+                                chapter.id,
+                                section.id
+                              )}
                             </div>
-                            {renderCardList(
-                              section.cards,
-                              chapter.id,
-                              section.id
-                            )}
-                          </div>
-                        ))}
+                          );
+                        })}
                     </div>
                   ) : (
                     renderCardList(chapter.cards, chapter.id)

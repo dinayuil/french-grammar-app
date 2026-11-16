@@ -8,7 +8,7 @@
 //! edition filename, a fixed application folder, whitelisted headers, and a
 //! 5 MB body/response bound.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -40,6 +40,34 @@ const ALLOWED_HEADERS: [&str; 5] = [
     "if-match",
     "if-none-match",
 ];
+const NATIVE_CONFIG_INVALID: &str = "native.config_invalid";
+const NATIVE_CREDENTIALS_REQUIRED: &str = "native.credentials_required";
+const NATIVE_STORAGE_FAILED: &str = "native.storage_failed";
+const NATIVE_NETWORK_FAILED: &str = "native.network_failed";
+const NATIVE_UNSUPPORTED: &str = "native.unsupported";
+
+/// Stable native error payload. `message` remains the original diagnostic so
+/// legacy JS can display it; new JS maps `code` to a localized main prompt and
+/// keeps `message` as expandable detail.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeCommandError {
+    pub code: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<BTreeMap<String, String>>,
+    pub message: String,
+    pub diagnostic: String,
+}
+
+fn native_error(code: &'static str, message: impl Into<String>) -> NativeCommandError {
+    let message = message.into();
+    NativeCommandError {
+        code,
+        params: None,
+        diagnostic: message.clone(),
+        message,
+    }
+}
 
 #[derive(Default)]
 pub struct SyncState {
@@ -141,22 +169,23 @@ fn method_for(method: SyncMethod) -> Method {
     }
 }
 
+#[derive(Debug)]
 struct ValidatedRequest {
     method: SyncMethod,
     headers: Vec<(String, String)>,
     body: Option<String>,
 }
 
-fn current_edition(app: &AppHandle) -> Result<Edition, String> {
+fn current_edition(app: &AppHandle) -> Result<Edition, NativeCommandError> {
     Edition::from_identifier(&app.config().identifier)
-        .ok_or_else(|| "当前应用标识不支持 WebDAV 同步".to_string())
+        .ok_or_else(|| native_error(NATIVE_UNSUPPORTED, "当前应用标识不支持 WebDAV 同步"))
 }
 
-fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
+fn config_path(app: &AppHandle) -> Result<PathBuf, NativeCommandError> {
     let dir = app
         .path()
         .app_local_data_dir()
-        .map_err(|_| "无法定位同步配置目录".to_string())?;
+        .map_err(|_| native_error(NATIVE_STORAGE_FAILED, "无法定位同步配置目录"))?;
     Ok(dir.join("sync.json"))
 }
 
@@ -164,71 +193,71 @@ fn entropy_for(identifier: &str) -> String {
     format!("fge-sync-v1:{identifier}")
 }
 
-fn validate_username(username: &str) -> Result<(), String> {
+fn validate_username(username: &str) -> Result<(), NativeCommandError> {
     if username.len() > MAX_USERNAME_LENGTH {
-        return Err("同步用户名过长".to_string());
+        return Err(native_error(NATIVE_CONFIG_INVALID, "同步用户名过长"));
     }
     if username
         .chars()
         .any(|ch| ch == ':' || ch == '\0' || ch == '\r' || ch == '\n')
     {
-        return Err("同步用户名包含非法字符".to_string());
+        return Err(native_error(NATIVE_CONFIG_INVALID, "同步用户名包含非法字符"));
     }
     Ok(())
 }
 
-fn validate_password(value: &str) -> Result<(), String> {
+fn validate_password(value: &str) -> Result<(), NativeCommandError> {
     if value.is_empty() || value.len() > MAX_PASSWORD_LENGTH {
-        return Err("同步密码长度无效".to_string());
+        return Err(native_error(NATIVE_CONFIG_INVALID, "同步密码长度无效"));
     }
     if value
         .chars()
         .any(|ch| ch == '\0' || ch == '\r' || ch == '\n')
     {
-        return Err("同步密码包含非法字符".to_string());
+        return Err(native_error(NATIVE_CONFIG_INVALID, "同步密码包含非法字符"));
     }
     Ok(())
 }
 
-fn validate_sync_url(raw: &str) -> Result<Url, String> {
+fn validate_sync_url(raw: &str) -> Result<Url, NativeCommandError> {
     let trimmed = raw.trim();
     if trimmed.is_empty() || trimmed.len() > MAX_URL_LENGTH {
-        return Err("同步地址长度无效".to_string());
+        return Err(native_error(NATIVE_CONFIG_INVALID, "同步地址长度无效"));
     }
-    let url = Url::parse(trimmed).map_err(|_| "同步地址不是有效 URL".to_string())?;
+    let url = Url::parse(trimmed).map_err(|_| native_error(NATIVE_CONFIG_INVALID, "同步地址不是有效 URL"))?;
     if !matches!(url.scheme(), "http" | "https") {
-        return Err("同步地址必须使用 HTTP 或 HTTPS".to_string());
+        return Err(native_error(NATIVE_CONFIG_INVALID, "同步地址必须使用 HTTP 或 HTTPS"));
     }
     if !url.username().is_empty() || url.password().is_some() {
-        return Err("同步地址不能包含用户名或密码".to_string());
+        return Err(native_error(NATIVE_CONFIG_INVALID, "同步地址不能包含用户名或密码"));
     }
     if url.query().is_some() {
-        return Err("同步地址不能包含查询参数".to_string());
+        return Err(native_error(NATIVE_CONFIG_INVALID, "同步地址不能包含查询参数"));
     }
     if url.fragment().is_some() {
-        return Err("同步地址不能包含片段".to_string());
+        return Err(native_error(NATIVE_CONFIG_INVALID, "同步地址不能包含片段"));
     }
     if url.cannot_be_a_base() || url.host_str().map(str::is_empty).unwrap_or(true) {
-        return Err("同步地址缺少主机名".to_string());
+        return Err(native_error(NATIVE_CONFIG_INVALID, "同步地址缺少主机名"));
     }
     Ok(url)
 }
 
-fn validate_base_for_edition(raw: &str, edition: Edition) -> Result<String, String> {
+fn validate_base_for_edition(raw: &str, edition: Edition) -> Result<String, NativeCommandError> {
     canonical_sync_directory(raw, edition)
 }
 
 /// Normalize only the trailing slashes of an existing directory URL. Path
 /// case, escapes and other components stay untouched, so a credential is
 /// retained only for the same normalized target directory.
-fn canonical_sync_directory(raw: &str, edition: Edition) -> Result<String, String> {
+fn canonical_sync_directory(raw: &str, edition: Edition) -> Result<String, NativeCommandError> {
     let url = validate_sync_url(raw)?;
     let last = url
         .path_segments()
         .and_then(|mut segments| segments.next_back())
         .unwrap_or("");
     if last.eq_ignore_ascii_case(edition.filename()) {
-        return Err("同步地址必须是目录，不能直接指向同步文件".to_string());
+        return Err(native_error(NATIVE_CONFIG_INVALID, "同步地址必须是目录，不能直接指向同步文件"));
     }
     Ok(url.as_str().trim_end_matches('/').to_string())
 }
@@ -237,12 +266,12 @@ fn sync_target_url(
     base: &str,
     edition: Edition,
     method: SyncMethod,
-) -> Result<Url, String> {
+) -> Result<Url, NativeCommandError> {
     let mut url = validate_sync_url(base)?;
     {
         let mut segments = url
             .path_segments_mut()
-            .map_err(|_| "同步地址不是有效目录 URL".to_string())?;
+            .map_err(|_| native_error(NATIVE_CONFIG_INVALID, "同步地址不是有效目录 URL"))?;
         segments.pop_if_empty().push(APP_DIRECTORY);
         if matches!(method, SyncMethod::Mkcol | SyncMethod::Propfind) {
             segments.push("");
@@ -255,17 +284,17 @@ fn sync_target_url(
 
 fn normalize_headers(
     headers: &HashMap<String, String>,
-) -> Result<Vec<(String, String)>, String> {
+) -> Result<Vec<(String, String)>, NativeCommandError> {
     let allowed: HashSet<&str> = ALLOWED_HEADERS.iter().copied().collect();
     let mut seen = HashSet::new();
     let mut normalized = Vec::new();
     for (name, value) in headers {
         let lower = name.to_ascii_lowercase();
         if !allowed.contains(lower.as_str()) {
-            return Err("同步请求包含不允许的请求头".to_string());
+            return Err(native_error(NATIVE_CONFIG_INVALID, "同步请求包含不允许的请求头"));
         }
         if !seen.insert(lower.clone()) {
-            return Err("同步请求包含重复的请求头".to_string());
+            return Err(native_error(NATIVE_CONFIG_INVALID, "同步请求包含重复的请求头"));
         }
         if value.is_empty()
             || value.len() > MAX_HEADER_VALUE_LENGTH
@@ -273,10 +302,10 @@ fn normalize_headers(
                 .chars()
                 .any(|ch| ch == '\0' || ch == '\r' || ch == '\n')
         {
-            return Err("同步请求头值无效".to_string());
+            return Err(native_error(NATIVE_CONFIG_INVALID, "同步请求头值无效"));
         }
         if lower == "depth" && value != "0" {
-            return Err("Depth 请求头只允许 0".to_string());
+            return Err(native_error(NATIVE_CONFIG_INVALID, "Depth 请求头只允许 0"));
         }
         normalized.push((lower, value.clone()));
     }
@@ -284,16 +313,16 @@ fn normalize_headers(
     Ok(normalized)
 }
 
-fn validate_request(request: &SyncRequest, edition: Edition) -> Result<ValidatedRequest, String> {
+fn validate_request(request: &SyncRequest, edition: Edition) -> Result<ValidatedRequest, NativeCommandError> {
     if request.filename != edition.filename() {
-        return Err("同步文件名与当前版本不匹配".to_string());
+        return Err(native_error(NATIVE_CONFIG_INVALID, "同步文件名与当前版本不匹配"));
     }
     let method = match request.method.as_str() {
         "GET" => SyncMethod::Get,
         "PUT" => SyncMethod::Put,
         "MKCOL" => SyncMethod::Mkcol,
         "PROPFIND" => SyncMethod::Propfind,
-        _ => return Err("同步请求只支持 GET、PUT、MKCOL 或 PROPFIND".to_string()),
+        _ => return Err(native_error(NATIVE_CONFIG_INVALID, "同步请求只支持 GET、PUT、MKCOL 或 PROPFIND")),
     };
     let headers = normalize_headers(&request.headers)?;
     if method == SyncMethod::Propfind
@@ -301,36 +330,36 @@ fn validate_request(request: &SyncRequest, edition: Edition) -> Result<Validated
             .iter()
             .any(|(name, value)| name == "depth" && value == "0")
     {
-        return Err("PROPFIND 必须携带 Depth: 0".to_string());
+        return Err(native_error(NATIVE_CONFIG_INVALID, "PROPFIND 必须携带 Depth: 0"));
     }
     let body = match (method, &request.body) {
         (SyncMethod::Get, None) => None,
         (SyncMethod::Get, Some(_)) => {
-            return Err("GET 同步请求不能携带正文".to_string())
+            return Err(native_error(NATIVE_CONFIG_INVALID, "GET 同步请求不能携带正文"))
         }
         (SyncMethod::Put, Some(body)) => {
             if body.is_empty() {
-                return Err("PUT 同步请求正文为空".to_string());
+                return Err(native_error(NATIVE_CONFIG_INVALID, "PUT 同步请求正文为空"));
             }
             if body.len() > MAX_SYNC_BYTES {
-                return Err("同步请求正文超过 5 MB 上限".to_string());
+                return Err(native_error(NATIVE_CONFIG_INVALID, "同步请求正文超过 5 MB 上限"));
             }
             Some(body.clone())
         }
         (SyncMethod::Put, None) => {
-            return Err("PUT 同步请求缺少正文".to_string())
+            return Err(native_error(NATIVE_CONFIG_INVALID, "PUT 同步请求缺少正文"))
         }
         (SyncMethod::Mkcol, None) => None,
         (SyncMethod::Mkcol, Some(_)) => {
-            return Err("MKCOL 同步请求不能携带正文".to_string())
+            return Err(native_error(NATIVE_CONFIG_INVALID, "MKCOL 同步请求不能携带正文"))
         }
         (SyncMethod::Propfind, None) => Some(PROPFIND_RESOURCETYPE_BODY.to_string()),
         (SyncMethod::Propfind, Some(body)) => {
             if body.is_empty() {
-                return Err("PROPFIND 同步请求正文为空".to_string());
+                return Err(native_error(NATIVE_CONFIG_INVALID, "PROPFIND 同步请求正文为空"));
             }
             if body.len() > MAX_SYNC_BYTES {
-                return Err("同步请求正文超过 5 MB 上限".to_string());
+                return Err(native_error(NATIVE_CONFIG_INVALID, "同步请求正文超过 5 MB 上限"));
             }
             Some(body.clone())
         }
@@ -342,45 +371,45 @@ fn validate_request(request: &SyncRequest, edition: Edition) -> Result<Validated
     })
 }
 
-fn load_stored(app: &AppHandle) -> Result<Option<StoredConfig>, String> {
+fn load_stored(app: &AppHandle) -> Result<Option<StoredConfig>, NativeCommandError> {
     let path = config_path(app)?;
     let metadata = match fs::metadata(&path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err("无法读取同步配置".to_string()),
+        Err(_) => return Err(native_error(NATIVE_STORAGE_FAILED, "无法读取同步配置")),
     };
     if !metadata.is_file() || metadata.len() as usize > MAX_CONFIG_BYTES {
-        return Err("同步配置损坏".to_string());
+        return Err(native_error(NATIVE_STORAGE_FAILED, "同步配置损坏"));
     }
-    let text = fs::read_to_string(&path).map_err(|_| "无法读取同步配置".to_string())?;
+    let text = fs::read_to_string(&path).map_err(|_| native_error(NATIVE_STORAGE_FAILED, "无法读取同步配置"))?;
     let stored: StoredConfig =
-        serde_json::from_str(&text).map_err(|_| "同步配置损坏".to_string())?;
+        serde_json::from_str(&text).map_err(|_| native_error(NATIVE_STORAGE_FAILED, "同步配置损坏"))?;
     let edition = current_edition(app)?;
     if stored.version != 1
         || stored.edition != edition.as_str()
         || stored.identifier != app.config().identifier
     {
-        return Err("同步配置与当前版本不匹配".to_string());
+        return Err(native_error(NATIVE_STORAGE_FAILED, "同步配置与当前版本不匹配"));
     }
     Ok(Some(stored))
 }
 
-fn write_stored(path: &Path, stored: &StoredConfig) -> Result<(), String> {
+fn write_stored(path: &Path, stored: &StoredConfig) -> Result<(), NativeCommandError> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|_| "无法创建同步配置目录".to_string())?;
+        fs::create_dir_all(parent).map_err(|_| native_error(NATIVE_STORAGE_FAILED, "无法创建同步配置目录"))?;
     }
     let bytes = serde_json::to_vec_pretty(stored)
-        .map_err(|_| "无法序列化同步配置".to_string())?;
+        .map_err(|_| native_error(NATIVE_STORAGE_FAILED, "无法序列化同步配置"))?;
     if bytes.len() > MAX_CONFIG_BYTES {
-        return Err("同步配置过大".to_string());
+        return Err(native_error(NATIVE_STORAGE_FAILED, "同步配置过大"));
     }
     let temporary = path.with_extension("json.tmp");
-    fs::write(&temporary, &bytes).map_err(|_| "无法保存同步配置".to_string())?;
+    fs::write(&temporary, &bytes).map_err(|_| native_error(NATIVE_STORAGE_FAILED, "无法保存同步配置"))?;
     replace_file(&temporary, path).map_err(|_| {
         // The destination still holds the previous config; remove only the
         // temporary copy after a failed atomic replacement.
         let _ = fs::remove_file(&temporary);
-        "无法保存同步配置".to_string()
+        native_error(NATIVE_STORAGE_FAILED, "无法保存同步配置")
     })
 }
 
@@ -421,17 +450,19 @@ fn replace_file(temporary: &Path, destination: &Path) -> std::io::Result<()> {
 }
 
 
-fn encrypt_password(identifier: &str, value: &str) -> Result<String, String> {
-    let blob = dpapi::protect(value.as_bytes(), entropy_for(identifier).as_bytes())?;
+fn encrypt_password(identifier: &str, value: &str) -> Result<String, NativeCommandError> {
+    let blob = dpapi::protect(value.as_bytes(), entropy_for(identifier).as_bytes())
+        .map_err(|_| native_error(NATIVE_STORAGE_FAILED, "无法保存同步凭据"))?;
     Ok(BASE64.encode(blob))
 }
 
-fn decrypt_password(identifier: &str, encoded: &str) -> Result<String, String> {
+fn decrypt_password(identifier: &str, encoded: &str) -> Result<String, NativeCommandError> {
     let blob = BASE64
         .decode(encoded.as_bytes())
-        .map_err(|_| "无法读取同步凭据".to_string())?;
-    let bytes = dpapi::unprotect(&blob, entropy_for(identifier).as_bytes())?;
-    String::from_utf8(bytes).map_err(|_| "无法读取同步凭据".to_string())
+        .map_err(|_| native_error(NATIVE_CREDENTIALS_REQUIRED, "无法读取同步凭据"))?;
+    let bytes = dpapi::unprotect(&blob, entropy_for(identifier).as_bytes())
+        .map_err(|_| native_error(NATIVE_CREDENTIALS_REQUIRED, "无法读取同步凭据"))?;
+    String::from_utf8(bytes).map_err(|_| native_error(NATIVE_CREDENTIALS_REQUIRED, "无法读取同步凭据"))
 }
 
 /// Decide whether an omitted password may reuse the stored ciphertext.
@@ -439,13 +470,13 @@ fn decrypt_password(identifier: &str, encoded: &str) -> Result<String, String> {
 /// a changed target must supply a new password, and a rejected save never
 /// touches the existing config file.
 fn resolve_encrypted_password(
-    existing: Result<Option<StoredConfig>, String>,
+    existing: Result<Option<StoredConfig>, NativeCommandError>,
     new_password: Option<&str>,
     identifier: &str,
     normalized_url: &str,
     username: &str,
     edition: Edition,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, NativeCommandError> {
     if let Some(value) = new_password {
         validate_password(value)?;
         return Ok(Some(encrypt_password(identifier, value)?));
@@ -461,7 +492,7 @@ fn resolve_encrypted_password(
             if same_url && stored.username == username {
                 Ok(stored.password_enc)
             } else {
-                Err("修改同步地址或用户名时必须重新输入密码".to_string())
+                Err(native_error(NATIVE_CREDENTIALS_REQUIRED, "修改同步地址或用户名时必须重新输入密码"))
             }
         }
     }
@@ -477,13 +508,13 @@ fn collect_response_headers(headers: &HeaderMap) -> HashMap<String, String> {
     result
 }
 
-fn map_request_error(error: reqwest::Error) -> String {
+fn map_request_error(error: reqwest::Error) -> NativeCommandError {
     if error.is_timeout() {
-        "同步请求超时".to_string()
+        native_error(NATIVE_NETWORK_FAILED, "同步请求超时")
     } else if error.is_connect() {
-        "无法连接同步服务器".to_string()
+        native_error(NATIVE_NETWORK_FAILED, "无法连接同步服务器")
     } else {
-        "同步网络请求失败".to_string()
+        native_error(NATIVE_NETWORK_FAILED, "同步网络请求失败")
     }
 }
 
@@ -491,7 +522,7 @@ async fn execute_request(
     config: &StoredConfig,
     request: ValidatedRequest,
     edition: Edition,
-) -> Result<SyncResponse, String> {
+) -> Result<SyncResponse, NativeCommandError> {
     let url = sync_target_url(&config.url, edition, request.method)?;
     let password = match config.password_enc.as_deref() {
         Some(encoded) => Some(decrypt_password(&config.identifier, encoded)?),
@@ -506,7 +537,7 @@ async fn execute_request(
         .redirect(Policy::none())
         .user_agent("fge-sync/1")
         .build()
-        .map_err(|_| "无法初始化同步网络请求".to_string())?;
+        .map_err(|_| native_error(NATIVE_NETWORK_FAILED, "无法初始化同步网络请求"))?;
 
     let method = method_for(request.method);
     let mut builder = client.request(method, url);
@@ -528,18 +559,18 @@ async fn execute_request(
         .map(|length| length > MAX_SYNC_BYTES as u64)
         .unwrap_or(false)
     {
-        return Err("同步响应超过 5 MB 上限".to_string());
+        return Err(native_error(NATIVE_NETWORK_FAILED, "同步响应超过 5 MB 上限"));
     }
 
     let mut response = response;
     let mut body = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(map_request_error)? {
         if body.len() + chunk.len() > MAX_SYNC_BYTES {
-            return Err("同步响应超过 5 MB 上限".to_string());
+            return Err(native_error(NATIVE_NETWORK_FAILED, "同步响应超过 5 MB 上限"));
         }
         body.extend_from_slice(&chunk);
     }
-    let body = String::from_utf8(body).map_err(|_| "同步响应不是有效文本".to_string())?;
+    let body = String::from_utf8(body).map_err(|_| native_error(NATIVE_NETWORK_FAILED, "同步响应不是有效文本"))?;
 
     Ok(SyncResponse {
         status,
@@ -552,11 +583,11 @@ async fn execute_request(
 pub fn sync_get_config(
     app: AppHandle,
     state: tauri::State<'_, SyncState>,
-) -> Result<Option<SyncConfig>, String> {
+) -> Result<Option<SyncConfig>, NativeCommandError> {
     let _guard = state
         .lock
         .lock()
-        .map_err(|_| "同步配置状态不可用".to_string())?;
+        .map_err(|_| native_error(NATIVE_STORAGE_FAILED, "同步配置状态不可用"))?;
     let stored = load_stored(&app)?;
     Ok(stored.map(|config| SyncConfig {
         url: config.url,
@@ -572,11 +603,11 @@ pub fn sync_set_config(
     state: tauri::State<'_, SyncState>,
     config: SyncSettings,
     password: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), NativeCommandError> {
     let _guard = state
         .lock
         .lock()
-        .map_err(|_| "同步配置状态不可用".to_string())?;
+        .map_err(|_| native_error(NATIVE_STORAGE_FAILED, "同步配置状态不可用"))?;
     let edition = current_edition(&app)?;
     let identifier = app.config().identifier.clone();
     let normalized_url = validate_base_for_edition(&config.url, edition)?;
@@ -608,16 +639,16 @@ pub fn sync_set_config(
 pub fn sync_disconnect(
     app: AppHandle,
     state: tauri::State<'_, SyncState>,
-) -> Result<(), String> {
+) -> Result<(), NativeCommandError> {
     let _guard = state
         .lock
         .lock()
-        .map_err(|_| "同步配置状态不可用".to_string())?;
+        .map_err(|_| native_error(NATIVE_STORAGE_FAILED, "同步配置状态不可用"))?;
     let path = config_path(&app)?;
     match fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(_) => Err("无法清除同步配置".to_string()),
+        Err(_) => Err(native_error(NATIVE_STORAGE_FAILED, "无法清除同步配置")),
     }
 }
 
@@ -626,7 +657,7 @@ pub async fn sync_request(
     app: AppHandle,
     state: tauri::State<'_, SyncState>,
     request: SyncRequest,
-) -> Result<SyncResponse, String> {
+) -> Result<SyncResponse, NativeCommandError> {
     let edition = current_edition(&app)?;
     let validated = validate_request(&request, edition)?;
     let stored = {
@@ -636,8 +667,8 @@ pub async fn sync_request(
         let _guard = state
             .lock
             .lock()
-            .map_err(|_| "同步配置状态不可用".to_string())?;
-        load_stored(&app)?.ok_or_else(|| "尚未配置 WebDAV 同步".to_string())?
+            .map_err(|_| native_error(NATIVE_STORAGE_FAILED, "同步配置状态不可用"))?;
+        load_stored(&app)?.ok_or_else(|| native_error(NATIVE_CONFIG_INVALID, "尚未配置 WebDAV 同步"))?
     };
     execute_request(&stored, validated, edition).await
 }
@@ -693,7 +724,11 @@ mod tests {
             "not a url",
             "",
         ] {
-            assert!(validate_sync_url(url).is_err(), "{url} should be rejected");
+            assert_eq!(
+                validate_sync_url(url).expect_err("bad URL").code,
+                "native.config_invalid",
+                "{url}"
+            );
         }
     }
 
@@ -1010,7 +1045,8 @@ mod tests {
             Edition::Public,
         )
         .expect_err("target change must not reuse the old password");
-        assert!(error.contains("密码"), "{error}");
+        assert_eq!(error.code, "native.credentials_required");
+        assert!(error.message.contains("密码"), "{}", error.message);
     }
 
     #[test]
@@ -1029,7 +1065,8 @@ mod tests {
             Edition::Public,
         )
         .expect_err("username change must not reuse the old password");
-        assert!(error.contains("密码"), "{error}");
+        assert_eq!(error.code, "native.credentials_required");
+        assert!(error.message.contains("密码"), "{}", error.message);
     }
 
     #[test]
@@ -1065,14 +1102,55 @@ mod tests {
         assert_eq!(fresh, None);
 
         let corrupt = resolve_encrypted_password(
-            Err("同步配置损坏".to_string()),
+            Err(native_error(NATIVE_STORAGE_FAILED, "同步配置损坏")),
             None,
             "com.fge.open",
             "https://dav.example.com/dir",
             "reader",
             Edition::Public,
         );
-        assert!(corrupt.is_err());
+        assert_eq!(
+            corrupt.expect_err("corrupt config").code,
+            NATIVE_STORAGE_FAILED
+        );
+    }
+
+    #[test]
+    fn native_sync_errors_use_fixed_codes_without_matching_messages() {
+        assert_eq!(
+            validate_username("bad\nname").expect_err("username").code,
+            "native.config_invalid"
+        );
+        assert_eq!(
+            validate_password("").expect_err("empty password").code,
+            "native.config_invalid"
+        );
+        assert_eq!(
+            decrypt_password("com.fge.open", "!!!")
+                .expect_err("bad credential")
+                .code,
+            "native.credentials_required"
+        );
+        let invalid_request = request("DELETE", "fge-progress-public.json");
+        assert_eq!(
+            validate_request(&invalid_request, Edition::Public)
+                .expect_err("bad method")
+                .code,
+            "native.config_invalid"
+        );
+        let wrong_filename = request("GET", "fge-progress-internal.json");
+        assert_eq!(
+            validate_request(&wrong_filename, Edition::Public)
+                .expect_err("wrong filename")
+                .code,
+            "native.config_invalid"
+        );
+
+        let payload = serde_json::to_value(native_error(NATIVE_NETWORK_FAILED, "同步请求超时"))
+            .expect("native error serializes");
+        assert_eq!(payload["code"], "native.network_failed");
+        assert_eq!(payload["message"], "同步请求超时");
+        assert!(payload.get("params").is_none());
     }
 
     #[test]
@@ -1119,7 +1197,10 @@ mod tests {
         );
         let result = write_stored(&path, &candidate);
 
-        assert!(result.is_err(), "read-only destination must fail the commit");
+        assert_eq!(
+            result.expect_err("read-only destination must fail").code,
+            "native.storage_failed"
+        );
         assert_eq!(fs::read(&path).unwrap(), b"old-config");
         assert!(
             !path.with_extension("json.tmp").exists(),

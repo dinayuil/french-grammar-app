@@ -2,33 +2,20 @@ import { useState } from "react";
 import type { Progress } from "../types";
 import { shiftDate, today } from "../storage";
 import { levelFor, streakFor, studyTotals } from "../engine";
-import { formatStudyDuration } from "../formatStudyDuration";
+import { useLocale } from "../i18n/LocaleProvider";
+import {
+  formatUserError,
+  normalizeUserFacingError,
+  type UserFacingError,
+} from "../i18n/errors";
+import {
+  formatDate,
+  formatNumber,
+  formatStudyDuration,
+} from "../i18n/format";
 import type { ShareResult } from "../share/shareStats";
 
 type ShareStatus = "idle" | ShareResult["status"];
-
-function detailFor(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === "string" && error) return error;
-  return "请重试";
-}
-
-function failureText(detail: string): string {
-  return detail.includes("分享失败") ? detail : `分享失败：${detail || "请重试"}`;
-}
-
-function statusText(result: ShareResult): string {
-  switch (result.status) {
-    case "shared":
-      return "已打开分享";
-    case "downloaded":
-      return "图片已保存到本地，可手动分享";
-    case "cancelled":
-      return "已取消";
-    case "error":
-      return failureText(result.message);
-  }
-}
 
 export function StatsView({
   progress,
@@ -37,29 +24,51 @@ export function StatsView({
   progress: Progress;
   onShare?: () => Promise<ShareResult>;
 }) {
+  const { locale, t } = useLocale();
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<ShareStatus>("idle");
-  const [message, setMessage] = useState("");
+  // 只保存原始结构化错误，主提示与详情在渲染时按当前语言生成。
+  const [shareError, setShareError] = useState<UserFacingError | null>(null);
 
   const handleShare = async () => {
     if (!onShare || busy) return;
     setBusy(true);
     setStatus("idle");
-    setMessage("");
+    setShareError(null);
     try {
       const result = await onShare();
       setStatus(result.status);
-      setMessage(statusText(result));
+      if (result.status === "error") {
+        setShareError(
+          result.error ?? normalizeUserFacingError(result.message)
+        );
+      }
     } catch (error) {
       setStatus("error");
-      setMessage(failureText(detailFor(error)));
+      setShareError(normalizeUserFacingError(error));
     } finally {
       setBusy(false);
     }
   };
 
-  const t = today();
-  const last7 = Array.from({ length: 7 }, (_, i) => shiftDate(t, -(6 - i)));
+  const formattedError =
+    status === "error" && shareError
+      ? formatUserError(shareError, locale)
+      : null;
+
+  const statusMessage =
+    status === "shared"
+      ? t("stats.shareOpened")
+      : status === "downloaded"
+        ? t("stats.shareDownloaded")
+        : status === "cancelled"
+          ? t("stats.shareCancelled")
+          : status === "error"
+            ? (formattedError?.message ?? t("stats.retry"))
+            : "";
+
+  const date = today();
+  const last7 = Array.from({ length: 7 }, (_, i) => shiftDate(date, -(6 - i)));
   const max = Math.max(...last7.map((d) => progress.days[d]?.xp ?? 0), 1);
   const study7 = last7.map((d) => {
     const day = progress.days[d];
@@ -69,32 +78,36 @@ export function StatsView({
   });
   const maxStudy = Math.max(...study7.map((s) => s.total), 1);
   const totals = studyTotals(progress.days);
+  const dayLabel = (d: string) =>
+    formatDate(locale, `${d}T00:00:00`, { month: "2-digit", day: "2-digit" });
 
   return (
     <div className="stats">
       <div className="stats-top">
         <div className="stat-box">
-          <div className="stat-num">{progress.xp}</div>
-          <div className="stat-label">累计 XP</div>
+          <div className="stat-num">{formatNumber(locale, progress.xp)}</div>
+          <div className="stat-label">{t("stats.xp")}</div>
         </div>
         <div className="stat-box">
-          <div className="stat-num">{levelFor(progress.xp)}</div>
-          <div className="stat-label">等级</div>
+          <div className="stat-num">{formatNumber(locale, levelFor(progress.xp))}</div>
+          <div className="stat-label">{t("stats.level")}</div>
         </div>
         <div className="stat-box">
-          <div className="stat-num">{streakFor(progress.days, progress.dailyGoal, t)}</div>
-          <div className="stat-label">连击</div>
+          <div className="stat-num">
+            {formatNumber(locale, streakFor(progress.days, progress.dailyGoal, date))}
+          </div>
+          <div className="stat-label">{t("stats.streak")}</div>
         </div>
       </div>
 
-      <div className="stats-title">最近 7 天</div>
+      <div className="stats-title">{t("stats.recent7")}</div>
       <div className="bars">
         {last7.map((d) => {
           const xp = progress.days[d]?.xp ?? 0;
-          const isToday = d === t;
+          const isToday = d === date;
           return (
             <div key={d} className="bar-col">
-              <div className="bar-num">{xp > 0 ? xp : ""}</div>
+              <div className="bar-num">{xp > 0 ? formatNumber(locale, xp) : ""}</div>
               <div className="bar-track">
                 <div
                   className={`bar-fill ${isToday ? "bar-today" : ""}`}
@@ -102,22 +115,24 @@ export function StatsView({
                 />
               </div>
               <div className={`bar-label ${isToday ? "bar-label-today" : ""}`}>
-                {d.slice(5)}
+                {dayLabel(d)}
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className="stats-title">最近 7 天学习时长（分钟）</div>
+      <div className="stats-title">{t("stats.studyRecent7")}</div>
       <div className="bars study-bars">
         {last7.map((d, i) => {
           const { read, practice, total } = study7[i];
-          const isToday = d === t;
+          const isToday = d === date;
           const minutes = Math.round(total / 60);
           return (
             <div key={d} className="bar-col">
-              <div className="bar-num">{minutes > 0 ? minutes : ""}</div>
+              <div className="bar-num">
+                {minutes > 0 ? formatNumber(locale, minutes) : ""}
+              </div>
               <div className="bar-track">
                 <div
                   className="study-seg study-practice"
@@ -129,7 +144,7 @@ export function StatsView({
                 />
               </div>
               <div className={`bar-label ${isToday ? "bar-label-today" : ""}`}>
-                {d.slice(5)}
+                {dayLabel(d)}
               </div>
             </div>
           );
@@ -139,38 +154,51 @@ export function StatsView({
       <div className="study-legend">
         <span className="study-legend-item">
           <span className="study-dot study-read" />
-          看讲解
+          {t("stats.read")}
         </span>
         <span className="study-legend-item">
           <span className="study-dot study-practice" />
-          做练习
+          {t("stats.practice")}
         </span>
       </div>
 
       <div className="study-total">
-        累计学习时长 {formatStudyDuration(totals.total)}（看讲解 {formatStudyDuration(totals.read)} /
-        做练习 {formatStudyDuration(totals.practice)}）
+        {t("stats.total", {
+          total: formatStudyDuration(locale, totals.total),
+          read: formatStudyDuration(locale, totals.read),
+          practice: formatStudyDuration(locale, totals.practice),
+        })}
       </div>
 
       {onShare && (
         <div className="stats-share">
           <button
             className="btn btn-small btn-primary stats-share-btn"
-            aria-label="分享今日打卡图片"
+            aria-label={t("stats.shareAria")}
             aria-busy={busy}
             disabled={busy}
             onClick={handleShare}
           >
             <span aria-hidden="true">⬆</span>{" "}
-            {busy ? "生成中…" : status === "error" ? "分享失败，点击重试" : "分享今日打卡"}
+            {busy
+              ? t("stats.shareBusy")
+              : status === "error"
+                ? t("stats.shareError")
+                : t("stats.share")}
           </button>
-          {message && (
+          {statusMessage && (
             <div
               className={`stats-share-status${status === "error" ? " is-error" : ""}`}
               role="status"
               aria-live="polite"
             >
-              {message}
+              <span>{statusMessage}</span>
+              {formattedError?.diagnostic && (
+                <details className="stats-share-details">
+                  <summary>{t("errors.details")}</summary>
+                  <span>{formattedError.diagnostic}</span>
+                </details>
+              )}
             </div>
           )}
         </div>

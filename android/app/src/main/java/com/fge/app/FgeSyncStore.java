@@ -89,7 +89,10 @@ final class FgeSyncStore {
         final String appId = context.getPackageName();
         if (APP_ID_PUBLIC.equals(appId)) return EDITION_PUBLIC;
         if (APP_ID_INTERNAL.equals(appId)) return EDITION_INTERNAL;
-        throw new IllegalStateException("未知应用版本");
+        throw new FgeSyncErrors.FgeSyncException(
+            FgeSyncErrors.UNSUPPORTED,
+            "未知应用版本"
+        );
     }
 
     synchronized Config read(Context context) {
@@ -143,15 +146,23 @@ final class FgeSyncStore {
         }
 
         // 目标改变且未重新输入密码时在此抛出,不会触碰已保存配置。
-        final String effectivePassword = FgeSyncPolicy.resolvePassword(
-            previousUrl,
-            previousUsername,
-            previousPassword,
-            url,
-            username,
-            updatePassword,
-            password
-        );
+        final String effectivePassword;
+        try {
+            effectivePassword = FgeSyncPolicy.resolvePassword(
+                previousUrl,
+                previousUsername,
+                previousPassword,
+                url,
+                username,
+                updatePassword,
+                password
+            );
+        } catch (IllegalArgumentException error) {
+            throw new FgeSyncErrors.FgeSyncException(
+                FgeSyncErrors.CREDENTIALS_REQUIRED,
+                error.getMessage()
+            );
+        }
 
         // 先完成全部加密,再一次性提交 URL、开关和凭据。
         final String encodedCredential;
@@ -173,7 +184,10 @@ final class FgeSyncStore {
 
         if (!editor.commit()) {
             restore(prefs, previousUrl, previousAutoSync, previousCredential);
-            throw new IllegalStateException("无法保存同步配置");
+            throw new FgeSyncErrors.FgeSyncException(
+                FgeSyncErrors.STORAGE_FAILED,
+                "无法保存同步配置"
+            );
         }
     }
 
@@ -196,7 +210,10 @@ final class FgeSyncStore {
         final SharedPreferences prefs = prefs(context);
         final String url = prefs.getString(KEY_URL, null);
         if (url == null || url.isEmpty()) {
-            throw new IllegalStateException("尚未配置同步");
+            throw new FgeSyncErrors.FgeSyncException(
+                FgeSyncErrors.CONFIG_INVALID,
+                "尚未配置同步"
+            );
         }
         final Credentials credentials = readCredentials(prefs);
         return new Snapshot(url, credentials.username, credentials.password, filename(context));
@@ -206,7 +223,10 @@ final class FgeSyncStore {
     synchronized void disconnect(Context context) {
         final SharedPreferences prefs = prefs(context);
         if (!prefs.edit().clear().commit()) {
-            throw new IllegalStateException("无法清除同步配置");
+            throw new FgeSyncErrors.FgeSyncException(
+                FgeSyncErrors.STORAGE_FAILED,
+                "无法清除同步配置"
+            );
         }
         try {
             final KeyStore keyStore = KeyStore.getInstance(KEYSTORE);
@@ -233,7 +253,10 @@ final class FgeSyncStore {
         try {
             plaintext = decrypt(Base64.decode(stored, Base64.NO_WRAP));
         } catch (Exception error) {
-            throw new IllegalStateException("同步凭据不可用");
+            throw new FgeSyncErrors.FgeSyncException(
+                FgeSyncErrors.CREDENTIALS_REQUIRED,
+                "同步凭据不可用"
+            );
         }
 
         try {
@@ -241,13 +264,24 @@ final class FgeSyncStore {
             final Object username = object.opt(CREDENTIAL_USERNAME);
             final Object password = object.opt(CREDENTIAL_PASSWORD);
             if (!(username instanceof String) || !(password instanceof String)) {
-                throw new IllegalStateException("同步凭据不可用");
+                throw new FgeSyncErrors.FgeSyncException(
+                    FgeSyncErrors.CREDENTIALS_REQUIRED,
+                    "同步凭据不可用"
+                );
             }
             return new Credentials((String) username, (String) password);
+        } catch (FgeSyncErrors.FgeSyncException error) {
+            throw error;
         } catch (RuntimeException error) {
-            throw new IllegalStateException("同步凭据不可用");
+            throw new FgeSyncErrors.FgeSyncException(
+                FgeSyncErrors.CREDENTIALS_REQUIRED,
+                "同步凭据不可用"
+            );
         } catch (Exception error) {
-            throw new IllegalStateException("同步凭据不可用");
+            throw new FgeSyncErrors.FgeSyncException(
+                FgeSyncErrors.CREDENTIALS_REQUIRED,
+                "同步凭据不可用"
+            );
         }
     }
 
@@ -258,7 +292,10 @@ final class FgeSyncStore {
             object.put(CREDENTIAL_PASSWORD, password);
             return encrypt(object.toString().getBytes(StandardCharsets.UTF_8));
         } catch (Exception error) {
-            throw new IllegalStateException("无法保存同步凭据");
+            throw new FgeSyncErrors.FgeSyncException(
+                FgeSyncErrors.STORAGE_FAILED,
+                "无法保存同步凭据"
+            );
         }
     }
 

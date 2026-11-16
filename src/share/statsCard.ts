@@ -1,5 +1,9 @@
 import { levelFor, streakFor, studyTotals } from "../engine";
 import { formatStudyDuration } from "../formatStudyDuration";
+import { formatDate, formatNumber } from "../i18n/format";
+import { t } from "../i18n/messages";
+import type { SharingKey } from "../i18n/sharing.zh-CN";
+import type { UiLocale } from "../i18n/types";
 import { shiftDate } from "../storage";
 import type { DayRecord, Progress, ShareCardContent } from "../types";
 
@@ -8,6 +12,7 @@ export const SHARE_CARD_HEIGHT = 1350;
 
 export interface StatsCardDay {
   date: string;
+  /** 本地化短日期；今天在绘制时按 locale 换成“今天 / Auj.”。 */
   label: string;
   xp: number;
   isToday: boolean;
@@ -19,6 +24,8 @@ export interface StatsCardDay {
 export interface StatsCardData {
   date: string;
   dateLabel: string;
+  /** 可选以兼容旧合成夹具；缺省按 zh-CN 绘制。 */
+  locale?: UiLocale;
   mode: ShareCardContent;
   todayXp: number;
   goal: number;
@@ -109,6 +116,36 @@ const BAR_VALUE_MAX_WIDTH = BAR_WIDTH - 8;
 
 type FontWeight = "normal" | "600" | "bold";
 
+type SharingParams = Record<string, string | number>;
+type SharingTranslate = (
+  locale: UiLocale,
+  key: SharingKey,
+  params?: SharingParams
+) => string;
+
+/**
+ * 根目录尚未汇入 sharing.* 时，核心 t 会抛出缺失键；这是有意的聚合依赖，
+ * 不在这里另建翻译器或中文回退。主会话聚合完成后可移除这层类型收窄。
+ */
+const translateSharing = t as unknown as SharingTranslate;
+
+function sharingText(
+  locale: UiLocale,
+  key: SharingKey,
+  params?: SharingParams
+): string {
+  return translateSharing(locale, key, params);
+}
+
+function localeOf(data: StatsCardData): UiLocale {
+  return data.locale ?? "zh-CN";
+}
+
+/** 中文保持旧卡片的紧凑数字；其他语言使用 Intl 分组。 */
+function numberText(locale: UiLocale, value: number): string {
+  return locale === "zh-CN" ? String(value) : formatNumber(locale, value);
+}
+
 const font = (size: number, weight: FontWeight = "normal", family = FONT_STACK) =>
   `${weight} ${size}px ${family}`;
 
@@ -133,14 +170,50 @@ function fittedFontSize(
   return Math.max(1, Math.floor((baseSize * maxWidth) / width));
 }
 
-function formatDateLabel(date: string): string {
+function parseIsoDate(date: string): Date | null {
   const [year, month, day] = date.split("-").map(Number);
-  return `${year}年${month}月${day}日`;
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day)
+  ) {
+    return null;
+  }
+  const value = new Date(Date.UTC(year, month - 1, day));
+  const valid =
+    value.getUTCFullYear() === year &&
+    value.getUTCMonth() === month - 1 &&
+    value.getUTCDate() === day;
+  return valid ? value : null;
 }
 
-function shortDateLabel(date: string): string {
-  const [, month, day] = date.split("-").map(Number);
-  return `${month}/${day}`;
+function formatDateLabel(date: string, locale: UiLocale): string {
+  const value = parseIsoDate(date);
+  if (!value) return date;
+  // 中文卡保持旧快照的“年月日”，法语才走 Intl。
+  if (locale === "zh-CN") {
+    return `${value.getUTCFullYear()}年${value.getUTCMonth() + 1}月${value.getUTCDate()}日`;
+  }
+  return formatDate(locale, value, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function shortDateLabel(date: string, locale: UiLocale): string {
+  const value = parseIsoDate(date);
+  if (!value) return date;
+  // 中文卡保持旧的“月/日”不补零；法语按本地习惯“日/月”。
+  if (locale === "zh-CN") {
+    return `${value.getUTCMonth() + 1}/${value.getUTCDate()}`;
+  }
+  return formatDate(locale, value, {
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "UTC",
+  });
 }
 
 function isValidShareContent(value: unknown): value is ShareCardContent {
@@ -169,7 +242,11 @@ function finiteSeconds(value: number): number {
 }
 
 /** 纯数据:最近 7 天(含 date)、阅读/做题秒数、今日 XP、目标、连击、等级与累计。 */
-export function buildStatsCardData(progress: Progress, date: string): StatsCardData {
+export function buildStatsCardData(
+  progress: Progress,
+  date: string,
+  locale: UiLocale = "zh-CN"
+): StatsCardData {
   const days: StatsCardDay[] = [];
   for (let offset = -6; offset <= 0; offset += 1) {
     const dayDate = shiftDate(date, offset);
@@ -178,7 +255,8 @@ export function buildStatsCardData(progress: Progress, date: string): StatsCardD
     const practiceSeconds = studySeconds(record, "practiceSeconds");
     days.push({
       date: dayDate,
-      label: offset === 0 ? "今天" : shortDateLabel(dayDate),
+      // label 始终是本地化短日期；今天的文字在绘制时按 locale 取“今天”文案。
+      label: shortDateLabel(dayDate, locale),
       xp: record?.xp ?? 0,
       isToday: offset === 0,
       readSeconds,
@@ -197,7 +275,8 @@ export function buildStatsCardData(progress: Progress, date: string): StatsCardD
 
   return {
     date,
-    dateLabel: formatDateLabel(date),
+    dateLabel: formatDateLabel(date, locale),
+    locale,
     mode: shareCardContentFor(progress),
     todayXp,
     goal,
@@ -250,28 +329,53 @@ function drawCardBackground(ctx: CanvasRenderingContext2D): void {
 }
 
 function drawCardHeader(ctx: CanvasRenderingContext2D, data: StatsCardData): void {
+  const locale = localeOf(data);
   ctx.fillStyle = COLOR_RULE;
   ctx.fillRect(MARGIN_X, 205, CONTENT_WIDTH, 2);
 
-  ctx.textAlign = "left";
-  ctx.fillStyle = COLOR_INK;
-  ctx.font = font(36, "bold");
-  ctx.fillText("法语语法练习", MARGIN_X, 130);
-
-  ctx.fillStyle = COLOR_SECONDARY;
-  ctx.font = font(30);
-  ctx.fillText(data.dateLabel, MARGIN_X, 170);
+  drawFittedLeftLine(
+    ctx,
+    sharingText(locale, "sharing.card.brand"),
+    MARGIN_X,
+    130,
+    CONTENT_WIDTH,
+    36,
+    "bold",
+    COLOR_INK
+  );
+  drawFittedLeftLine(
+    ctx,
+    data.dateLabel,
+    MARGIN_X,
+    170,
+    CONTENT_WIDTH,
+    30,
+    "normal",
+    COLOR_SECONDARY
+  );
 }
 
-function drawCardFooter(ctx: CanvasRenderingContext2D): void {
-  ctx.textAlign = "center";
-  ctx.fillStyle = COLOR_SECONDARY;
-  ctx.font = font(30);
-  ctx.fillText("每天练一点法语语法", CENTER_X, 1236);
-
-  ctx.fillStyle = COLOR_INK;
-  ctx.font = font(24);
-  ctx.fillText("法语语法练习", CENTER_X, 1266);
+function drawCardFooter(ctx: CanvasRenderingContext2D, locale: UiLocale): void {
+  drawFittedLine(
+    ctx,
+    sharingText(locale, "sharing.card.tagline"),
+    CENTER_X,
+    1236,
+    CONTENT_WIDTH,
+    30,
+    "normal",
+    COLOR_SECONDARY
+  );
+  drawFittedLine(
+    ctx,
+    sharingText(locale, "sharing.card.brand"),
+    CENTER_X,
+    1266,
+    CONTENT_WIDTH,
+    24,
+    "normal",
+    COLOR_INK
+  );
 }
 
 /** 白卡:先画 2px 纸边,再画纸面。 */
@@ -321,14 +425,23 @@ function drawGoalBar(
     );
   }
 
-  ctx.fillStyle = goalMet ? COLOR_GOLD_INK : COLOR_SECONDARY;
-  ctx.font = font(textSize);
-  ctx.fillText(
+  const locale = localeOf(data);
+  const goalText =
     data.goal > 0
-      ? `目标 ${data.goal} XP · 已完成 ${data.goalPercent}%`
-      : "未设置每日目标",
+      ? sharingText(locale, "sharing.card.goal", {
+          goal: numberText(locale, data.goal),
+          percent: numberText(locale, data.goalPercent),
+        })
+      : sharingText(locale, "sharing.card.goalNone");
+  drawFittedLine(
+    ctx,
+    goalText,
     CENTER_X,
-    textY
+    textY,
+    CONTENT_WIDTH - 24,
+    textSize,
+    "normal",
+    goalMet ? COLOR_GOLD_INK : COLOR_SECONDARY
   );
 }
 
@@ -345,6 +458,7 @@ function drawXpBars(
 ): void {
   const { chartTop, barHeight, valueSize, labelY, labelSize } = options;
   const chartBottom = chartTop + barHeight;
+  const locale = localeOf(data);
 
   data.days.forEach((day, index) => {
     const x = CHART_LEFT + index * (BAR_WIDTH + BAR_GAP);
@@ -358,7 +472,7 @@ function drawXpBars(
     fillRoundRect(ctx, x, y, BAR_WIDTH, height, 8);
 
     if (day.xp > 0) {
-      const valueText = String(day.xp);
+      const valueText = numberText(locale, day.xp);
       const fitted = fittedFontSize(
         ctx,
         valueText,
@@ -373,10 +487,22 @@ function drawXpBars(
       ctx.fillText(valueText, x + BAR_WIDTH / 2, y - 8);
     }
 
+    const label = day.isToday
+      ? sharingText(locale, "sharing.card.today")
+      : day.label;
+    const weight: FontWeight = day.isToday ? "bold" : "normal";
+    const fittedLabelSize = fittedFontSize(
+      ctx,
+      label,
+      labelSize,
+      BAR_WIDTH - 4,
+      weight,
+      FONT_STACK
+    );
     ctx.fillStyle = day.isToday ? COLOR_TEXT : COLOR_SECONDARY;
-    ctx.font = font(labelSize, day.isToday ? "bold" : "normal");
+    ctx.font = font(fittedLabelSize, weight);
     ctx.textAlign = "center";
-    ctx.fillText(day.label, x + BAR_WIDTH / 2, labelY);
+    ctx.fillText(label, x + BAR_WIDTH / 2, labelY);
   });
 }
 
@@ -393,6 +519,7 @@ function drawStudyBars(
 ): void {
   const { chartTop, barHeight, valueSize, labelY, labelSize } = options;
   const chartBottom = chartTop + barHeight;
+  const locale = localeOf(data);
 
   data.days.forEach((day, index) => {
     const x = CHART_LEFT + index * (BAR_WIDTH + BAR_GAP);
@@ -426,7 +553,7 @@ function drawStudyBars(
 
       const minutes = Math.round(total / 60);
       if (minutes > 0) {
-        const valueText = String(minutes);
+        const valueText = numberText(locale, minutes);
         const fitted = fittedFontSize(
           ctx,
           valueText,
@@ -442,44 +569,106 @@ function drawStudyBars(
       }
     }
 
+    const label = day.isToday
+      ? sharingText(locale, "sharing.card.today")
+      : day.label;
+    const weight: FontWeight = day.isToday ? "bold" : "normal";
+    const fittedLabelSize = fittedFontSize(
+      ctx,
+      label,
+      labelSize,
+      BAR_WIDTH - 4,
+      weight,
+      FONT_STACK
+    );
     ctx.fillStyle = day.isToday ? COLOR_TEXT : COLOR_SECONDARY;
-    ctx.font = font(labelSize, day.isToday ? "bold" : "normal");
+    ctx.font = font(fittedLabelSize, weight);
     ctx.textAlign = "center";
-    ctx.fillText(day.label, x + BAR_WIDTH / 2, labelY);
+    ctx.fillText(label, x + BAR_WIDTH / 2, labelY);
   });
+}
+
+interface StudyLegendLayout {
+  size: number;
+  dotSize: number;
+  dotGap: number;
+  itemGap: number;
+  readText: string;
+  practiceText: string;
+  readWidth: number;
+  practiceWidth: number;
+  width: number;
+}
+
+/** 图例先按可用宽度测量；极长译文整体缩小，避免压到左侧标题。 */
+function studyLegendLayout(
+  ctx: CanvasRenderingContext2D,
+  locale: UiLocale,
+  maxWidth: number
+): StudyLegendLayout {
+  const readText = sharingText(locale, "sharing.card.legendRead");
+  const practiceText = sharingText(locale, "sharing.card.legendPractice");
+  const dotSize = 16;
+  const dotGap = 8;
+  const itemGap = 24;
+
+  const measure = (size: number) => {
+    ctx.font = font(size);
+    const readWidth = ctx.measureText(readText).width;
+    const practiceWidth = ctx.measureText(practiceText).width;
+    return {
+      readWidth,
+      practiceWidth,
+      width:
+        readWidth +
+        practiceWidth +
+        dotSize * 2 +
+        dotGap * 2 +
+        itemGap,
+    };
+  };
+
+  let size = 24;
+  let measured = measure(size);
+  if (measured.width > maxWidth) {
+    size = Math.max(12, Math.floor((size * maxWidth) / measured.width));
+    measured = measure(size);
+  }
+
+  return { size, dotSize, dotGap, itemGap, readText, practiceText, ...measured };
 }
 
 function drawStudyLegend(
   ctx: CanvasRenderingContext2D,
   rightEdge: number,
-  baseline: number
+  baseline: number,
+  layout: StudyLegendLayout
 ): void {
-  const labelSize = 24;
-  const dotSize = 16;
-  const dotGap = 8;
-  const itemGap = 24;
-  ctx.font = font(labelSize);
-  const readWidth = ctx.measureText("看讲解").width;
-  const practiceWidth = ctx.measureText("做练习").width;
-
-  const practiceLabelX = rightEdge - practiceWidth;
-  const practiceDotX = practiceLabelX - dotGap - dotSize;
-  const readLabelX = practiceDotX - itemGap - readWidth;
-  const readDotX = readLabelX - dotGap - dotSize;
+  const practiceLabelX = rightEdge - layout.practiceWidth;
+  const practiceDotX = practiceLabelX - layout.dotGap - layout.dotSize;
+  const readLabelX = practiceDotX - layout.itemGap - layout.readWidth;
+  const readDotX = readLabelX - layout.dotGap - layout.dotSize;
 
   ctx.fillStyle = COLOR_GOLD;
-  fillRoundRect(ctx, readDotX, baseline - 16, dotSize, dotSize, 3);
+  fillRoundRect(ctx, readDotX, baseline - 16, layout.dotSize, layout.dotSize, 3);
   ctx.fillStyle = COLOR_SECONDARY;
-  ctx.font = font(labelSize);
+  ctx.font = font(layout.size);
   ctx.textAlign = "left";
-  ctx.fillText("看讲解", readLabelX, baseline);
+  ctx.fillText(layout.readText, readLabelX, baseline);
 
   ctx.fillStyle = COLOR_PRIMARY;
-  fillRoundRect(ctx, practiceDotX, baseline - 16, dotSize, dotSize, 3);
+  fillRoundRect(
+    ctx,
+    practiceDotX,
+    baseline - 16,
+    layout.dotSize,
+    layout.dotSize,
+    3
+  );
   ctx.fillStyle = COLOR_SECONDARY;
-  ctx.font = font(labelSize);
+  ctx.font = font(layout.size);
   ctx.textAlign = "left";
-  ctx.fillText("做练习", practiceLabelX, baseline);
+  ctx.fillText(layout.practiceText, practiceLabelX, baseline);
 }
 
 /** 整周无数据时的安静提示:避免白色图表卡看起来像渲染失败。 */
@@ -488,10 +677,7 @@ function drawChartEmptyNote(
   text: string,
   y: number
 ): void {
-  ctx.fillStyle = COLOR_SECONDARY;
-  ctx.font = font(28);
-  ctx.textAlign = "center";
-  ctx.fillText(text, CENTER_X, y);
+  drawFittedLine(ctx, text, CENTER_X, y, CONTENT_WIDTH, 28, "normal", COLOR_SECONDARY);
 }
 
 /** 固定字号整行:长文本(大时长)按内容宽度收缩,中文仍走系统无衬线。 */
@@ -512,14 +698,82 @@ function drawFittedLine(
   ctx.fillText(text, x, y);
 }
 
+/** 左对齐整行:按可用宽度收缩，供品牌与图表标题使用。 */
+function drawFittedLeftLine(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  baseSize: number,
+  weight: FontWeight,
+  color: string
+): void {
+  const size = fittedFontSize(ctx, text, baseSize, maxWidth, weight, FONT_STACK);
+  ctx.fillStyle = color;
+  ctx.font = font(size, weight);
+  ctx.textAlign = "left";
+  ctx.fillText(text, x, y);
+}
+
+/** 时间图标题与图例共用一行:先量图例，再把剩余宽度交给可收缩的标题。 */
+function drawStudyPanelHeader(
+  ctx: CanvasRenderingContext2D,
+  data: StatsCardData,
+  titleKey: SharingKey,
+  titleY: number
+): void {
+  const locale = localeOf(data);
+  const titleX = MARGIN_X + 40;
+  const rightEdge = CHART_PANEL_X + CHART_PANEL_WIDTH - 40;
+  const gap = 24;
+  const legend = studyLegendLayout(ctx, locale, rightEdge - titleX);
+  const titleMaxWidth = Math.max(1, rightEdge - titleX - legend.width - gap);
+
+  drawFittedLeftLine(
+    ctx,
+    sharingText(locale, titleKey),
+    titleX,
+    titleY,
+    titleMaxWidth,
+    27,
+    "bold",
+    COLOR_TEXT
+  );
+  drawStudyLegend(ctx, rightEdge, titleY, legend);
+}
+
+/** 无图例的图表标题。 */
+function drawPanelTitle(
+  ctx: CanvasRenderingContext2D,
+  data: StatsCardData,
+  titleKey: SharingKey,
+  titleY: number
+): void {
+  const locale = localeOf(data);
+  const titleX = MARGIN_X + 40;
+  const rightEdge = CHART_PANEL_X + CHART_PANEL_WIDTH - 40;
+  drawFittedLeftLine(
+    ctx,
+    sharingText(locale, titleKey),
+    titleX,
+    titleY,
+    rightEdge - titleX,
+    26,
+    "bold",
+    COLOR_TEXT
+  );
+}
+
 /** 经验卡:保留上一版版式,只增加整行缩放与模式分支。 */
 function drawXpStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): void {
   drawCardBackground(ctx);
   drawCardHeader(ctx, data);
 
+  const locale = localeOf(data);
   // 今日 XP 主视觉
   ctx.textAlign = "center";
-  const todayXpText = String(data.todayXp);
+  const todayXpText = numberText(locale, data.todayXp);
   const todayXpSize = fittedFontSize(
     ctx,
     todayXpText,
@@ -534,22 +788,22 @@ function drawXpStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): vo
 
   ctx.fillStyle = COLOR_SECONDARY;
   ctx.font = font(44);
-  ctx.fillText("今日 XP", CENTER_X, 450);
+  ctx.fillText(sharingText(locale, "sharing.card.todayXp"), CENTER_X, 450);
 
   drawGoalBar(ctx, data, 520, 28, 596, 32);
 
   // 三指标行
   const metrics = [
-    { value: data.streak, label: "连击天数" },
-    { value: data.level, label: "等级" },
-    { value: data.totalXp, label: "累计 XP" },
+    { value: data.streak, label: sharingText(locale, "sharing.card.streak") },
+    { value: data.level, label: sharingText(locale, "sharing.card.level") },
+    { value: data.totalXp, label: sharingText(locale, "sharing.card.totalXp") },
   ];
   const columnX = [
     MARGIN_X + CONTENT_WIDTH / 6,
     CENTER_X,
     MARGIN_X + (CONTENT_WIDTH * 5) / 6,
   ];
-  const metricValues = metrics.map((metric) => String(metric.value));
+  const metricValues = metrics.map((metric) => numberText(locale, metric.value));
   // 三指标共用一个字号:极端大值时整行一起缩,避免同一行出现三种数字大小。
   const metricSize = Math.min(
     72,
@@ -561,11 +815,18 @@ function drawXpStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): vo
     ctx.fillStyle = COLOR_TEXT;
     ctx.font = displayFont(metricSize);
     ctx.textAlign = "center";
-    ctx.fillText(String(metric.value), columnX[index], 710);
+    ctx.fillText(numberText(locale, metric.value), columnX[index], 710);
 
-    ctx.fillStyle = COLOR_SECONDARY;
-    ctx.font = font(30);
-    ctx.fillText(metric.label, columnX[index], 760);
+    drawFittedLine(
+      ctx,
+      metric.label,
+      columnX[index],
+      760,
+      METRIC_MAX_WIDTH,
+      30,
+      "normal",
+      COLOR_SECONDARY
+    );
   });
 
   drawChartPanel(
@@ -584,18 +845,19 @@ function drawXpStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): vo
     labelSize: 24,
   });
   if (!data.days.some((day) => day.xp > 0)) {
-    drawChartEmptyNote(ctx, "这一周还没有得分", 1010);
+    drawChartEmptyNote(ctx, sharingText(locale, "sharing.card.emptyXp"), 1010);
   }
 
-  drawCardFooter(ctx);
+  drawCardFooter(ctx, locale);
 }
 
 /** 时间卡:今日学习时长 + 分项/累计 + 七日时间堆叠图,不出现 XP 目标与等级。 */
 function drawTimeStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): void {
   drawCardBackground(ctx);
   drawCardHeader(ctx, data);
+  const locale = localeOf(data);
 
-  const heroText = formatStudyDuration(data.todayStudy);
+  const heroText = formatStudyDuration(data.todayStudy, locale);
   const heroSize = fittedFontSize(
     ctx,
     heroText,
@@ -611,13 +873,14 @@ function drawTimeStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): 
 
   ctx.fillStyle = COLOR_SECONDARY;
   ctx.font = font(44);
-  ctx.fillText("今日学习时长", CENTER_X, 468);
+  ctx.fillText(sharingText(locale, "sharing.card.todayStudy"), CENTER_X, 468);
 
   drawFittedLine(
     ctx,
-    `看讲解 ${formatStudyDuration(data.todayRead)} · 做练习 ${formatStudyDuration(
-      data.todayPractice
-    )}`,
+    sharingText(locale, "sharing.card.studyBreakdown", {
+      read: formatStudyDuration(data.todayRead, locale),
+      practice: formatStudyDuration(data.todayPractice, locale),
+    }),
     CENTER_X,
     550,
     CONTENT_WIDTH,
@@ -632,7 +895,9 @@ function drawTimeStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): 
 
   drawFittedLine(
     ctx,
-    `累计学习 ${formatStudyDuration(data.studyTotal)}`,
+    sharingText(locale, "sharing.card.totalStudy", {
+      total: formatStudyDuration(data.studyTotal, locale),
+    }),
     CENTER_X,
     648,
     CONTENT_WIDTH,
@@ -642,9 +907,10 @@ function drawTimeStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): 
   );
   drawFittedLine(
     ctx,
-    `看讲解 ${formatStudyDuration(data.studyRead)} · 做练习 ${formatStudyDuration(
-      data.studyPractice
-    )}`,
+    sharingText(locale, "sharing.card.studyBreakdown", {
+      read: formatStudyDuration(data.studyRead, locale),
+      practice: formatStudyDuration(data.studyPractice, locale),
+    }),
     CENTER_X,
     698,
     CONTENT_WIDTH,
@@ -662,15 +928,7 @@ function drawTimeStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): 
     CHART_PANEL_RADIUS
   );
 
-  ctx.textAlign = "left";
-  ctx.fillStyle = COLOR_TEXT;
-  ctx.font = font(27, "bold");
-  ctx.fillText("最近 7 天学习时长（分钟）", MARGIN_X + 40, TIME_PANEL_TITLE_Y);
-  drawStudyLegend(
-    ctx,
-    CHART_PANEL_X + CHART_PANEL_WIDTH - 40,
-    TIME_PANEL_TITLE_Y
-  );
+  drawStudyPanelHeader(ctx, data, "sharing.card.weekStudy", TIME_PANEL_TITLE_Y);
 
   drawStudyBars(ctx, data, {
     chartTop: TIME_CHART_TOP,
@@ -680,19 +938,20 @@ function drawTimeStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): 
     labelSize: 24,
   });
   if (!data.days.some((day) => day.studySeconds > 0)) {
-    drawChartEmptyNote(ctx, "这一周还没有学习记录", 950);
+    drawChartEmptyNote(ctx, sharingText(locale, "sharing.card.emptyStudy"), 950);
   }
 
-  drawCardFooter(ctx);
+  drawCardFooter(ctx, locale);
 }
 
 /** 都有卡:今日 XP 与时间并列,七日 XP/时间各用独立刻度。 */
 function drawBothStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): void {
   drawCardBackground(ctx);
   drawCardHeader(ctx, data);
+  const locale = localeOf(data);
 
   // 左:今日 XP
-  const xpText = String(data.todayXp);
+  const xpText = numberText(locale, data.todayXp);
   const xpSize = fittedFontSize(
     ctx,
     xpText,
@@ -708,14 +967,18 @@ function drawBothStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): 
 
   ctx.fillStyle = COLOR_SECONDARY;
   ctx.font = font(34);
-  ctx.fillText("今日 XP", BOTH_XP_X, BOTH_HERO_LABELS_Y);
+  ctx.fillText(
+    sharingText(locale, "sharing.card.todayXp"),
+    BOTH_XP_X,
+    BOTH_HERO_LABELS_Y
+  );
 
   // 中间细分隔线,避免两个主视觉连读。
   ctx.fillStyle = COLOR_RULE;
   ctx.fillRect(CENTER_X - 1, 258, 2, 210);
 
   // 右:今日学习时长
-  const timeText = formatStudyDuration(data.todayStudy);
+  const timeText = formatStudyDuration(data.todayStudy, locale);
   const timeSize = fittedFontSize(
     ctx,
     timeText,
@@ -730,7 +993,11 @@ function drawBothStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): 
 
   ctx.fillStyle = COLOR_SECONDARY;
   ctx.font = font(34);
-  ctx.fillText("今日学习时长", BOTH_TIME_X, BOTH_HERO_LABELS_Y);
+  ctx.fillText(
+    sharingText(locale, "sharing.card.todayStudy"),
+    BOTH_TIME_X,
+    BOTH_HERO_LABELS_Y
+  );
 
   drawGoalBar(ctx, data, 520, 24, 578, 30);
 
@@ -743,10 +1010,7 @@ function drawBothStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): 
     BOTH_XP_PANEL_HEIGHT,
     24
   );
-  ctx.textAlign = "left";
-  ctx.fillStyle = COLOR_TEXT;
-  ctx.font = font(26, "bold");
-  ctx.fillText("最近 7 天 XP", MARGIN_X + 40, BOTH_XP_TITLE_Y);
+  drawPanelTitle(ctx, data, "sharing.card.weekXp", BOTH_XP_TITLE_Y);
   drawXpBars(ctx, data, {
     chartTop: BOTH_XP_CHART_TOP,
     barHeight: BOTH_XP_CHART_BAR_HEIGHT,
@@ -755,7 +1019,7 @@ function drawBothStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): 
     labelSize: 22,
   });
   if (!data.days.some((day) => day.xp > 0)) {
-    drawChartEmptyNote(ctx, "这一周还没有得分", 770);
+    drawChartEmptyNote(ctx, sharingText(locale, "sharing.card.emptyXp"), 770);
   }
 
   // 近七天学习时长:独立时间刻度(分钟),不与 XP 共用。
@@ -767,15 +1031,7 @@ function drawBothStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): 
     BOTH_STUDY_PANEL_HEIGHT,
     24
   );
-  ctx.textAlign = "left";
-  ctx.fillStyle = COLOR_TEXT;
-  ctx.font = font(26, "bold");
-  ctx.fillText("最近 7 天学习时长（分钟）", MARGIN_X + 40, BOTH_STUDY_TITLE_Y);
-  drawStudyLegend(
-    ctx,
-    CHART_PANEL_X + CHART_PANEL_WIDTH - 40,
-    BOTH_STUDY_TITLE_Y
-  );
+  drawStudyPanelHeader(ctx, data, "sharing.card.weekStudy", BOTH_STUDY_TITLE_Y);
   drawStudyBars(ctx, data, {
     chartTop: BOTH_STUDY_CHART_TOP,
     barHeight: BOTH_STUDY_CHART_BAR_HEIGHT,
@@ -784,10 +1040,10 @@ function drawBothStatsCard(ctx: CanvasRenderingContext2D, data: StatsCardData): 
     labelSize: 22,
   });
   if (!data.days.some((day) => day.studySeconds > 0)) {
-    drawChartEmptyNote(ctx, "这一周还没有学习记录", 1040);
+    drawChartEmptyNote(ctx, sharingText(locale, "sharing.card.emptyStudy"), 1040);
   }
 
-  drawCardFooter(ctx);
+  drawCardFooter(ctx, locale);
 }
 
 /**
@@ -812,6 +1068,12 @@ export function createStatsCardCanvas(data: StatsCardData): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = SHARE_CARD_WIDTH;
   canvas.height = SHARE_CARD_HEIGHT;
+  // 离屏画布也带上当前语言的可访问名称，插入页面或读屏引用时不会退回中文。
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute(
+    "aria-label",
+    sharingText(localeOf(data), "sharing.share.ariaLabel")
+  );
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas 2D unavailable");
   drawStatsCard(ctx, data);
@@ -831,6 +1093,11 @@ export function statsCardBase64(canvas: HTMLCanvasElement): string {
   return canvas.toDataURL("image/png").replace(/^data:image\/png;base64,/, "");
 }
 
-export function statsCardFilename(date: string): string {
-  return `fge-stats-${date}.png`;
+export function statsCardFilename(
+  date: string,
+  locale: UiLocale = "zh-CN"
+): string {
+  return locale === "zh-CN"
+    ? `fge-stats-${date}.png`
+    : `fge-stats-${locale}-${date}.png`;
 }

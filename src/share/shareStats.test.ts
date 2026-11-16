@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { formatUserError } from "../i18n/errors";
 import type { Progress } from "../types";
-import { shareStatsCard } from "./shareStats";
+import { shareStatsCard, type ShareResult } from "./shareStats";
 
 const DATE = "2026-11-04";
+const CJK = /[\u3400-\u9fff]/;
 const FILENAME = "fge-stats-2026-11-04.png";
 const CACHED_URI = `file:///cache/share/${FILENAME}`;
 const PROGRESS = { xp: 42 } as Progress;
@@ -103,6 +105,13 @@ function mockWebShare(
   setNavigatorMethod("share", methods.share);
 }
 
+function errorOf(result: ShareResult): Extract<ShareResult, { status: "error" }> {
+  if (result.status !== "error") {
+    throw new Error(`expected error, received ${result.status}`);
+  }
+  return result;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   removeHarmonyBridge();
@@ -160,6 +169,12 @@ describe("shareStatsCard web", () => {
 
     expect(result).toEqual({ status: "shared" });
     expect(canShare).toHaveBeenCalledWith({ files: [expect.any(File)] });
+    expect(statsCardMocks.buildStatsCardData).toHaveBeenCalledWith(
+      PROGRESS,
+      DATE,
+      "zh-CN"
+    );
+    expect(statsCardMocks.statsCardFilename).toHaveBeenCalledWith(DATE, "zh-CN");
     expect(share).toHaveBeenCalledTimes(1);
     const options = share.mock.calls[0][0];
     expect(options?.title).toBe("我的法语学习打卡");
@@ -170,6 +185,63 @@ describe("shareStatsCard web", () => {
       type: "image/png",
     });
     expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  test("法语：文件名、卡片数据与 Web 分享标题使用当前语言", async () => {
+    const canShare = vi.fn<CanShareFn>(() => true);
+    const share = vi.fn<ShareFn>(async () => {});
+    mockWebShare({ canShare, share });
+
+    const result = await shareStatsCard(PROGRESS, DATE, "fr");
+
+    expect(result).toEqual({ status: "shared" });
+    expect(statsCardMocks.buildStatsCardData).toHaveBeenCalledWith(
+      PROGRESS,
+      DATE,
+      "fr"
+    );
+    expect(statsCardMocks.statsCardFilename).toHaveBeenCalledWith(DATE, "fr");
+    expect(share.mock.calls[0][0]?.title).toBe(
+      "Ma progression en grammaire française"
+    );
+  });
+
+  test("法语 Error 原文只作诊断，不作主提示", async () => {
+    mockWebShare();
+    statsCardMocks.createStatsCardCanvas.mockImplementation(() => {
+      throw new Error("Canvas 2D unavailable");
+    });
+
+    const result = errorOf(await shareStatsCard(PROGRESS, DATE, "fr"));
+
+    expect(result.message).toBe("Canvas 2D unavailable");
+    expect(result.error).toEqual({
+      code: "errors.unknown",
+      diagnostic: "Canvas 2D unavailable",
+    });
+
+    const formatted = formatUserError(result.error, "fr");
+    expect(formatted.message).toBe("L'opération a échoué. Veuillez réessayer.");
+    expect(formatted.message).not.toContain("Canvas");
+    expect(formatted.diagnostic).toBe("Canvas 2D unavailable");
+  });
+
+  test("法语旧字符串规范化为 unknown 诊断，不用中文当主提示", async () => {
+    capacitorMock.isNativePlatform.mockReturnValue(true);
+    sharePluginMock.share.mockRejectedValue("没有可用的分享目标");
+
+    const result = errorOf(await shareStatsCard(PROGRESS, DATE, "fr"));
+
+    expect(result.message).toBe("没有可用的分享目标");
+    expect(result.error).toEqual({
+      code: "errors.unknown",
+      diagnostic: "没有可用的分享目标",
+    });
+
+    const formatted = formatUserError(result.error, "fr");
+    expect(formatted.message).not.toMatch(CJK);
+    expect(formatted.message).not.toContain("没有可用的分享目标");
+    expect(formatted.diagnostic).toBe("没有可用的分享目标");
   });
 
   test("用户取消(AbortError)→ cancelled,不触发下载", async () => {
@@ -239,11 +311,15 @@ describe("shareStatsCard web", () => {
     );
     mockWebShare({ canShare: () => true, share: vi.fn(async () => {}) });
 
-    const result = await shareStatsCard(PROGRESS, DATE);
+    const result = errorOf(await shareStatsCard(PROGRESS, DATE));
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       status: "error",
       message: "Canvas PNG export failed",
+      error: {
+        code: "errors.unknown",
+        diagnostic: "Canvas PNG export failed",
+      },
     });
   });
 });
@@ -272,16 +348,38 @@ describe("shareStatsCard native", () => {
     });
   });
 
-  test("系统分享 reject → error,message 可见", async () => {
+  test("法语：原生分享标题与对话框标题使用当前语言", async () => {
+    capacitorMock.isNativePlatform.mockReturnValue(true);
+
+    const result = await shareStatsCard(PROGRESS, DATE, "fr");
+
+    expect(result).toEqual({ status: "shared" });
+    expect(sharePluginMock.share).toHaveBeenCalledWith({
+      title: "Ma progression en grammaire française",
+      dialogTitle: "Partager ma progression",
+      files: [CACHED_URI],
+    });
+    expect(statsCardMocks.statsCardFilename).toHaveBeenCalledWith(DATE, "fr");
+  });
+
+  test("系统分享 reject → 结构化 unknown，原文只进诊断", async () => {
     capacitorMock.isNativePlatform.mockReturnValue(true);
     sharePluginMock.share.mockRejectedValue(new Error("没有可用的分享目标"));
 
-    const result = await shareStatsCard(PROGRESS, DATE);
+    const result = errorOf(await shareStatsCard(PROGRESS, DATE));
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       status: "error",
       message: "没有可用的分享目标",
+      error: {
+        code: "errors.unknown",
+        diagnostic: "没有可用的分享目标",
+      },
     });
+
+    const fr = formatUserError(result.error, "fr");
+    expect(fr.message).not.toMatch(CJK);
+    expect(fr.diagnostic).toBe("没有可用的分享目标");
   });
 });
 
@@ -320,20 +418,31 @@ describe("shareStatsCard harmony", () => {
     expect(clickedAnchors).toHaveLength(0);
   });
 
-  test("鸿蒙 error 响应 → error,message 可见且不降级", async () => {
+  test("鸿蒙 error 响应 → 保留结构化 code/params/diagnostic，不降级", async () => {
     capacitorMock.isNativePlatform.mockReturnValue(true);
     installHarmonyBridge(
       vi.fn(async () =>
-        JSON.stringify({ status: "error", message: "没有可用的分享目标" })
+        JSON.stringify({
+          status: "error",
+          code: "native.unsupported",
+          params: { operation: "share" },
+          message: "没有可用的分享目标",
+        })
       )
     );
 
-    const result = await shareStatsCard(PROGRESS, DATE);
+    const result = errorOf(await shareStatsCard(PROGRESS, DATE, "fr"));
 
-    expect(result).toEqual({
-      status: "error",
-      message: "没有可用的分享目标",
+    expect(result.error).toEqual({
+      code: "native.unsupported",
+      params: { operation: "share" },
+      diagnostic: "没有可用的分享目标",
     });
+    expect(result.message).toBe("没有可用的分享目标");
+
+    const fr = formatUserError(result.error, "fr");
+    expect(fr.message).toContain("n'est pas prise en charge");
+    expect(fr.diagnostic).toBe("没有可用的分享目标");
     expect(sharePluginMock.share).not.toHaveBeenCalled();
     expect(createObjectURL).not.toHaveBeenCalled();
   });
@@ -362,15 +471,30 @@ describe("shareStatsCard desktop", () => {
     const result = await shareStatsCard(PROGRESS, DATE);
 
     expect(result).toEqual({ status: "downloaded", filename: FILENAME });
-    expect(desktopMock.saveDesktopFile).toHaveBeenCalledWith({
-      filename: FILENAME,
-      mimeType: "image/png",
-      encoding: "base64",
-      data: "QUJD",
-    });
+    expect(desktopMock.saveDesktopFile).toHaveBeenCalledWith(
+      {
+        filename: FILENAME,
+        mimeType: "image/png",
+        encoding: "base64",
+        data: "QUJD",
+      },
+      { dialogTitle: "保存分享卡" }
+    );
     expect(filesystemMock.writeFile).not.toHaveBeenCalled();
     expect(sharePluginMock.share).not.toHaveBeenCalled();
     expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  test("法语桌面另存为传本地化 dialogTitle", async () => {
+    desktopMock.saveDesktopFile.mockResolvedValue({ status: "saved" });
+
+    const result = await shareStatsCard(PROGRESS, DATE, "fr");
+
+    expect(result).toEqual({ status: "downloaded", filename: FILENAME });
+    expect(desktopMock.saveDesktopFile).toHaveBeenCalledWith(
+      expect.objectContaining({ filename: FILENAME }),
+      { dialogTitle: "Enregistrer la carte de partage" }
+    );
   });
 
   test("取消另存为 → cancelled,不降级为下载", async () => {
@@ -383,17 +507,27 @@ describe("shareStatsCard desktop", () => {
     expect(clickedAnchors).toHaveLength(0);
   });
 
-  test("原生保存失败 → error,不偷偷下载", async () => {
+  test("原生保存失败 → 结构化错误,不偷偷下载", async () => {
     desktopMock.saveDesktopFile.mockRejectedValue(
-      new Error("无法写入导出文件")
+      Object.assign(new Error("save failed"), {
+        code: "native.file_failed",
+        params: { operation: "save" },
+        diagnostic: "disk raw detail",
+      })
     );
 
-    const result = await shareStatsCard(PROGRESS, DATE);
+    const result = errorOf(await shareStatsCard(PROGRESS, DATE, "fr"));
 
-    expect(result).toEqual({
-      status: "error",
-      message: "无法写入导出文件",
+    expect(result.error).toEqual({
+      code: "native.file_failed",
+      params: { operation: "save" },
+      diagnostic: "disk raw detail",
     });
+    expect(result.message).toBe("disk raw detail");
+
+    const fr = formatUserError(result.error, "fr");
+    expect(fr.message).toContain("fichier de sauvegarde");
+    expect(fr.diagnostic).toBe("disk raw detail");
     expect(createObjectURL).not.toHaveBeenCalled();
     expect(clickedAnchors).toHaveLength(0);
   });
@@ -405,11 +539,15 @@ describe("shareStatsCard generation", () => {
       throw new Error("Canvas 2D unavailable");
     });
 
-    const result = await shareStatsCard(PROGRESS, DATE);
+    const result = errorOf(await shareStatsCard(PROGRESS, DATE));
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       status: "error",
       message: "Canvas 2D unavailable",
+      error: {
+        code: "errors.unknown",
+        diagnostic: "Canvas 2D unavailable",
+      },
     });
   });
 });

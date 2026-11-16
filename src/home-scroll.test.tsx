@@ -11,6 +11,8 @@ import App from "./App";
 import { CHAPTERS } from "./content";
 import { HomeView } from "./views/HomeView";
 import { DEFAULT_PROGRESS } from "./storage";
+import { LocaleProvider } from "./i18n/LocaleProvider";
+import { UI_LOCALES } from "./i18n/types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -34,15 +36,17 @@ function click(el: Element | null) {
 function renderHome(openChapterId?: string, openLessonId?: string) {
   act(() =>
     root.render(
-      <HomeView
-        chapters={CHAPTERS}
-        progress={DEFAULT_PROGRESS}
-        openChapterId={openChapterId}
-        openLessonId={openLessonId}
-        onOpenLesson={() => {}}
-        onOpenCards={() => {}}
-        onOpenReview={() => {}}
-      />
+      <LocaleProvider supportedLocales={UI_LOCALES}>
+        <HomeView
+          chapters={CHAPTERS}
+          progress={DEFAULT_PROGRESS}
+          openChapterId={openChapterId}
+          openLessonId={openLessonId}
+          onOpenLesson={() => {}}
+          onOpenCards={() => {}}
+          onOpenReview={() => {}}
+        />
+      </LocaleProvider>
     )
   );
 }

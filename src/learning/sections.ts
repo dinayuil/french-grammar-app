@@ -636,6 +636,18 @@ export function allLearningSections(set: ChapterSections): LearningSection[] {
   return set.comprehensive ? [...set.sections, set.comprehensive] : [...set.sections];
 }
 
+/**
+ * 小章配置 key。对外 id 以 `chapter.id::key` 组成；内容本地化的
+ * `sectionTitles` 也按该 key 映射。该函数只读 id，不改变归属或顺序。
+ */
+export function sectionKeyFor(
+  section: LearningSection,
+  chapterId: string
+): string {
+  const prefix = `${chapterId}::`;
+  return section.id.startsWith(prefix) ? section.id.slice(prefix.length) : section.id;
+}
+
 export function findSectionById(
   set: ChapterSections,
   sectionId: string

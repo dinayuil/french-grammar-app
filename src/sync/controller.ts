@@ -1,15 +1,18 @@
 import { createBackup } from "../backup/progressBackup";
 import type { ProgressBackup } from "../backup/progressBackup";
+import {
+  formatUserError,
+  normalizeUserFacingError,
+  type UserFacingError,
+} from "../i18n/errors";
 import type { Progress } from "../types";
 import {
-  SyncStorageError,
   clearSyncBaseline,
   readSyncBaseline,
   writeSyncBaseline,
   writeSyncRecovery,
 } from "./storage";
 import {
-  SyncError,
   buildGetRequest,
   buildMkcolRequest,
   buildPropfindRequest,
@@ -60,35 +63,35 @@ interface SyncAccount {
 
 type UploadResult = "ok" | "retry" | "failed";
 
-function errorMessage(error: unknown, fallback: string): string {
-  if (error instanceof SyncStorageError || error instanceof SyncError) {
-    return error.message;
-  }
-  if (error instanceof Error && error.message) return error.message;
-  return fallback;
+function diagnosticOf(error: unknown): string | undefined {
+  return normalizeUserFacingError(error).diagnostic;
+}
+
+function zhMessage(error: UserFacingError): string {
+  return formatUserError(error, "zh-CN").message;
 }
 
 function nowIso(): string {
   return new Date().toISOString();
 }
 
-function httpMessage(status: number): string {
+function httpError(status: number): UserFacingError {
   if (status === 401 || status === 403) {
-    return "云端认证失败，请检查用户名与应用密码";
+    return { code: "sync.error.http_auth" };
   }
   if (status === 404) {
-    return "云端同步目录或文件不存在，请检查 WebDAV 地址";
+    return { code: "sync.error.http_not_found" };
   }
   if (status >= 300 && status < 400) {
-    return "云端重定向被拒绝，请检查 WebDAV 地址";
+    return { code: "sync.error.http_redirect" };
   }
   if (status === 412) {
-    return "云端进度已被其他设备修改，正在重新比较";
+    return { code: "sync.error.http_conflict" };
   }
   if (status === 507) {
-    return "云端存储空间不足";
+    return { code: "sync.error.http_storage_full" };
   }
-  return `云端请求失败（HTTP ${status}）`;
+  return { code: "sync.error.http_generic", params: { status } };
 }
 
 function isSuccess(status: number): boolean {
@@ -112,6 +115,8 @@ export function createSyncController(
     status: "disabled",
     config: null,
     message: "",
+    error: null,
+    notice: null,
     lastSyncedAt: null,
     conflict: null,
   };
@@ -162,8 +167,47 @@ export function createSyncController(
     emit();
   }
 
-  function fail(message: string): void {
-    commit({ status: "error", message });
+  function fail(
+    code: string,
+    params?: Record<string, string | number>,
+    diagnostic?: string
+  ): void {
+    const error: UserFacingError = {
+      code,
+      ...(params ? { params } : {}),
+      ...(diagnostic ? { diagnostic } : {}),
+    };
+    commit({
+      status: "error",
+      message: zhMessage(error),
+      error,
+      notice: null,
+    });
+  }
+
+  function notice(
+    code: string,
+    params?: Record<string, string | number>
+  ): UserFacingError {
+    return {
+      code,
+      ...(params ? { params } : {}),
+    };
+  }
+
+  /** 优先保留原生稳定错误码；旧桥字符串仍落到本层 fallback 业务码。 */
+  function failFrom(error: unknown, fallbackCode: string): void {
+    const normalized = normalizeUserFacingError(error);
+    if (normalized.code.startsWith("native.")) {
+      commit({
+        status: "error",
+        message: zhMessage(normalized),
+        error: normalized,
+        notice: null,
+      });
+      return;
+    }
+    fail(fallbackCode, undefined, normalized.diagnostic);
   }
 
   function clearLocalTimer(): void {
@@ -213,7 +257,7 @@ export function createSyncController(
       writeSyncBaseline(storage, account, { etag, progress, syncedAt });
       return syncedAt;
     } catch (error) {
-      fail(errorMessage(error, "保存同步基线失败，请检查本地存储空间"));
+      fail("sync.error.baseline_save_failed", undefined, diagnosticOf(error));
       return null;
     }
   }
@@ -233,7 +277,7 @@ export function createSyncController(
       });
       return true;
     } catch (error) {
-      fail(errorMessage(error, "保存同步恢复副本失败，请检查本地存储空间"));
+      fail("sync.error.recovery_save_failed", undefined, diagnosticOf(error));
       return false;
     }
   }
@@ -245,7 +289,9 @@ export function createSyncController(
     remoteEtag: string
   ): void {
     const conflict: SyncConflict = { local, remote, remoteEtag };
-    let message = "云端与本机都有新的学习进度，请选择保留哪一份";
+    const baseMessage = zhMessage({ code: "sync.message.conflict" });
+    let message = baseMessage;
+    let recoveryDiagnostic: string | undefined;
     try {
       writeSyncRecovery(storage, account, {
         savedAt: nowIso(),
@@ -254,10 +300,20 @@ export function createSyncController(
         remote,
       });
     } catch {
-      message += "（恢复副本保存失败，请先导出备份）";
+      recoveryDiagnostic = "恢复副本保存失败，请先导出备份";
+      message += `（${recoveryDiagnostic}）`;
     }
     deferred = false;
-    commit({ status: "conflict", message, conflict });
+    commit({
+      status: "conflict",
+      message,
+      error: null,
+      notice: {
+        code: "sync.message.conflict",
+        ...(recoveryDiagnostic ? { diagnostic: recoveryDiagnostic } : {}),
+      },
+      conflict,
+    });
   }
 
   async function requestGet(token: number): Promise<
@@ -266,8 +322,8 @@ export function createSyncController(
   > {
     try {
       return { kind: "ok", response: await options.adapter.request(buildGetRequest()) };
-    } catch {
-      if (isCurrent(token)) fail("连接云端失败，请检查网络与服务器地址");
+    } catch (error) {
+      if (isCurrent(token)) failFrom(error, "sync.error.network_failed");
       return { kind: "error" };
     }
   }
@@ -285,19 +341,19 @@ export function createSyncController(
     if (result.kind === "error") return null;
     const response = result.response;
     if (response.status !== 200) {
-      fail("已上传学习进度，但无法确认云端版本");
+      fail("sync.error.upload_unconfirmed");
       return null;
     }
     let remote: ProgressBackup;
     try {
       remote = parseSyncDocument(response.body);
     } catch (error) {
-      fail(errorMessage(error, "已上传学习进度，但云端内容无法确认"));
+      fail("sync.error.upload_invalid", undefined, diagnosticOf(error));
       return null;
     }
     const etag = getStrongEtag(response.headers);
     if (!etag) {
-      fail("已上传学习进度，但云端未返回强 ETag，已停止自动覆盖");
+      fail("sync.error.etag_missing_upload");
       return null;
     }
     if (!sameProgress(remote.progress, expected.progress)) return "retry";
@@ -318,14 +374,17 @@ export function createSyncController(
       );
     } catch (error) {
       if (isCurrent(token)) {
-        fail(errorMessage(error, "上传学习进度失败，请检查网络与服务器地址"));
+        failFrom(error, "sync.error.upload_failed");
       }
       return "failed";
     }
     if (!isCurrent(token)) return "failed";
     if (response.status === 412) return "retry";
     if (!isSuccess(response.status)) {
-      if (isCurrent(token)) fail(httpMessage(response.status));
+      if (isCurrent(token)) {
+        const http = httpError(response.status);
+        fail(http.code, http.params);
+      }
       return "failed";
     }
 
@@ -340,13 +399,15 @@ export function createSyncController(
 
     const syncedAt = saveBaseline(account, local.progress, etag);
     if (!syncedAt) return "failed";
-    const message = localStillMatches(local)
-      ? "已同步"
-      : "已上传学习进度，本机还有新的变更";
+    const messageCode = localStillMatches(local)
+      ? "sync.message.synced"
+      : "sync.message.uploaded_local_changes";
     deferred = false;
     commit({
       status: "synced",
-      message,
+      message: zhMessage({ code: messageCode }),
+      error: null,
+      notice: notice(messageCode),
       lastSyncedAt: syncedAt,
       conflict: null,
     });
@@ -365,7 +426,9 @@ export function createSyncController(
     if (!localStillMatches(localBefore)) {
       commit({
         status: "idle",
-        message: "本机学习进度在同步期间发生变化，稍后再同步",
+        message: zhMessage({ code: "sync.message.local_changed" }),
+        error: null,
+        notice: notice("sync.message.local_changed"),
       });
       return;
     }
@@ -373,7 +436,9 @@ export function createSyncController(
       deferred = true;
       commit({
         status: snapshot.conflict ? "conflict" : "idle",
-        message: "正在练习或阅读，稍后再应用云端学习进度",
+        message: zhMessage({ code: "sync.message.busy_learning" }),
+        error: null,
+        notice: notice("sync.message.busy_learning"),
       });
       return;
     }
@@ -381,18 +446,20 @@ export function createSyncController(
     try {
       options.applyProgress(remote.progress);
     } catch {
-      fail("应用云端学习进度失败，已保留本机原进度");
+      fail("sync.error.apply_failed");
       return;
     }
     const syncedAt = saveBaseline(account, remote.progress, etag);
     if (!syncedAt) {
-      fail("已应用云端学习进度，但保存同步基线失败");
+      fail("sync.error.apply_baseline_failed");
       return;
     }
     deferred = false;
     commit({
       status: "synced",
-      message: "已从云端恢复学习进度",
+      message: zhMessage({ code: "sync.message.remote_applied" }),
+      error: null,
+      notice: notice("sync.message.remote_applied"),
       lastSyncedAt: syncedAt,
       conflict: null,
     });
@@ -412,9 +479,9 @@ export function createSyncController(
     let mkcol;
     try {
       mkcol = await options.adapter.request(buildMkcolRequest());
-    } catch {
+    } catch (error) {
       if (isCurrent(token)) {
-        fail("创建云端应用目录失败，请检查网络与服务器权限");
+        failFrom(error, "sync.error.mkdir_failed");
       }
       return false;
     }
@@ -426,16 +493,16 @@ export function createSyncController(
       return true;
     }
     if (mkcol.status !== 405) {
-      fail(`创建云端应用目录失败（HTTP ${mkcol.status}）`);
+      fail("sync.error.mkdir_http", { status: mkcol.status });
       return false;
     }
 
     let propfind;
     try {
       propfind = await options.adapter.request(buildPropfindRequest());
-    } catch {
+    } catch (error) {
       if (isCurrent(token)) {
-        fail("验证云端应用目录失败，请检查网络与服务器权限");
+        failFrom(error, "sync.error.dir_verify_failed");
       }
       return false;
     }
@@ -450,7 +517,7 @@ export function createSyncController(
       return true;
     }
 
-    fail("云端应用目录不是可用的 WebDAV collection，已停止同步");
+    fail("sync.error.dir_invalid");
     return false;
   }
 
@@ -460,34 +527,44 @@ export function createSyncController(
     // 配置/断开期间,旧 snapshot 绝不能发起网络请求。
     if (configTransition > 0) return;
     if (configBlocked) {
-      fail("同步配置变更尚未确认，已停止同步");
+      fail("sync.error.config_pending");
       return;
     }
     if (baselineBlocked) {
-      fail("本地同步基线无法重置，已停止同步");
+      fail("sync.error.baseline_blocked");
       return;
     }
     const config = snapshot.config;
     if (!config) {
-      commit({ status: "disabled", message: "尚未配置同步" });
+      commit({
+        status: "disabled",
+        message: zhMessage({ code: "sync.message.not_configured" }),
+        error: null,
+        notice: notice("sync.message.not_configured"),
+      });
       return;
     }
     if (!storage) {
-      fail("当前环境不支持本地存储，无法记录同步基线");
+      fail("sync.error.storage_unsupported");
       return;
     }
     if (!config.hasPassword) {
-      fail("同步配置缺少密码，请重新保存同步配置");
+      fail("sync.error.credentials_required");
       return;
     }
 
     deferred = false;
-    commit({ status: "syncing", message: "正在同步…" });
+    commit({
+      status: "syncing",
+      message: zhMessage({ code: "sync.message.syncing" }),
+      error: null,
+      notice: notice("sync.message.syncing"),
+    });
 
     const account: SyncAccount = { url: config.url, username: config.username };
     let local = readLocalBackup();
     if (!local) {
-      fail("读取本机学习进度失败，已停止同步");
+      fail("sync.error.local_read_failed");
       return;
     }
 
@@ -506,20 +583,24 @@ export function createSyncController(
       if (response.status === 404) {
         const baseline = readSyncBaseline(storage, account);
         if (baseline) {
-          fail("云端同步文件不存在，已停止自动同步");
+          fail("sync.error.remote_missing_auto");
           return;
         }
         if (!localStillMatches(local)) {
           commit({
             status: "idle",
-            message: "本机学习进度在同步期间发生变化，稍后再同步",
+            message: zhMessage({ code: "sync.message.local_changed" }),
+            error: null,
+            notice: notice("sync.message.local_changed"),
           });
           return;
         }
         if (!hasLearningProgress(local.progress)) {
           commit({
             status: "idle",
-            message: "云端尚无学习进度文件，本机有进度后再同步",
+            message: zhMessage({ code: "sync.message.remote_missing" }),
+            error: null,
+            notice: notice("sync.message.remote_missing"),
           });
           return;
         }
@@ -534,7 +615,8 @@ export function createSyncController(
       }
 
       if (response.status !== 200) {
-        fail(httpMessage(response.status));
+        const http = httpError(response.status);
+        fail(http.code, http.params);
         return;
       }
 
@@ -542,19 +624,21 @@ export function createSyncController(
       try {
         remote = parseSyncDocument(response.body);
       } catch (error) {
-        fail(errorMessage(error, "云端同步文件无效，已停止自动同步"));
+        fail("sync.error.remote_invalid", undefined, diagnosticOf(error));
         return;
       }
       const remoteEtag = getStrongEtag(response.headers);
       if (!remoteEtag) {
-        fail("云端未返回强 ETag，已停止自动覆盖与恢复");
+        fail("sync.error.etag_missing_auto");
         return;
       }
 
       if (!localStillMatches(local)) {
         commit({
           status: "idle",
-          message: "本机学习进度在同步期间发生变化，稍后再同步",
+          message: zhMessage({ code: "sync.message.local_changed" }),
+          error: null,
+          notice: notice("sync.message.local_changed"),
         });
         return;
       }
@@ -574,7 +658,7 @@ export function createSyncController(
             recordConflict(account, local, remote, remoteEtag);
             return;
           }
-          fail("本机学习进度为空，已停止自动同步以避免覆盖云端");
+          fail("sync.error.local_empty");
           return;
         }
 
@@ -583,7 +667,7 @@ export function createSyncController(
             recordConflict(account, local, remote, remoteEtag);
             return;
           }
-          fail("云端学习进度为空，已停止自动恢复以避免清空本机");
+          fail("sync.error.remote_empty");
           return;
         }
 
@@ -592,7 +676,9 @@ export function createSyncController(
           if (!syncedAt) return;
           commit({
             status: "synced",
-            message: "云端没有新的学习进度",
+            message: zhMessage({ code: "sync.message.remote_current" }),
+            error: null,
+            notice: notice("sync.message.remote_current"),
             lastSyncedAt: syncedAt,
             conflict: null,
           });
@@ -616,7 +702,9 @@ export function createSyncController(
             if (!syncedAt) return;
             commit({
               status: "synced",
-              message: "云端与本机均无学习进度",
+              message: zhMessage({ code: "sync.message.both_empty" }),
+              error: null,
+              notice: notice("sync.message.both_empty"),
               lastSyncedAt: syncedAt,
               conflict: null,
             });
@@ -631,7 +719,9 @@ export function createSyncController(
           if (!syncedAt) return;
           commit({
             status: "synced",
-            message: "本机与云端学习进度一致",
+            message: zhMessage({ code: "sync.message.in_sync" }),
+            error: null,
+            notice: notice("sync.message.in_sync"),
             lastSyncedAt: syncedAt,
             conflict: null,
           });
@@ -648,7 +738,9 @@ export function createSyncController(
         if (!syncedAt) return;
         commit({
           status: "synced",
-          message: "本机与云端学习进度一致",
+          message: zhMessage({ code: "sync.message.in_sync" }),
+          error: null,
+          notice: notice("sync.message.in_sync"),
           lastSyncedAt: syncedAt,
           conflict: null,
         });
@@ -679,7 +771,9 @@ export function createSyncController(
         if (!syncedAt) return;
         commit({
           status: "synced",
-          message: "云端与本机均无学习进度",
+          message: zhMessage({ code: "sync.message.both_empty" }),
+          error: null,
+          notice: notice("sync.message.both_empty"),
           lastSyncedAt: syncedAt,
           conflict: null,
         });
@@ -690,7 +784,7 @@ export function createSyncController(
       return;
     }
 
-    fail("云端学习进度变化频繁，请稍后重试");
+    fail("sync.error.too_many_changes");
   }
 
   function enqueueTask<T>(task: () => Promise<T>): Promise<T> {
@@ -719,7 +813,7 @@ export function createSyncController(
         await performSync();
       } catch (error) {
         if (isCurrent(token)) {
-          fail(errorMessage(error, "同步失败，请稍后重试"));
+          failFrom(error, "sync.error.failed");
         }
       }
     });
@@ -735,8 +829,8 @@ export function createSyncController(
     let loaded: SyncConfig | null;
     try {
       loaded = await options.adapter.readConfig();
-    } catch {
-      if (isCurrent(token)) fail("读取同步配置失败");
+    } catch (error) {
+      if (isCurrent(token)) failFrom(error, "sync.error.config_read_failed");
       return;
     }
     if (!isCurrent(token)) return;
@@ -745,7 +839,9 @@ export function createSyncController(
       commit({
         status: "disabled",
         config: null,
-        message: "尚未配置同步",
+        message: zhMessage({ code: "sync.message.not_configured" }),
+        error: null,
+        notice: notice("sync.message.not_configured"),
         conflict: null,
       });
       return;
@@ -755,6 +851,8 @@ export function createSyncController(
       status: "idle",
       config: loaded,
       message: "",
+      error: null,
+      notice: null,
       conflict: null,
     });
     if (loaded.autoSync) {
@@ -783,7 +881,7 @@ export function createSyncController(
           await options.adapter.writeConfig(settings, password);
         } catch (error) {
           if (isCurrent(token)) {
-            fail(errorMessage(error, "保存同步配置失败"));
+            failFrom(error, "sync.error.config_save_failed");
           }
           return;
         }
@@ -795,13 +893,13 @@ export function createSyncController(
         let loaded: SyncConfig | null;
         try {
           loaded = await options.adapter.readConfig();
-        } catch {
-          if (isCurrent(token)) fail("读取同步配置失败");
+        } catch (error) {
+          if (isCurrent(token)) failFrom(error, "sync.error.config_read_failed");
           return;
         }
         if (!isCurrent(token)) return;
         if (!loaded) {
-          fail("保存同步配置失败，未能读回配置");
+          fail("sync.error.config_readback_failed");
           return;
         }
         configBlocked = false;
@@ -820,13 +918,18 @@ export function createSyncController(
           } catch (error) {
             if (!isCurrent(token)) return;
             baselineBlocked = true;
+            const userError: UserFacingError = {
+              code: "sync.error.baseline_reset_failed",
+              ...(diagnosticOf(error)
+                ? { diagnostic: diagnosticOf(error) }
+                : {}),
+            };
             commit({
               status: "error",
               config: loaded,
-              message: errorMessage(
-                error,
-                "重置同步基线失败，已停止同步"
-              ),
+              message: zhMessage(userError),
+              error: userError,
+              notice: null,
               lastSyncedAt: null,
               conflict: null,
             });
@@ -841,7 +944,9 @@ export function createSyncController(
         commit({
           status: "idle",
           config: loaded,
-          message: "已保存同步配置",
+          message: zhMessage({ code: "sync.message.config_saved" }),
+          error: null,
+          notice: notice("sync.message.config_saved"),
           lastSyncedAt: mustResetBaseline ? null : snapshot.lastSyncedAt,
           conflict: null,
         });
@@ -874,7 +979,7 @@ export function createSyncController(
           await options.adapter.disconnect();
         } catch (error) {
           if (isCurrent(token)) {
-            fail(errorMessage(error, "断开同步失败，请重试"));
+            failFrom(error, "sync.error.disconnect_failed");
           }
           return;
         }
@@ -885,7 +990,8 @@ export function createSyncController(
         configBlocked = false;
 
         let cleared = true;
-        let message = "已断开同步";
+        let message = zhMessage({ code: "sync.message.disconnected" });
+        let cleanupDiagnostic: string | undefined;
         if (previous) {
           try {
             clearSyncBaseline(storage, previous);
@@ -894,17 +1000,25 @@ export function createSyncController(
           } catch (error) {
             cleared = false;
             baselineBlocked = true;
-            message = errorMessage(
-              error,
-              "已断开同步，但本地同步基线清理失败"
-            );
+            cleanupDiagnostic = diagnosticOf(error);
+            message = zhMessage({
+              code: "sync.message.disconnect_baseline_failed",
+            });
           }
         }
         deferred = false;
+        const disconnectError: UserFacingError = {
+          code: cleared
+            ? "sync.message.disconnected"
+            : "sync.message.disconnect_baseline_failed",
+          ...(cleanupDiagnostic ? { diagnostic: cleanupDiagnostic } : {}),
+        };
         commit({
           status: cleared ? "disabled" : "error",
           config: null,
           message,
+          error: cleared ? null : disconnectError,
+          notice: cleared ? disconnectError : null,
           lastSyncedAt: null,
           conflict: null,
         });
@@ -918,10 +1032,16 @@ export function createSyncController(
     if (snapshot.conflict) {
       commit({
         status: "conflict",
-        message: "冲突已更新，请重新选择保留版本",
+        message: zhMessage({ code: "sync.message.conflict_updated" }),
+        error: null,
+        notice: notice("sync.message.conflict_updated"),
       });
     } else {
-      commit({ message: "冲突已由其他操作处理" });
+      commit({
+        message: zhMessage({ code: "sync.message.conflict_handled" }),
+        error: null,
+        notice: notice("sync.message.conflict_handled"),
+      });
     }
   }
 
@@ -935,14 +1055,20 @@ export function createSyncController(
         if (snapshot.conflict === requestedConflict) {
           commit({
             status: "conflict",
-            message: "同步配置已变更，请重新选择保留版本",
+            message: zhMessage({ code: "sync.message.conflict_config_changed" }),
+            error: null,
+            notice: notice("sync.message.conflict_config_changed"),
           });
         }
         return;
       }
       if (configTransition > 0) return;
       if (configBlocked) {
-        commit({ message: "同步配置尚未确认，已停止同步" });
+        commit({
+          message: zhMessage({ code: "sync.message.config_pending" }),
+          error: null,
+          notice: notice("sync.message.config_pending"),
+        });
         return;
       }
       if (snapshot.conflict !== requestedConflict) {
@@ -961,11 +1087,15 @@ export function createSyncController(
     const config = snapshot.config;
     if (!config || !isCurrent(token) || configTransition > 0) return;
     if (configBlocked) {
-      commit({ message: "同步配置尚未确认，已停止同步" });
+      commit({
+        message: zhMessage({ code: "sync.message.config_pending" }),
+        error: null,
+        notice: notice("sync.message.config_pending"),
+      });
       return;
     }
     if (baselineBlocked) {
-      fail("本地同步基线无法重置，已停止同步");
+      fail("sync.error.baseline_blocked");
       return;
     }
     if (snapshot.conflict !== conflict) {
@@ -973,7 +1103,7 @@ export function createSyncController(
       return;
     }
     if (!storage) {
-      fail("当前环境不支持本地存储，无法处理冲突");
+      fail("sync.error.conflict_storage_unsupported");
       return;
     }
 
@@ -983,7 +1113,12 @@ export function createSyncController(
     const account: SyncAccount = { url: config.url, username: config.username };
 
     if (choice === "local") {
-      commit({ status: "syncing", message: "正在用本机进度覆盖云端…" });
+      commit({
+        status: "syncing",
+        message: zhMessage({ code: "sync.message.overwriting_cloud" }),
+        error: null,
+        notice: notice("sync.message.overwriting_cloud"),
+      });
       if (!saveRecovery(account, conflict.local, conflict.remote, "local-overwrite")) {
         // 保留旧云端内容是覆盖的前置条件;失败时保持冲突可选择重试。
         commit({ status: "conflict" });
@@ -1002,7 +1137,7 @@ export function createSyncController(
       if (uploaded === "retry") {
         await performSync();
       } else if (uploaded === "failed" && isCurrent(token) && snapshot.status === "syncing") {
-        fail("覆盖云端失败，请稍后重试");
+        fail("sync.error.overwrite_failed");
       }
       return;
     }
@@ -1011,12 +1146,19 @@ export function createSyncController(
       deferred = true;
       commit({
         status: "conflict",
-        message: "正在练习或阅读，稍后再应用云端学习进度",
+        message: zhMessage({ code: "sync.message.busy_learning" }),
+        error: null,
+        notice: notice("sync.message.busy_learning"),
       });
       return;
     }
 
-    commit({ status: "syncing", message: "正在确认云端版本…" });
+    commit({
+      status: "syncing",
+      message: zhMessage({ code: "sync.message.confirming_remote" }),
+      error: null,
+      notice: notice("sync.message.confirming_remote"),
+    });
     const result = await requestGet(token);
     if (!isCurrent(token)) return;
     if (configTransition > 0) return;
@@ -1027,19 +1169,20 @@ export function createSyncController(
     if (result.kind === "error") return;
     const response = result.response;
     if (response.status !== 200) {
-      fail(httpMessage(response.status));
+      const http = httpError(response.status);
+      fail(http.code, http.params);
       return;
     }
     let remote: ProgressBackup;
     try {
       remote = parseSyncDocument(response.body);
     } catch (error) {
-      fail(errorMessage(error, "云端同步文件无效，已停止自动同步"));
+      fail("sync.error.remote_invalid", undefined, diagnosticOf(error));
       return;
     }
     const remoteEtag = getStrongEtag(response.headers);
     if (!remoteEtag) {
-      fail("云端未返回强 ETag，已停止自动恢复");
+      fail("sync.error.etag_missing_auto");
       return;
     }
     if (

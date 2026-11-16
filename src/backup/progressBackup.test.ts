@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { STORAGE_KEY } from "../config";
+import { formatUserError } from "../i18n/errors";
 import type { Progress } from "../types";
 import {
   BackupCancelledError,
@@ -857,8 +858,23 @@ describe("exportBackup native", () => {
       directory: "CACHE",
     });
     expect(sharePluginMock.share).toHaveBeenCalledWith({
-      title: expect.any(String),
-      dialogTitle: expect.any(String),
+      title: "法语学习进度备份",
+      dialogTitle: "导出学习进度",
+      files: [INCOMING_URI],
+    });
+  });
+
+  test("法语 Android 系统分享使用当前语言标题，文件内容不变", async () => {
+    await exportBackup(RICH, "fr");
+
+    const write = filesystemMock.writeFile.mock.calls[0][0] as {
+      path: string;
+      data: string;
+    };
+    expect(parseBackup(write.data).progress).toEqual(RICH);
+    expect(sharePluginMock.share).toHaveBeenCalledWith({
+      title: "Sauvegarde de la progression en français",
+      dialogTitle: "Exporter la progression",
       files: [INCOMING_URI],
     });
   });
@@ -957,6 +973,9 @@ describe("exportBackup harmony", () => {
     expect(request.mimeType).toBe("application/json");
     expect(request.encoding).toBe("utf8");
     expect(typeof request.data).toBe("string");
+    // 鸿蒙当前 shareFile 协议没有应用控制标题参数;系统分享面板语言由系统决定。
+    expect(request.title).toBeUndefined();
+    expect(request.dialogTitle).toBeUndefined();
     expect(parseBackup(request.data as string).progress).toEqual(RICH);
 
     expect(filesystemMock.writeFile).not.toHaveBeenCalled();
@@ -1041,15 +1060,29 @@ describe("exportBackup desktop", () => {
 
     expect(desktopMock.saveDesktopFile).toHaveBeenCalledTimes(1);
     const file = desktopMock.saveDesktopFile.mock.calls[0][0];
+    const options = desktopMock.saveDesktopFile.mock.calls[0][1];
     expect(file.filename).toMatch(
       /^fge-progress-(public|internal)-\d{4}-\d{2}-\d{2}\.json$/
     );
     expect(file.mimeType).toBe("application/json");
     expect(file.encoding).toBe("utf8");
+    expect(options).toEqual({ dialogTitle: "导出学习进度" });
     expect(parseBackup(file.data).progress).toEqual(RICH);
     expect(filesystemMock.writeFile).not.toHaveBeenCalled();
     expect(sharePluginMock.share).not.toHaveBeenCalled();
     expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  test("法语桌面另存为通过第二参数传当前语言对话框标题", async () => {
+    desktopMock.saveDesktopFile.mockResolvedValue({ status: "saved" });
+
+    await exportBackup(RICH, "fr");
+
+    const file = desktopMock.saveDesktopFile.mock.calls[0][0];
+    expect(parseBackup(file.data).progress).toEqual(RICH);
+    expect(desktopMock.saveDesktopFile.mock.calls[0][1]).toEqual({
+      dialogTitle: "Exporter la progression",
+    });
   });
 
   test("取消另存为 → BackupCancelledError,不降级", async () => {
@@ -1083,5 +1116,72 @@ describe("exportBackup desktop", () => {
     expect((caught as Error).message).toMatch(/无法写入导出文件/);
     expect(createObjectURL).not.toHaveBeenCalled();
     expect(clickedAnchors).toHaveLength(0);
+  });
+});
+
+describe("结构化备份错误", () => {
+  function catchBackup(run: () => unknown): BackupError {
+    try {
+      run();
+    } catch (error) {
+      expect(error).toBeInstanceOf(BackupError);
+      return error as BackupError;
+    }
+    throw new Error("expected BackupError");
+  }
+
+  test("不支持的版本携带稳定错误码与参数，可按当前语言格式化", () => {
+    const caught = catchBackup(() => parseRaw(rawBackup({ version: 2 })));
+
+    expect(caught.userError.code).toBe("backup.unsupported_version");
+    expect(caught.userError.params).toEqual({ version: 2 });
+    expect(caught.userError.diagnostic).toContain("2");
+
+    const fr = formatUserError(caught.userError, "fr").message;
+    const zh = formatUserError(caught.userError, "zh-CN").message;
+    expect(fr).toContain("2");
+    expect(zh).toContain("2");
+    expect(fr).not.toBe(zh);
+  });
+
+  test("无效 JSON 使用通用业务码，底层解析诊断仍保留", () => {
+    const caught = catchBackup(() => parseBackup("{bad json"));
+
+    expect(caught.userError.code).toBe("backup.invalid_json");
+    expect(formatUserError(caught.userError, "fr").message).not.toContain("JSON.parse");
+    expect(caught.message).toContain("JSON");
+  });
+
+  test("取消导出带稳定错误码，取消判定不依赖中文", () => {
+    const caught = catchBackup(() => {
+      throw new BackupCancelledError("operation aborted");
+    });
+
+    expect(caught.userError.code).toBe("backup.cancelled");
+    expect(isBackupCancelled(caught)).toBe(true);
+    expect(formatUserError(caught.userError, "fr").message).not.toMatch(/[\u3400-\u9fff]/);
+  });
+
+  test("字段校验失败保留可操作的中文诊断", () => {
+    const caught = catchBackup(() =>
+      parseRaw(rawBackup({}, { xp: -1 }))
+    );
+
+    expect(caught.userError.code).toBe("backup.invalid_field");
+    expect(caught.userError.diagnostic).toContain("xp");
+    expect(caught.message).toContain("xp");
+  });
+
+  test("界面语言偏好不进入备份序列化，解析也不改动语言存储", () => {
+    localStorage.setItem("fge:ui-locale:v1", "fr");
+
+    const backup = createBackup(RICH);
+    const text = JSON.stringify(backup);
+    const parsed = parseBackup(text);
+
+    expect(text).not.toContain("uiLocale");
+    expect(text).not.toContain("ui-locale");
+    expect(JSON.stringify(parsed)).not.toContain("ui-locale");
+    expect(localStorage.getItem("fge:ui-locale:v1")).toBe("fr");
   });
 });

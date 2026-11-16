@@ -23,6 +23,10 @@ const TARGETS_PATH = path.join(
   APP_ROOT,
   'android/app/src/main/java/com/fge/app/FgeSyncTargets.java',
 );
+const ERRORS_PATH = path.join(
+  APP_ROOT,
+  'android/app/src/main/java/com/fge/app/FgeSyncErrors.java',
+);
 
 function javaTool(name) {
   const executable = process.platform === 'win32' ? `${name}.exe` : name;
@@ -37,12 +41,42 @@ function javaTool(name) {
 
 const PROBE = `package com.fge.app;
 
+import java.io.IOException;
+
 public final class FgeSyncPolicyProbe {
     private interface Throwing { void run(); }
 
     private static void eq(String expected, String actual) {
         if (!expected.equals(actual)) {
             throw new AssertionError("expected " + expected + " but got " + actual);
+        }
+    }
+
+    private static void checkPayload(
+        String expectedCode,
+        String expectedOperation,
+        String expectedMessage,
+        FgeSyncErrors.Payload payload
+    ) {
+        eq(expectedCode, payload.code);
+        eq(expectedOperation, String.valueOf(payload.params.get("operation")));
+        eq(expectedMessage, payload.message);
+    }
+
+    private static void checkNoTransportLeak(FgeSyncErrors.Payload payload) {
+        final String text =
+            payload.code + "|" + payload.message + "|" + payload.params.toString();
+        for (String marker : new String[] {
+            "https://",
+            "http://",
+            "dav.example.com",
+            "fge-progress",
+            "token=",
+            "/private/",
+        }) {
+            if (text.contains(marker)) {
+                throw new AssertionError("native payload leaked " + marker + ": " + text);
+            }
         }
     }
 
@@ -197,6 +231,118 @@ public final class FgeSyncPolicyProbe {
                 null
             )
         );
+
+        FgeSyncErrors.Payload credentials = FgeSyncErrors.forFailure(
+            new FgeSyncErrors.FgeSyncException(
+                FgeSyncErrors.CREDENTIALS_REQUIRED,
+                "需要重新输入密码"
+            ).withParam("status", 401),
+            "syncWriteConfig",
+            FgeSyncErrors.STORAGE_FAILED,
+            "同步失败"
+        );
+        checkPayload(
+            "native.credentials_required",
+            "syncWriteConfig",
+            "需要重新输入密码",
+            credentials
+        );
+        eq("401", String.valueOf(credentials.params.get("status")));
+
+        checkPayload(
+            "native.config_invalid",
+            "syncRequest",
+            "同步请求无效",
+            FgeSyncErrors.forFailure(
+                new IllegalArgumentException("同步请求无效"),
+                "syncRequest",
+                FgeSyncErrors.STORAGE_FAILED,
+                "同步失败"
+            )
+        );
+        checkPayload(
+            "native.network_failed",
+            "syncRequest",
+            "连接失败",
+            FgeSyncErrors.forFailure(
+                new IOException("连接失败"),
+                "syncRequest",
+                FgeSyncErrors.STORAGE_FAILED,
+                "同步失败"
+            )
+        );
+        checkPayload(
+            "native.storage_failed",
+            "syncReadConfig",
+            "无法读取同步配置",
+            FgeSyncErrors.forFailure(
+                new IllegalStateException("无法读取同步配置"),
+                "syncReadConfig",
+                FgeSyncErrors.STORAGE_FAILED,
+                "同步失败"
+            )
+        );
+        checkPayload(
+            "native.unknown",
+            "syncReadConfig",
+            "同步失败",
+            FgeSyncErrors.forFailure(
+                new RuntimeException(""),
+                "syncReadConfig",
+                FgeSyncErrors.STORAGE_FAILED,
+                "同步失败"
+            )
+        );
+
+        final String sensitive =
+            "GET https://dav.example.com/private/fge-progress-public.json?token=secret failed";
+
+        FgeSyncErrors.Payload networkLeak = FgeSyncErrors.forRequestFailure(
+            new IOException(sensitive),
+            "request"
+        );
+        checkPayload(
+            "native.network_failed",
+            "request",
+            "同步请求失败，请检查网络或服务器",
+            networkLeak
+        );
+        checkNoTransportLeak(networkLeak);
+
+        FgeSyncErrors.Payload runtimeLeak = FgeSyncErrors.forRequestFailure(
+            new RuntimeException(sensitive),
+            "request"
+        );
+        checkPayload("native.unknown", "request", "同步请求失败", runtimeLeak);
+        checkNoTransportLeak(runtimeLeak);
+
+        FgeSyncErrors.Payload credentialsLeak = FgeSyncErrors.forRequestFailure(
+            new FgeSyncErrors.FgeSyncException(
+                FgeSyncErrors.CREDENTIALS_REQUIRED,
+                sensitive
+            ),
+            "request"
+        );
+        checkPayload(
+            "native.credentials_required",
+            "request",
+            "同步凭据不可用",
+            credentialsLeak
+        );
+        checkNoTransportLeak(credentialsLeak);
+
+        FgeSyncErrors.Payload stateLeak = FgeSyncErrors.forRequestFailure(
+            new IllegalStateException(sensitive),
+            "request"
+        );
+        checkPayload(
+            "native.config_invalid",
+            "request",
+            "同步请求无效",
+            stateLeak
+        );
+        checkNoTransportLeak(stateLeak);
+
         System.out.println("FgeSyncPolicyProbe OK");
     }
 }
@@ -212,11 +358,13 @@ test('Android sync policy keeps passwords only for the same target', (t) => {
 
   let policySource;
   let targetsSource;
+  let errorsSource;
   try {
     policySource = readFileSync(POLICY_PATH, 'utf8');
     targetsSource = readFileSync(TARGETS_PATH, 'utf8');
+    errorsSource = readFileSync(ERRORS_PATH, 'utf8');
   } catch (error) {
-    assert.fail(`FgeSyncPolicy/Targets.java is missing: ${error.message}`);
+    assert.fail(`FgeSyncPolicy/Targets/Errors.java is missing: ${error.message}`);
   }
 
   const root = mkdtempSync(path.join(os.tmpdir(), 'fge-sync-policy-'));
@@ -227,14 +375,25 @@ test('Android sync policy keeps passwords only for the same target', (t) => {
     mkdirSync(classesDir, { recursive: true });
     const policyFile = path.join(packageDir, 'FgeSyncPolicy.java');
     const targetsFile = path.join(packageDir, 'FgeSyncTargets.java');
+    const errorsFile = path.join(packageDir, 'FgeSyncErrors.java');
     const probeFile = path.join(packageDir, 'FgeSyncPolicyProbe.java');
     writeFileSync(policyFile, policySource, 'utf8');
     writeFileSync(targetsFile, targetsSource, 'utf8');
+    writeFileSync(errorsFile, errorsSource, 'utf8');
     writeFileSync(probeFile, PROBE, 'utf8');
 
     const compiled = spawnSync(
       javac,
-      ['-encoding', 'UTF-8', '-d', classesDir, policyFile, targetsFile, probeFile],
+      [
+        '-encoding',
+        'UTF-8',
+        '-d',
+        classesDir,
+        policyFile,
+        targetsFile,
+        errorsFile,
+        probeFile,
+      ],
       { encoding: 'utf8' },
     );
     assert.equal(

@@ -2,11 +2,13 @@
 import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import process from "node:process";
-import { CHAPTERS } from "../content";
+import { CHAPTERS, SUPPORTED_LOCALES } from "../content";
 import { completedQuestion } from "../answerFill";
 import { cardText } from "../library/search";
 import { sanitizeCardHtml } from "./cardHtml";
+import { collectLocalizationGaps, formatLocalizationGap } from "./localizationCoverage";
 import { validateChapter } from "./validate";
+import { SECTION_MAP } from "../learning/sections";
 import type {
   Chapter,
   ChoiceQuestion,
@@ -37,6 +39,8 @@ interface Manifest {
   chapters: string[];
   expectedChapterCount: number;
   expectedQuestionCount: number;
+  supportedLocales?: string[];
+  localizationSharedFields?: Record<string, Record<string, string[]>>;
 }
 
 interface QuestionAssertion {
@@ -483,6 +487,60 @@ describe.skipIf(EDITION !== "internal")("internal: 真实私有题库", () => {
       for (const [field, expected] of Object.entries(assertion.expected)) {
         expect(actual[field], `${assertion.cardId}.${field}`).toEqual(expected);
       }
+    }
+  });
+});
+
+/**
+ * 真实当前版法语覆盖报告。缺项明细随测试输出，不作为持久进度文件；
+ * 未在 manifest 声明 fr 的旧中文版只报告、不阻断，声明 fr 时必须零缺项。
+ */
+describe("法语内容覆盖报告（真实当前版）", () => {
+  test("输出缺项总数及实体/字段，只有声明 fr 时要求零缺项", () => {
+    const manifest =
+      EDITION === "public"
+        ? readPublicJson<Manifest>("manifest.json")
+        : readJson<Manifest>("manifest.json");
+    expect(SUPPORTED_LOCALES).toEqual(manifest.supportedLocales ?? ["zh-CN"]);
+
+    const sectionKeys = Object.fromEntries(
+      Object.entries(SECTION_MAP).map(([chapterId, blueprint]) => [
+        chapterId,
+        blueprint.sections.map((section) => section.key),
+      ])
+    );
+    const gaps = collectLocalizationGaps(CHAPTERS, "fr", sectionKeys, {
+      // 与构建一致：未声明 fr 时共用字段裁定只是未来的内容数据，
+      // 不参与旧中文版报告，也不因未启用语言而阻断。
+      sharedFields: SUPPORTED_LOCALES.includes("fr")
+        ? manifest.localizationSharedFields?.fr ?? {}
+        : {},
+    });
+
+    const counts = new Map<string, number>();
+    for (const gap of gaps) {
+      const key = `${gap.entityType}.${gap.field}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const report: string[] = [
+      `[localization] edition=${EDITION} locale=fr supported=${SUPPORTED_LOCALES.includes("fr")} gaps=${gaps.length}`,
+    ];
+    for (const [key, count] of [...counts].sort(([a], [b]) => a.localeCompare(b))) {
+      report.push(`[localization] ${key}: ${count}`);
+    }
+    for (const gap of gaps) {
+      report.push(`[localization] ${formatLocalizationGap(gap)}`);
+    }
+    // 报告必须随测试输出可见；Vitest 默认 reporter 会吞掉 console 日志，
+    // 但测试报告本身是迁移证据，所以直接写标准输出。
+    process.stdout.write(`${report.join("\n")}\n`);
+
+    if (SUPPORTED_LOCALES.includes("fr")) {
+      const preview = gaps
+        .slice(0, 20)
+        .map((gap) => `${gap.entityId}: ${gap.field}`)
+        .join("\n");
+      expect(gaps.length, `法语已声明但仍有缺项:\n${preview}`).toBe(0);
     }
   });
 });

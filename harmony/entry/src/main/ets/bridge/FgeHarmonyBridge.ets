@@ -5,7 +5,7 @@ import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { systemShare } from '@kit.ShareKit';
 import { util } from '@kit.ArkTS';
 import { window } from '@kit.ArkUI';
-import { FgeSyncManager } from './FgeSyncManager';
+import { FgeSyncManager, NativeSyncError } from './FgeSyncManager';
 
 const MAX_BACKUP_BYTES = 5 * 1024 * 1024;
 const MAX_PNG_BYTES = 10 * 1024 * 1024;
@@ -24,11 +24,15 @@ function themeContent(mode: string): string {
 interface Reply {
   status: string;
   message?: string;
+  code?: string;
+  params?: Record<string, string | number>;
 }
 
 interface SyncReply {
   status: string;
   message?: string;
+  code?: string;
+  params?: Record<string, string | number>;
   config?: Object;
   response?: Object;
 }
@@ -75,18 +79,55 @@ export class FgeHarmonyBridge {
       }
       return this.handleSync(request);
     } catch (error) {
-      return Promise.resolve(this.reply({
-        status: 'error',
-        message: this.messageFor(error, '请求无效'),
-      }));
+      return Promise.resolve(this.errorReply(error, '请求无效'));
     }
   }
 
   private reply(reply: Reply): string {
-    if (reply.message === undefined) {
-      return JSON.stringify(reply);
-    }
     return JSON.stringify(reply);
+  }
+
+  /**
+   * 统一错误回复:稳定 code + 非敏感 params + 原始诊断 message。旧 JS 只
+   * 读取 message 仍可展示;新 JS 按 code 生成本地化主提示。
+   */
+  private errorReply(
+    error: Object,
+    fallback: string,
+    operation?: string
+  ): string {
+    return this.reply(this.nativeErrorReply(error, fallback, operation));
+  }
+
+  /** 显式 `Reply` 返回值,供同步/分享等需要直接 resolve 的错误路径复用。 */
+  private nativeErrorReply(
+    error: Object,
+    fallback: string,
+    operation?: string
+  ): Reply {
+    let code = 'native.unknown';
+    let diagnostic = this.messageFor(error, fallback);
+    const params: Record<string, string | number> = {};
+    if (error instanceof NativeSyncError) {
+      code = error.code;
+      diagnostic = error.diagnostic.length > 0 ? error.diagnostic : fallback;
+      const names = Object.keys(error.params);
+      for (const name of names) {
+        params[name] = error.params[name];
+      }
+    }
+    if (operation !== undefined) {
+      params['operation'] = operation;
+    }
+    const reply: Reply = {
+      status: 'error',
+      code: code,
+      message: diagnostic,
+    };
+    if (Object.keys(params).length > 0) {
+      reply.params = params;
+    }
+    return reply;
   }
 
   private messageFor(error: Object, fallback: string): string {
@@ -108,11 +149,11 @@ export class FgeHarmonyBridge {
 
   private assertExactKeys(keys: string[], allowed: string[]): void {
     if (keys.length !== allowed.length) {
-      throw new Error('请求字段不匹配');
+      throw new NativeSyncError('native.config_invalid', '请求字段不匹配');
     }
     for (const key of keys) {
       if (allowed.indexOf(key) < 0) {
-        throw new Error('请求字段不匹配');
+        throw new NativeSyncError('native.config_invalid', '请求字段不匹配');
       }
     }
   }
@@ -122,26 +163,26 @@ export class FgeHarmonyBridge {
     try {
       parsed = JSON.parse(requestJson) as Object;
     } catch (error) {
-      throw new Error('请求不是有效 JSON');
+      throw new NativeSyncError('native.config_invalid', '请求不是有效 JSON');
     }
     const record = this.asRecord(parsed);
     if (record === null) {
-      throw new Error('请求必须是 JSON 对象');
+      throw new NativeSyncError('native.config_invalid', '请求必须是 JSON 对象');
     }
     const keys = Object.keys(record);
     if (record['version'] !== 1) {
-      throw new Error('不支持的协议版本');
+      throw new NativeSyncError('native.unsupported', '不支持的协议版本');
     }
     const operation = record['operation'];
     if (typeof operation !== 'string') {
-      throw new Error('缺少 operation');
+      throw new NativeSyncError('native.config_invalid', '缺少 operation');
     }
 
     if (operation === 'applyTheme') {
       this.assertExactKeys(keys, ['version', 'operation', 'mode']);
       const mode = record['mode'];
       if (typeof mode !== 'string' || (mode !== 'light' && mode !== 'dark')) {
-        throw new Error('主题模式无效');
+        throw new NativeSyncError('native.config_invalid', '主题模式无效');
       }
       return {
         operation,
@@ -169,7 +210,7 @@ export class FgeHarmonyBridge {
         typeof encoding !== 'string' ||
         typeof data !== 'string'
       ) {
-        throw new Error('分享字段类型无效');
+        throw new NativeSyncError('native.file_failed', '分享字段类型无效');
       }
       return {
         operation,
@@ -220,10 +261,10 @@ export class FgeHarmonyBridge {
       this.assertExactKeys(keys, allowed);
       const config = record['config'];
       if (typeof config !== 'object' || config === null || Array.isArray(config)) {
-        throw new Error('同步配置无效');
+        throw new NativeSyncError('native.config_invalid', '同步配置无效');
       }
       if (hasPassword && typeof record[PASSWORD_KEY] !== 'string') {
-        throw new Error('同步密码无效');
+        throw new NativeSyncError('native.config_invalid', '同步密码无效');
       }
       return this.emptyRequest(operation, record);
     }
@@ -232,18 +273,22 @@ export class FgeHarmonyBridge {
       this.assertExactKeys(keys, ['version', 'operation', 'request']);
       const request = record['request'];
       if (typeof request !== 'object' || request === null || Array.isArray(request)) {
-        throw new Error('同步请求无效');
+        throw new NativeSyncError('native.config_invalid', '同步请求无效');
       }
       return this.emptyRequest(operation, record);
     }
 
-    throw new Error('未知 operation');
+    throw new NativeSyncError('native.unsupported', '未知 operation');
   }
 
   private async handleSync(request: ParsedRequest): Promise<string> {
     const raw = request.raw;
     if (raw === null) {
-      return this.reply({ status: 'error', message: '请求无效' });
+      return this.errorReply(
+        new NativeSyncError('native.config_invalid', '请求无效'),
+        '请求无效',
+        request.operation
+      );
     }
 
     try {
@@ -271,12 +316,13 @@ export class FgeHarmonyBridge {
         const result: SyncReply = { status: 'ok', response: response };
         return this.replySync(result);
       }
-      return this.reply({ status: 'error', message: '未知 operation' });
+      return this.errorReply(
+        new NativeSyncError('native.unsupported', '未知 operation'),
+        '同步失败',
+        request.operation
+      );
     } catch (error) {
-      return this.reply({
-        status: 'error',
-        message: this.messageFor(error, '同步失败'),
-      });
+      return this.errorReply(error, '同步失败', request.operation);
     }
   }
 
@@ -291,7 +337,7 @@ export class FgeHarmonyBridge {
       !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(filename) ||
       filename.indexOf('..') >= 0
     ) {
-      throw new Error('文件名无效');
+      throw new NativeSyncError('native.file_failed', '文件名无效');
     }
   }
 
@@ -301,27 +347,27 @@ export class FgeHarmonyBridge {
       data.length % 4 !== 0 ||
       !/^[A-Za-z0-9+/]*={0,2}$/.test(data)
     ) {
-      throw new Error('图片 base64 无效');
+      throw new NativeSyncError('native.file_failed', '图片 base64 无效');
     }
     const maxEncoded = Math.ceil(MAX_PNG_BYTES / 3) * 4 + 4;
     if (data.length > maxEncoded) {
-      throw new Error('图片超过大小上限');
+      throw new NativeSyncError('native.file_failed', '图片超过大小上限');
     }
     let bytes: Uint8Array;
     try {
       bytes = new util.Base64Helper().decodeSync(data);
     } catch (error) {
-      throw new Error('图片 base64 无效');
+      throw new NativeSyncError('native.file_failed', '图片 base64 无效');
     }
     if (bytes.length === 0 || bytes.length > MAX_PNG_BYTES) {
-      throw new Error('图片超过大小上限');
+      throw new NativeSyncError('native.file_failed', '图片超过大小上限');
     }
     if (bytes.length < PNG_SIGNATURE.length) {
-      throw new Error('图片不是 PNG');
+      throw new NativeSyncError('native.file_failed', '图片不是 PNG');
     }
     for (let i = 0; i < PNG_SIGNATURE.length; i++) {
       if (bytes[i] !== PNG_SIGNATURE[i]) {
-        throw new Error('图片不是 PNG');
+        throw new NativeSyncError('native.file_failed', '图片不是 PNG');
       }
     }
     return bytes;
@@ -331,26 +377,26 @@ export class FgeHarmonyBridge {
     this.validateFilename(request.filename);
     if (request.mimeType === 'application/json') {
       if (request.encoding !== 'utf8' || !request.filename.toLowerCase().endsWith('.json')) {
-        throw new Error('JSON 分享的编码或扩展名无效');
+        throw new NativeSyncError('native.file_failed', 'JSON 分享的编码或扩展名无效');
       }
       const bytes = new util.TextEncoder().encodeInto(request.data);
       if (bytes.length > MAX_BACKUP_BYTES) {
-        throw new Error('备份超过大小上限');
+        throw new NativeSyncError('native.file_failed', '备份超过大小上限');
       }
       try {
         JSON.parse(request.data);
       } catch (error) {
-        throw new Error('备份不是有效 JSON');
+        throw new NativeSyncError('native.file_failed', '备份不是有效 JSON');
       }
       return null;
     }
     if (request.mimeType === 'image/png') {
       if (request.encoding !== 'base64' || !request.filename.toLowerCase().endsWith('.png')) {
-        throw new Error('PNG 分享的编码或扩展名无效');
+        throw new NativeSyncError('native.file_failed', 'PNG 分享的编码或扩展名无效');
       }
       return this.decodePng(request.data);
     }
-    throw new Error('不支持的分享类型');
+    throw new NativeSyncError('native.unsupported', '不支持的分享类型');
   }
 
   private ensureCacheDir(context: common.UIAbilityContext): string {
@@ -359,7 +405,7 @@ export class FgeHarmonyBridge {
       fileIo.mkdirSync(dir, true);
     } catch (error) {
       if (!fileIo.accessSync(dir)) {
-        throw new Error('无法创建分享缓存目录');
+        throw new NativeSyncError('native.file_failed', '无法创建分享缓存目录');
       }
     }
     return dir;
@@ -372,22 +418,39 @@ export class FgeHarmonyBridge {
   ): string {
     const dir = this.ensureCacheDir(context);
     const filePath = `${dir}/${request.filename}`;
-    const file = fileIo.openSync(
-      filePath,
-      fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC
-    );
+    let failure: Object | null = null;
     try {
-      if (pngBytes === null) {
-        fileIo.writeSync(file.fd, request.data);
-      } else {
-        const buffer = pngBytes.buffer.slice(
-          pngBytes.byteOffset,
-          pngBytes.byteOffset + pngBytes.byteLength
-        );
-        fileIo.writeSync(file.fd, buffer);
+      const file = fileIo.openSync(
+        filePath,
+        fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC
+      );
+      try {
+        if (pngBytes === null) {
+          fileIo.writeSync(file.fd, request.data);
+        } else {
+          const buffer = pngBytes.buffer.slice(
+            pngBytes.byteOffset,
+            pngBytes.byteOffset + pngBytes.byteLength
+          );
+          fileIo.writeSync(file.fd, buffer);
+        }
+      } catch (error) {
+        failure = error;
       }
-    } finally {
-      fileIo.closeSync(file);
+      try {
+        fileIo.closeSync(file);
+      } catch (error) {
+        // 写入已有失败时保留原异常;关闭本身失败才作为文件错误上报。
+        if (failure === null) {
+          failure = error;
+        }
+      }
+    } catch (error) {
+      failure = error;
+    }
+    if (failure !== null) {
+      // 异常原文可能含缓存路径;只上报固定可操作诊断。
+      throw new NativeSyncError('native.file_failed', '无法写入分享文件');
     }
     return filePath;
   }
@@ -395,10 +458,11 @@ export class FgeHarmonyBridge {
   private applyTheme(mode: string): Promise<string> {
     const context = this.context;
     if (context === null) {
-      return Promise.resolve(this.reply({
-        status: 'error',
-        message: '原生上下文不可用',
-      }));
+      return Promise.resolve(this.errorReply(
+        new NativeSyncError('native.unsupported', '原生上下文不可用'),
+        '主题同步失败',
+        'applyTheme'
+      ));
     }
     const background = themeBackground(mode);
     const content = themeContent(mode);
@@ -413,25 +477,28 @@ export class FgeHarmonyBridge {
         });
       })
       .then(() => this.reply({ status: 'ok' }))
-      .catch((error: BusinessError) => this.reply({
-        status: 'error',
-        message: this.messageFor(error, '主题同步失败'),
-      }));
+      .catch((error: BusinessError) => this.errorReply(
+        error,
+        '主题同步失败',
+        'applyTheme'
+      ));
   }
 
   private shareFile(request: ParsedRequest): Promise<string> {
     if (this.shareBusy) {
-      return Promise.resolve(this.reply({
-        status: 'error',
-        message: '分享正在进行',
-      }));
+      return Promise.resolve(this.errorReply(
+        new NativeSyncError('native.unsupported', '分享正在进行'),
+        '分享正在进行',
+        'shareFile'
+      ));
     }
     const context = this.context;
     if (context === null) {
-      return Promise.resolve(this.reply({
-        status: 'error',
-        message: '原生上下文不可用',
-      }));
+      return Promise.resolve(this.errorReply(
+        new NativeSyncError('native.unsupported', '原生上下文不可用'),
+        '原生上下文不可用',
+        'shareFile'
+      ));
     }
 
     let pngBytes: Uint8Array | null = null;
@@ -440,10 +507,7 @@ export class FgeHarmonyBridge {
       pngBytes = this.validateShare(request);
       filePath = this.writeCacheFile(context, request, pngBytes);
     } catch (error) {
-      return Promise.resolve(this.reply({
-        status: 'error',
-        message: this.messageFor(error, '分享文件无效'),
-      }));
+      return Promise.resolve(this.errorReply(error, '分享文件无效', 'shareFile'));
     }
 
     this.shareBusy = true;
@@ -482,16 +546,10 @@ export class FgeHarmonyBridge {
           previewMode: systemShare.SharePreviewMode.DETAIL,
           selectionMode: systemShare.SelectionMode.SINGLE,
         }).catch((error: BusinessError) => {
-          finish({
-            status: 'error',
-            message: this.messageFor(error, '系统分享失败'),
-          });
+          finish(this.nativeErrorReply(error, '系统分享失败', 'shareFile'));
         });
       } catch (error) {
-        finish({
-          status: 'error',
-          message: this.messageFor(error, '系统分享失败'),
-        });
+        finish(this.nativeErrorReply(error, '系统分享失败', 'shareFile'));
       }
     });
   }
