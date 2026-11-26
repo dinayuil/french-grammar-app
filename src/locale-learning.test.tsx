@@ -121,6 +121,7 @@ let root: Root;
 
 beforeEach(() => {
   localStorage.clear();
+  vi.spyOn(window.navigator, "languages", "get").mockReturnValue(["zh-CN"]);
   document.documentElement.lang = "zh-CN";
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -167,6 +168,13 @@ function LocaleSwitch() {
 
 function switchTo(locale: "fr" | "zh") {
   click(container.querySelector(`[data-testid="locale-${locale}"]`));
+}
+
+function switchSystemToFrench() {
+  vi.spyOn(window.navigator, "languages", "get").mockReturnValue(["fr-FR"]);
+  act(() => {
+    window.dispatchEvent(new Event("languagechange"));
+  });
 }
 
 function typeLibraryQuery(value: string) {
@@ -589,11 +597,7 @@ describe("复习与 App 中央接线", () => {
       container.querySelector<HTMLInputElement>(".library-search")?.value
     ).toBe("bleu");
 
-    click($(".language-menu__trigger"));
-    const french = $$('[role="option"]').find(
-      (option) => option.textContent?.trim() === "Français"
-    );
-    click(french);
+    switchSystemToFrench();
 
     expect(container.querySelector<HTMLInputElement>(".library-search")?.value).toBe("");
     expect($(".library")).not.toBeNull();
@@ -614,11 +618,7 @@ describe("复习与 App 中央接线", () => {
     expect($(".reader-back")).not.toBeNull();
     expect($(".library")).toBeNull();
 
-    click($(".language-menu__trigger"));
-    const french = $$('[role="option"]').find(
-      (option) => option.textContent?.trim() === "Français"
-    );
-    click(french);
+    switchSystemToFrench();
 
     click($(".reader-back"));
     expect($(".library")).not.toBeNull();

@@ -1531,6 +1531,46 @@ body {
   color: var(--on-primary);
 }
 
+/* 语言选择:原生单选按钮负责同组键盘导航,标签沿用外观选项的按钮样式。 */
+.language-settings {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.language-settings > legend {
+  padding: 0;
+}
+
+.language-options {
+  flex-wrap: wrap;
+}
+
+.language-option {
+  position: relative;
+  display: flex;
+  flex: 1 1 108px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+/* 含法语长标签:允许换行,极窄屏仍留在设置容器内。 */
+.language-option .theme-option {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 10px;
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.language-option input:focus-visible + .theme-option {
+  box-shadow: var(--focus);
+}
+
 .danger-row {
   display: flex;
   align-items: center;

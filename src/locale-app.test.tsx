@@ -70,27 +70,26 @@ function navByLabel(label: string): HTMLButtonElement {
   return button;
 }
 
-function languageTrigger(): HTMLButtonElement | null {
-  return container.querySelector<HTMLButtonElement>(".language-menu__trigger");
+function languageOptions(): HTMLElement | null {
+  return container.querySelector<HTMLElement>(".settings .language-options");
 }
 
-function openLanguageMenu(): HTMLElement {
-  click(languageTrigger());
-  const menu = container.querySelector<HTMLElement>('[role="listbox"]');
-  if (!menu) throw new Error("语言菜单未打开");
-  return menu;
-}
-
-function chooseLanguage(name: string) {
-  const option = [...container.querySelectorAll<HTMLElement>('[role="option"]')].find(
-    (item) => item.textContent?.trim() === name
+function languageOption(value: "system" | "fr" | "zh-CN"): HTMLInputElement {
+  const option = languageOptions()?.querySelector<HTMLInputElement>(
+    `input[type="radio"][value="${value}"]`,
   );
-  if (!option) throw new Error(`语言选项不存在: ${name}`);
-  click(option);
+  if (!option) throw new Error(`语言选项不存在: ${value}`);
+  return option;
+}
+
+function chooseLanguage(value: "system" | "fr" | "zh-CN") {
+  const option = languageOption(value);
+  act(() => option.click());
 }
 
 beforeEach(() => {
   localStorage.clear();
+  vi.spyOn(window.navigator, "languages", "get").mockReturnValue(["en-US"]);
   setSupportedLocales("zh-CN", "fr");
   document.documentElement.lang = "zh-CN";
   document.title = "法语语法练习";
@@ -120,14 +119,13 @@ test("切换语言停留在当前视图并保留视图内状态，不写 Progres
 
   expect(nav().getAttribute("aria-label")).toBe("主导航");
   expect(navLabels()).toEqual(["练习", "讲解", "统计", "设置"]);
-  expect(nav().lastElementChild?.classList.contains("language-menu")).toBe(true);
-  expect(nav().lastElementChild?.classList.contains("nav-item")).toBe(false);
-  expect(languageTrigger()).not.toBeNull();
-  expect(languageTrigger()!.getAttribute("aria-label")).toContain("Français");
+  expect(nav().children).toHaveLength(4);
+  expect(languageOptions()).toBeNull();
 
   click(navByLabel("设置"));
   const settings = container.querySelector<HTMLElement>(".settings");
   expect(settings).not.toBeNull();
+  expect(languageOption("system").checked).toBe(true);
   click(
     [...container.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent === "清空进度"
@@ -135,8 +133,7 @@ test("切换语言停留在当前视图并保留视图内状态，不写 Progres
   );
   expect(settings!.textContent).toContain("确定清空全部进度");
 
-  openLanguageMenu();
-  chooseLanguage("Français");
+  chooseLanguage("fr");
 
   expect(navLabels()).toEqual(["Exercices", "Cours", "Statistiques", "Réglages"]);
   expect(nav().getAttribute("aria-label")).toBe("Navigation principale");
@@ -146,7 +143,8 @@ test("切换语言停留在当前视图并保留视图内状态，不写 Progres
   expect(settings!.textContent).not.toContain("确定清空全部进度");
   expect(document.documentElement.lang).toBe("fr");
   expect(document.title).toBe("Exercices de grammaire française");
-  expect(languageTrigger()!.getAttribute("aria-label")).toContain("简体中文");
+  expect(languageOption("fr").checked).toBe(true);
+  expect(languageOptions()?.textContent).toContain("Langue du système");
   expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe("fr");
   expect(localStorage.getItem(STORAGE_KEY)).toBe(progressRaw);
   expect(Object.keys(JSON.parse(progressRaw) as object)).not.toContain("locale");
@@ -159,7 +157,7 @@ test("切换语言停留在当前视图并保留视图内状态，不写 Progres
   expect(progressWrites).toHaveLength(0);
 });
 
-test("已保存法语时直接用法语界面，切回中文只更新导航与偏好", () => {
+test("已保存法语时直接用法语界面，切回中文会保存手动偏好", () => {
   const progressRaw = JSON.stringify({ ...DEFAULT_PROGRESS, xp: 12 });
   localStorage.setItem(STORAGE_KEY, progressRaw);
   localStorage.setItem(LOCALE_STORAGE_KEY, "fr");
@@ -170,10 +168,10 @@ test("已保存法语时直接用法语界面，切回中文只更新导航与�
   expect(nav().getAttribute("aria-label")).toBe("Navigation principale");
   expect(document.documentElement.lang).toBe("fr");
   expect(document.title).toBe("Exercices de grammaire française");
-  expect(languageTrigger()!.getAttribute("aria-label")).toContain("简体中文");
 
-  openLanguageMenu();
-  chooseLanguage("简体中文");
+  click(navByLabel("Réglages"));
+  expect(languageOption("fr").checked).toBe(true);
+  chooseLanguage("zh-CN");
 
   expect(navLabels()).toEqual(["练习", "讲解", "统计", "设置"]);
   expect(nav().getAttribute("aria-label")).toBe("主导航");
@@ -183,14 +181,33 @@ test("已保存法语时直接用法语界面，切回中文只更新导航与�
   expect(localStorage.getItem(STORAGE_KEY)).toBe(progressRaw);
 });
 
+test("首次打开跟随法语系统，可固定中文并恢复跟随系统", () => {
+  vi.spyOn(window.navigator, "languages", "get").mockReturnValue(["fr-CA"]);
+  mountApp();
+
+  expect(document.documentElement.lang).toBe("fr");
+  expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBeNull();
+  click(navByLabel("Réglages"));
+  expect(languageOption("system").checked).toBe(true);
+
+  chooseLanguage("zh-CN");
+  expect(document.documentElement.lang).toBe("zh-CN");
+  expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe("zh-CN");
+
+  chooseLanguage("system");
+  expect(document.documentElement.lang).toBe("fr");
+  expect(languageOption("system").checked).toBe(true);
+  expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBeNull();
+});
+
 test("仅中文版隐藏语言工具并保留法语偏好，完整语言包恢复后重新用法语", () => {
   setSupportedLocales("zh-CN");
   localStorage.setItem(LOCALE_STORAGE_KEY, "fr");
 
   mountApp();
 
-  expect(languageTrigger()).toBeNull();
-  expect(container.querySelector('[role="listbox"]')).toBeNull();
+  click(navByLabel("设置"));
+  expect(languageOptions()).toBeNull();
   expect(navLabels()).toEqual(["练习", "讲解", "统计", "设置"]);
   expect(document.documentElement.lang).toBe("zh-CN");
   expect(document.title).toBe("法语语法练习");
@@ -205,8 +222,8 @@ test("仅中文版隐藏语言工具并保留法语偏好，完整语言包恢�
   mountApp();
 
   expect(navLabels()).toEqual(["Exercices", "Cours", "Statistiques", "Réglages"]);
-  expect(languageTrigger()).not.toBeNull();
-  expect(languageTrigger()!.getAttribute("aria-label")).toContain("简体中文");
+  click(navByLabel("Réglages"));
+  expect(languageOption("fr").checked).toBe(true);
   expect(document.documentElement.lang).toBe("fr");
   expect(document.title).toBe("Exercices de grammaire française");
   expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe("fr");

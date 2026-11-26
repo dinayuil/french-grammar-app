@@ -18,11 +18,9 @@ export const fr = {
   "nav.settings": "Réglages",
 
   "language.label": "Langue de l'interface",
-  "language.change": "Changer de langue",
+  "language.system": "Langue du système",
   "language.fr": "Français",
   "language.zh-CN": "简体中文",
-  "language.short.fr": "FR",
-  "language.short.zh-CN": "中",
 
   "common.back": "Retour",
   "common.cancel": "Annuler",
