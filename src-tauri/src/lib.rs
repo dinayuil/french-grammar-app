@@ -1,3 +1,4 @@
+mod client_release;
 mod dpapi;
 mod files;
 mod sync;
@@ -31,6 +32,7 @@ pub fn run(context: tauri::Context) {
             sync::sync_disconnect,
             sync::sync_request,
             files::save_export_file,
+            client_release::open_client_release,
         ])
         .run(context)
         .expect("error while running the Windows application");

@@ -117,6 +117,8 @@ Android 使用应用 Keystore，鸿蒙使用 HUKS，Windows 使用当前用户 D
 
 Android 自动构建的 `versionCode` 使用该 workflow 的 `run_number`，`versionName` 为 `1.0-test.<run_number>`。构建后验证公开包名、版本、唯一签名证书指纹和 APK 哈希；Windows 构建校验两包身份、安装模式与哈希，再分别上传精确的公开产物。独立发布 job 只下载本 run 的产物，复核提交、文件清单和哈希后统一更新 `client-latest`，不会执行仓库构建代码；build job 为 `contents: read`，发布 job 单独使用 `contents: write`。
 
+工作流将同一版本号写入 Android 和 Windows 公开包的前端资源。客户端启动时通过 GitHub API 检查 `client-latest` 标签的版本标记和对应平台的安装包，设置页可以重新检查。发现更高版本时，首页会显示提示，用户可从设置打开发布页，自行下载并覆盖安装。网页版、鸿蒙、内部版和未配置滚动版本号的本地包不检查。验收时可在带较低滚动版本号的公开包中检查更新，再用已发布的同版本号验证没有可用更新，并确认断网时仍可学习和手动重试。
+
 下载后可用以下命令或等价工具核验：
 
 ```text
