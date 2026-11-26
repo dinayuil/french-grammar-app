@@ -464,6 +464,8 @@ jobs:
         env:
           CARGO_TARGET_DIR: .fge-build/windows/public/target
           FGE_PUBLIC_CONTENT_DIR: ../content-public
+          FGE_PUBLIC_VERSION_CODE: ${{ github.run_number }}
+          FGE_PUBLIC_VERSION_NAME: 1.0-test.${{ github.run_number }}
         run: npm run windows
 
       - name: Verify Windows installer metadata

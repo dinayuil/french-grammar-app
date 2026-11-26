@@ -358,6 +358,15 @@ describe("public APK release workflow", () => {
     expect(windows).toMatch(/com\.fge\.open/);
   });
 
+  it("embeds the same rolling release number in both clients", () => {
+    const android = stepBlock(build, "Build public debug APK");
+    const windows = stepBlock(jobBlock("build-public-windows"), "Build public Windows installers");
+    for (const step of [android, windows]) {
+      expect(step).toContain("FGE_PUBLIC_VERSION_CODE: ${{ github.run_number }}");
+      expect(step).toContain("FGE_PUBLIC_VERSION_NAME: 1.0-test.${{ github.run_number }}");
+    }
+  });
+
   it("publisher requires both builds, verifies shared SHAs and exact six assets", () => {
     expect(release).toMatch(/needs:\n\s+- resolve-public-inputs\n\s+- build-public-apk\n\s+- build-public-windows/);
     expect(release).toContain("APK_APP_SHA");

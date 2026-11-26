@@ -11,11 +11,21 @@ import {
 const appRoot = path.resolve(fileURLToPath(new URL(".", import.meta.url)));
 const edition = resolveEdition(process.env.FGE_EDITION);
 const contentRoot = resolveContentRoot(edition);
+const { FGE_PUBLIC_VERSION_CODE, FGE_PUBLIC_VERSION_NAME } = process.env;
+const publicReleaseCode =
+  edition === "public" &&
+  FGE_PUBLIC_VERSION_CODE &&
+  /^[1-9][0-9]{0,9}$/.test(FGE_PUBLIC_VERSION_CODE) &&
+  Number(FGE_PUBLIC_VERSION_CODE) <= 2_100_000_000 &&
+  FGE_PUBLIC_VERSION_NAME === `1.0-test.${FGE_PUBLIC_VERSION_CODE}`
+    ? Number(FGE_PUBLIC_VERSION_CODE)
+    : null;
 
 export default defineConfig({
   plugins: [react(), contentPlugin({ edition, root: contentRoot })],
   define: {
     __FGE_EDITION__: JSON.stringify(edition),
+    __FGE_PUBLIC_RELEASE_CODE__: JSON.stringify(publicReleaseCode),
   },
   build: {
     outDir: path.resolve(appRoot, "dist", edition),

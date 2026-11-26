@@ -3387,6 +3387,26 @@ mark {
   }
 }
 
+/* ---- 客户端更新:复用设置/备份样式,仅补首页提示 ---- */
+.update-panel .backup-actions {
+  margin-top: 12px;
+}
+
+.update-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin: 0 0 12px;
+  border: 1px solid var(--gold);
+  background: var(--gold-soft);
+  color: var(--gold-ink);
+  font-size: 13px;
+  text-align: left;
+}
+
 /* ---- 移动端适配 ---- */
 @media (max-width: 360px) {
   .reader-header {

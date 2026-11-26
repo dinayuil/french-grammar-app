@@ -2,11 +2,13 @@ import { useState } from "react";
 import type { Progress, ShareCardContent } from "../types";
 import type { ThemeChoice } from "../theme";
 import type { ClientSyncController } from "../sync/useClientSync";
+import type { ClientUpdates } from "../native/useClientUpdates";
 import { GOAL_PRESETS, STORAGE_KEY } from "../config";
 import { DEFAULT_PROGRESS } from "../storage";
 import { useLocale } from "../i18n/LocaleProvider";
 import { formatNumber } from "../i18n/format";
 import { isUiLocale } from "../i18n/locale";
+import { ClientUpdateSettings } from "./ClientUpdateSettings";
 import { ProgressBackup } from "./ProgressBackup";
 import { SyncSettings } from "./SyncSettings";
 
@@ -17,6 +19,8 @@ interface Props {
   onThemeChange?: (choice: ThemeChoice) => void;
   /** 只在原生容器传入;网页版保持 null,对应设置完全不渲染。 */
   syncController?: ClientSyncController | null;
+  /** 只在原生容器传入;网页版为 null,不显示客户端更新入口。 */
+  clientUpdates?: ClientUpdates | null;
 }
 
 const THEME_OPTIONS: ReadonlyArray<{
@@ -55,6 +59,7 @@ export function SettingsView({
   themeChoice = "system",
   onThemeChange,
   syncController = null,
+  clientUpdates = null,
 }: Props) {
   const { choice, locale, supportedLocales, setLocale, t } = useLocale();
   const [confirming, setConfirming] = useState(false);
@@ -64,6 +69,8 @@ export function SettingsView({
 
   return (
     <div className="settings">
+      {clientUpdates && <ClientUpdateSettings updates={clientUpdates} />}
+
       {languages.length >= 2 && (
         <fieldset className="language-settings">
           <legend className="settings-title">{t("language.label")}</legend>

@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(AppThemePlugin.class);
         registerPlugin(FgeSyncPlugin.class);
+        registerPlugin(FgeReleasePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

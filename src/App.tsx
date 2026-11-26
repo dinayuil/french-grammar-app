@@ -26,6 +26,7 @@ import {
 } from "./learning/sections";
 import type { Chapter, Lesson, Progress } from "./types";
 import { useClientSync } from "./sync/useClientSync";
+import { useClientUpdates } from "./native/useClientUpdates";
 import {
   applyTheme,
   getSystemPrefersDark,
@@ -163,6 +164,9 @@ function AppContent({ sectionMap }: { sectionMap: SectionMap }) {
     interactionActive:
       view.name === "lesson" || view.name === "review" || view.name === "reader",
   });
+
+  // 原生容器启动时检查一次更新;网页版返回 null,首页和设置页都不显示入口。
+  const clientUpdates = useClientUpdates();
 
   useEffect(() => {
     notifyLocalChangeRef.current = syncController
@@ -384,6 +388,7 @@ function AppContent({ sectionMap }: { sectionMap: SectionMap }) {
         themeChoice={themeChoice}
         onThemeChange={changeTheme}
         syncController={syncController}
+        clientUpdates={clientUpdates}
       />
     );
   }
@@ -436,7 +441,31 @@ function AppContent({ sectionMap }: { sectionMap: SectionMap }) {
           <span>{t("nav.settings")}</span>
         </button>
       </nav>
-      <div className="content">{body}</div>
+      <div className="content">
+        {view.name === "home" &&
+          clientUpdates?.status === "available" &&
+          clientUpdates.latestVersion && (
+            <button
+              type="button"
+              className="btn update-callout"
+              onClick={() => {
+                setView({ name: "settings" });
+                window.scrollTo({ top: 0, left: 0 });
+              }}
+            >
+              <span>
+                {t("update.home.available", {
+                  version: clientUpdates.latestVersion,
+                })}
+              </span>
+              <span>
+                {t("update.home.action")}
+                <span aria-hidden="true"> →</span>
+              </span>
+            </button>
+          )}
+        {body}
+      </div>
       {goalDialogProgress && (
         <GoalReachedDialog
           progress={goalDialogProgress}
