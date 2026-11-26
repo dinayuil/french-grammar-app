@@ -51,6 +51,7 @@ function click(label: string) {
 
 beforeEach(() => {
   localStorage.clear();
+  vi.spyOn(window.navigator, "languages", "get").mockReturnValue(["en-US"]);
   latest = undefined;
   document.documentElement.lang = "zh-CN";
   document.title = "法语语法练习";
@@ -67,7 +68,7 @@ afterEach(() => {
   document.title = "法语语法练习";
 });
 
-test("默认中文，暴露支持列表并应用页面语言与标题", () => {
+test("系统语言无匹配时用中文，暴露支持列表并应用页面语言与标题", () => {
   renderLocale(["zh-CN", "fr"]);
 
   expect(latest!.locale).toBe("zh-CN");
@@ -127,13 +128,34 @@ test("仅中文版本临时回退但保留 fr 偏好，完整语言包恢复后�
   expect(document.documentElement.lang).toBe("fr");
 });
 
-test("非法持久化值回退中文", () => {
+test("非法持久化值使用系统语言", () => {
+  vi.spyOn(window.navigator, "languages", "get").mockReturnValue(["fr-CA"]);
   localStorage.setItem(LOCALE_STORAGE_KEY, "en");
 
   renderLocale(["zh-CN", "fr"]);
 
+  expect(latest!.locale).toBe("fr");
+  expect(document.documentElement.lang).toBe("fr");
+});
+
+test("系统语言变化时更新界面，并尊重手动选择", () => {
+  const languages = vi.spyOn(window.navigator, "languages", "get").mockReturnValue(["fr-CA"]);
+  renderLocale(["zh-CN", "fr"]);
+  expect(latest!.locale).toBe("fr");
+  expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBeNull();
+
+  languages.mockReturnValue(["de-DE"]);
+  act(() => {
+    window.dispatchEvent(new Event("languagechange"));
+  });
   expect(latest!.locale).toBe("zh-CN");
-  expect(document.documentElement.lang).toBe("zh-CN");
+
+  click("to-zh");
+  languages.mockReturnValue(["fr-FR"]);
+  act(() => {
+    window.dispatchEvent(new Event("languagechange"));
+  });
+  expect(latest!.locale).toBe("zh-CN");
 });
 
 test("存储写入异常时本次会话仍能切换语言", () => {

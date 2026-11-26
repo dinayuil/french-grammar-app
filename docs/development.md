@@ -65,7 +65,7 @@ npm run check:public -- --public "$env:FGE_PUBLIC_CONTENT_DIR"
 - `src/i18n/types.ts` 维护界面和内容覆盖语言注册表。
 - `src/i18n/zh-CN.ts`、`fr.ts` 聚合类型化消息目录；reading、practice、sharing 域文件分别维护对应文案。新增键须同时提供两种语言，使用同名 `{name}` 插值参数。
 - `src/i18n/messages.ts` 提供 `t` 与目录完整性检查；`format.ts` 维护日期、数字和学习时长，原 `formatStudyDuration.ts` 仅保留兼容入口。
-- `src/i18n/LocaleProvider.tsx` 提供当前语言，`LanguageMenu` 只切换此偏好，不切换路由或保存学习进度。
+- `src/i18n/LocaleProvider.tsx` 根据设置页的语言偏好和当前版本支持列表解析生效语言。默认按浏览器或 WebView 提供的系统语言顺序匹配，支持地区变体并响应 `languagechange`。
 - `src/content/localize.ts` 解析只读展示模型；评分、错题和进度仍持有原实体与稳定 ID。本地化选项仅用于显示，不能成为判分答案。
 
 内容在所属内容仓库新增 `locales.fr`，不放进应用文案目录。保留全部原始字段和中文 `translation`，法语模式由统一策略隐藏句子译文；讲解 `body`、解析 `explain` 仍需完整法语内容。章节法语标题使用现有 `titleFr`，不重复写 `locales.fr.title`。公开小章标题通过 `locales.fr.sectionTitles[sectionKey]` 对应 app 的既有普通小章 key，综合区默认标签来自 UI 文案。
@@ -74,7 +74,7 @@ npm run check:public -- --public "$env:FGE_PUBLIC_CONTENT_DIR"
 
 翻译题干时保留 `___`、`...` 的数量与顺序及字母题补全锚点。旧 `(第N空)` 只用于兼容读取；对应 choice 题可用一致的顶层 `blankTarget` 明确目标空位，法语展示不保留中文标记。任何语言都不能改变原 ID、答案、可接受答案、题型、顺序、归属和选项下标。
 
-新增语言时先扩注册表、消息目录和内容覆盖，再通过完整性门槛加入 manifest；不要仅加语言按钮或将中文回退当作完成。未完成语言包不向用户提供选项。暂时不可用的已存语言在当前版本回退中文，原偏好保留。
+新增语言时先扩注册表、消息目录和内容覆盖，再通过完整性门槛加入 manifest。无匹配的系统语言或已存语言暂不可用时回退简体中文。英语在当前版本通过完整性校验并启用后，回退语言改用英语。手动偏好会保留至对应语言包恢复，选择「跟随系统」会清除手动偏好。
 
 错误使用稳定 `code`、非敏感 `params` 与独立诊断信息；主提示按当前语言即时格式化，不通过匹配中文异常推断错误类型。应用可控的原生保存对话框标题由 JS 传入；操作系统控制的系统界面语言仍由系统决定。Android 与鸿蒙目前仅声明系统自动授予的网络权限，没有另加权限说明弹窗。
 

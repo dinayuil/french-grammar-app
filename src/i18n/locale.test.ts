@@ -18,12 +18,14 @@ vi.mock("@tauri-apps/api/window", () => ({
 import { formatDate, formatNumber, formatStudyDuration } from "./format";
 import {
   applyLocale,
+  getSystemLanguages,
   loadLocaleChoice,
   LOCALE_STORAGE_KEY,
   resolveLocale,
   saveLocaleChoice,
   windowTitleForLocale,
 } from "./locale";
+import type { UiLocale } from "./types";
 
 const SUPPORTED = ["zh-CN", "fr"] as const;
 
@@ -65,12 +67,12 @@ test("语言偏好使用独立的精确存储键", () => {
   expect(LOCALE_STORAGE_KEY).toBe("fge:ui-locale:v1");
 });
 
-test("无存储、坏值和未知语言默认中文", () => {
-  expect(loadLocaleChoice()).toBe("zh-CN");
+test("无存储、坏值和未知语言默认跟随系统", () => {
+  expect(loadLocaleChoice()).toBe("system");
 
   for (const raw of ["en", "fr-FR", "", "null", "zh"]) {
     localStorage.setItem(LOCALE_STORAGE_KEY, raw);
-    expect(loadLocaleChoice()).toBe("zh-CN");
+    expect(loadLocaleChoice()).toBe("system");
   }
 });
 
@@ -80,24 +82,51 @@ test("已存 fr 即使当前版本不支持也会被读取", () => {
 });
 
 test("resolveLocale 在当前支持列表不足时临时回退中文", () => {
-  expect(resolveLocale("fr", SUPPORTED)).toBe("fr");
-  expect(resolveLocale("zh-CN", SUPPORTED)).toBe("zh-CN");
-  expect(resolveLocale("fr", ["zh-CN"])).toBe("zh-CN");
+  expect(resolveLocale("fr", SUPPORTED, ["zh-CN"])).toBe("fr");
+  expect(resolveLocale("zh-CN", SUPPORTED, ["fr-FR"])).toBe("zh-CN");
+  expect(resolveLocale("fr", ["zh-CN"], ["fr-FR"])).toBe("zh-CN");
+});
+
+test("按系统偏好顺序匹配已支持的语言及地区变体", () => {
+  expect(resolveLocale("system", SUPPORTED, ["de-DE", "fr-CA", "zh-CN"])).toBe("fr");
+  expect(resolveLocale("system", SUPPORTED, ["ZH-hans-SG", "fr-FR"])).toBe("zh-CN");
+  expect(resolveLocale("system", SUPPORTED, ["en-US", "de-DE"])).toBe("zh-CN");
+  expect(resolveLocale("system", ["zh-CN"], ["fr-FR"])).toBe("zh-CN");
+});
+
+test("英语加入当前版本后成为回退语言，有系统匹配时仍优先匹配", () => {
+  const withEnglish = ["zh-CN", "fr", "en"] as UiLocale[];
+  expect(resolveLocale("system", withEnglish, ["de-DE"])).toBe("en");
+  expect(resolveLocale("system", withEnglish, ["fr-CA"])).toBe("fr");
+});
+
+test("系统语言列表为空时读取系统首选语言", () => {
+  vi.spyOn(window.navigator, "languages", "get").mockReturnValue([]);
+  vi.spyOn(window.navigator, "language", "get").mockReturnValue("fr-CA");
+  expect(getSystemLanguages()).toEqual(["fr-CA"]);
+});
+
+test("恢复跟随系统时移除手动偏好", () => {
+  saveLocaleChoice("fr");
+  saveLocaleChoice("system");
+
+  expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBeNull();
+  expect(loadLocaleChoice()).toBe("system");
 });
 
 test("临时回退不覆写已保存偏好，完整语言包恢复后重新生效", () => {
   saveLocaleChoice("fr");
-  expect(resolveLocale(loadLocaleChoice(), ["zh-CN"])).toBe("zh-CN");
+  expect(resolveLocale(loadLocaleChoice(), ["zh-CN"], [])).toBe("zh-CN");
   expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe("fr");
 
-  expect(resolveLocale(loadLocaleChoice(), SUPPORTED)).toBe("fr");
+  expect(resolveLocale(loadLocaleChoice(), SUPPORTED, [])).toBe("fr");
 });
 
 test("读取或保存存储抛异常都不外泄", () => {
   vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
     throw new Error("storage blocked");
   });
-  expect(loadLocaleChoice()).toBe("zh-CN");
+  expect(loadLocaleChoice()).toBe("system");
   vi.restoreAllMocks();
 
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
@@ -148,7 +177,7 @@ test("已保存 fr 偏好在桌面端恢复法语原生窗口标题", async () =
   coreMock.isTauri.mockReturnValue(true);
   localStorage.setItem(LOCALE_STORAGE_KEY, "fr");
 
-  applyLocale(loadLocaleChoice());
+  applyLocale(resolveLocale(loadLocaleChoice(), SUPPORTED, []));
 
   await vi.waitFor(() => {
     expect(windowMock.setTitle).toHaveBeenLastCalledWith(

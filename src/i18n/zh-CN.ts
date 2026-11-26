@@ -20,11 +20,9 @@ export const zhCN = {
   "nav.settings": "设置",
 
   "language.label": "界面语言",
-  "language.change": "切换语言",
+  "language.system": "跟随系统",
   "language.fr": "Français",
   "language.zh-CN": "简体中文",
-  "language.short.fr": "FR",
-  "language.short.zh-CN": "中",
 
   "common.back": "返回",
   "common.cancel": "取消",

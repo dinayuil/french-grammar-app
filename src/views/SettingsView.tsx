@@ -6,6 +6,7 @@ import { GOAL_PRESETS, STORAGE_KEY } from "../config";
 import { DEFAULT_PROGRESS } from "../storage";
 import { useLocale } from "../i18n/LocaleProvider";
 import { formatNumber } from "../i18n/format";
+import { isUiLocale } from "../i18n/locale";
 import { ProgressBackup } from "./ProgressBackup";
 import { SyncSettings } from "./SyncSettings";
 
@@ -55,12 +56,53 @@ export function SettingsView({
   onThemeChange,
   syncController = null,
 }: Props) {
-  const { locale, t } = useLocale();
+  const { choice, locale, supportedLocales, setLocale, t } = useLocale();
   const [confirming, setConfirming] = useState(false);
   const shareContent = shareContentFor(progress);
+  // 只列真正注册了界面文案的语言;重复值不生成选项,少于两种时整段隐藏。
+  const languages = [...new Set(supportedLocales.filter(isUiLocale))];
 
   return (
     <div className="settings">
+      {languages.length >= 2 && (
+        <fieldset className="language-settings">
+          <legend className="settings-title">{t("language.label")}</legend>
+          <div className="goal-presets language-options">
+            <label className="language-option">
+              <input
+                className="visually-hidden"
+                type="radio"
+                name="ui-locale"
+                value="system"
+                checked={choice === "system"}
+                onChange={() => setLocale("system")}
+              />
+              <span className={`theme-option ${choice === "system" ? "selected" : ""}`}>
+                {t("language.system")}
+              </span>
+            </label>
+            {languages.map((code) => (
+              <label className="language-option" key={code}>
+                <input
+                  className="visually-hidden"
+                  type="radio"
+                  name="ui-locale"
+                  value={code}
+                  checked={choice === code}
+                  onChange={() => setLocale(code)}
+                />
+                <span
+                  className={`theme-option ${choice === code ? "selected" : ""}`}
+                  lang={code}
+                >
+                  {t(`language.${code}`)}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
       <div className="settings-title">{t("settings.appearance")}</div>
       <div
         className="goal-presets"

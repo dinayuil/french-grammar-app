@@ -10,7 +10,6 @@ import { LibraryView } from "./views/LibraryView";
 import { StatsView } from "./views/StatsView";
 import { SettingsView } from "./views/SettingsView";
 import { GoalReachedDialog } from "./components/GoalReachedDialog";
-import { LanguageMenu } from "./components/LanguageMenu";
 import { NavIcon } from "./components/icons";
 import { LocaleProvider, useLocale } from "./i18n/LocaleProvider";
 import type { UiLocale } from "./i18n/types";
@@ -96,7 +95,7 @@ export default function App({ sectionMap = SECTION_MAP }: { sectionMap?: Section
 }
 
 function AppContent({ sectionMap }: { sectionMap: SectionMap }) {
-  const { locale, supportedLocales, setLocale, t } = useLocale();
+  const { locale, t } = useLocale();
   const [view, setView] = useState<View>({ name: "home" });
   const [progress, setProgress] = useState<Progress>(() => loadProgress());
   const progressRef = useRef(progress);
@@ -436,11 +435,6 @@ function AppContent({ sectionMap }: { sectionMap: SectionMap }) {
           <NavIcon name="settings" />
           <span>{t("nav.settings")}</span>
         </button>
-        <LanguageMenu
-          locale={locale}
-          supportedLocales={supportedLocales}
-          onChange={setLocale}
-        />
       </nav>
       <div className="content">{body}</div>
       {goalDialogProgress && (

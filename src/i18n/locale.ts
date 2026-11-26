@@ -6,6 +6,7 @@ import { UI_LOCALES, type UiLocale } from "./types";
 export const LOCALE_STORAGE_KEY = "fge:ui-locale:v1";
 
 export const DEFAULT_UI_LOCALE: UiLocale = "zh-CN";
+export type LocaleChoice = UiLocale | "system";
 
 /** 存储中的值只有精确匹配规范语言标识才有效；`fr-FR` 等不回退成 `fr`。 */
 export function isUiLocale(value: unknown): value is UiLocale {
@@ -18,34 +19,56 @@ export function isUiLocale(value: unknown): value is UiLocale {
 /**
  * 读取用户保存的语言偏好。
  *
- * 这里返回原偏好，不根据当前版本支持列表裁剪：法语版暂时不可用时，调用方
- * 用 `resolveLocale` 临时回退，但本地偏好保持不变。缺省、坏值和存储异常都
- * 视为中文。
+ * 保留原偏好供语言包恢复后使用。缺省、坏值和存储异常时跟随系统。
  */
-export function loadLocaleChoice(): UiLocale {
+export function loadLocaleChoice(): LocaleChoice {
   try {
     const raw = localStorage.getItem(LOCALE_STORAGE_KEY);
-    return isUiLocale(raw) ? raw : DEFAULT_UI_LOCALE;
+    return isUiLocale(raw) ? raw : "system";
   } catch {
-    return DEFAULT_UI_LOCALE;
+    return "system";
   }
 }
 
 /** 保存语言偏好；隐私模式或配额异常不能阻止本次会话切换。 */
-export function saveLocaleChoice(choice: UiLocale): void {
+export function saveLocaleChoice(choice: LocaleChoice): void {
   try {
-    localStorage.setItem(LOCALE_STORAGE_KEY, choice);
+    if (choice === "system") {
+      localStorage.removeItem(LOCALE_STORAGE_KEY);
+    } else {
+      localStorage.setItem(LOCALE_STORAGE_KEY, choice);
+    }
   } catch {
     // 存储不可用：Provider 仍会更新 React 状态，本次会话照常切换。
   }
 }
 
-/** 当前版本支持所选语言时直接使用，否则临时回退中文，不修改保存值。 */
+export function getSystemLanguages(): readonly string[] {
+  if (typeof navigator === "undefined") return [];
+  return navigator.languages?.length ? navigator.languages : [navigator.language];
+}
+
 export function resolveLocale(
-  choice: UiLocale,
+  choice: LocaleChoice,
   supported: readonly UiLocale[],
+  systemLanguages: readonly string[],
 ): UiLocale {
-  return supported.includes(choice) ? choice : DEFAULT_UI_LOCALE;
+  if (choice === "system") {
+    for (const language of systemLanguages) {
+      const tag = language.toLowerCase();
+      const exact = supported.find((locale) => locale.toLowerCase() === tag);
+      if (exact) return exact;
+
+      const base = tag.split("-")[0];
+      const match = supported.find((locale) => locale.toLowerCase().split("-")[0] === base);
+      if (match) return match;
+    }
+  } else if (supported.includes(choice)) {
+    return choice;
+  }
+
+  // 英语通过完整性校验并列入当前版本时，自动成为回退语言。
+  return supported.find((locale: string) => locale === "en") ?? DEFAULT_UI_LOCALE;
 }
 
 /**
